@@ -1,0 +1,117 @@
+/*
+ * Climvia design tokens — "Warm Operational Clarity".
+ *
+ * Values are taken from the approved Stitch export:
+ *   design-reference/stitch/climvia_business_workspace_phase_1_foundation_2   (Overview + shell)
+ *   design-reference/stitch/climvia_development_handoff                      (token + status spec)
+ *   design-reference/stitch/warm_operational_clarity/DESIGN.md               (elevation, shape, type)
+ *
+ * This is the single source of truth for colour, radius, shadow and type scale.
+ * Components must use these tokens (bg-canvas, text-ink, border-line, …), never raw hex values.
+ *
+ * `source("../")` limits Tailwind's class scanning to src/ so the Stitch HTML in
+ * design-reference/ is never treated as application source.
+ */
+@import "tailwindcss" source("../");
+
+@theme {
+  /* Drop Tailwind's default palette so only Climvia tokens exist. */
+  --color-*: initial;
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  /* Surfaces */
+  --color-canvas: #fbf9f3; /* application background — warm linen */
+  --color-surface: #ffffff; /* cards, panels, modals */
+  --color-surface-low: #f5f3ed; /* warm inset / hover surface */
+
+  /* Primary — dark teal */
+  --color-primary: #0d5c63;
+  --color-primary-hover: #0a494e;
+  --color-primary-subtle: #e6eff0;
+
+  /* Positive — mint (confirmed, paid, recorded) */
+  --color-positive: #1b5e20;
+  --color-positive-soft: #e8f5e9;
+  --color-positive-line: #c8e6c9;
+
+  /* Warning — restrained amber (scheduled, pending) */
+  --color-warning: #92400e;
+  --color-warning-soft: #fef3c7;
+  --color-warning-line: #fde68a;
+
+  /* Danger — coral/red (void, cancel, remove, discard) */
+  --color-danger: #991b1b;
+  --color-danger-hover: #7f1d1d;
+  --color-danger-soft: #fee2e2;
+  --color-danger-line: #fecaca;
+
+  /* Neutral draft / awaiting-reply state */
+  --color-neutral-soft: #f1f5f9;
+
+  /* Text */
+  --color-ink: #1f2937; /* primary text */
+  --color-ink-muted: #5a687d; /* secondary text, icons — 4.6:1 or better on every surface it sits on */
+  --color-ink-faint: #94a3b8; /* placeholders, group labels */
+
+  /* Borders & hover */
+  --color-line: #e2e8f0;
+  --color-line-strong: #cbd5e1;
+  --color-hover: #f8fafc;
+
+  /* Shape */
+  --radius-btn: 0.5rem; /* buttons, inputs, nav items — 8px */
+  --radius-card: 0.75rem; /* cards, modals — 12px */
+
+  /* Elevation — slate-tinted, low contrast (DESIGN.md) */
+  --shadow-card: 0 1px 2px 0 rgb(29 41 40 / 0.05);
+  --shadow-overlay: 0 4px 16px -2px rgb(29 41 40 / 0.08), 0 2px 4px -1px rgb(29 41 40 / 0.03);
+
+  /* Type scale additions (Tailwind's own scale covers 12px and up) */
+  --text-micro: 0.625rem; /* 10px — group labels, kbd hints */
+  --text-micro--line-height: 0.9375rem;
+  --text-mini: 0.6875rem; /* 11px — secondary captions */
+  --text-mini--line-height: 1rem;
+
+  /* Layout */
+  --container-content: 80rem; /* 1280px max content width */
+}
+
+/* Inter is loaded in app/layout.tsx via next/font and exposed as --font-inter. */
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+:root {
+  --sidebar-width: 15rem; /* 240px */
+  --topbar-height: 4rem; /* 64px */
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) var(--color-surface-low);
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+
+  /* One consistent, always-visible keyboard focus indicator. */
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

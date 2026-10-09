@@ -43,8 +43,8 @@ test.describe("Bookings come from the database, for the active business only", (
   test("Apex's seeded bookings: the tab counts are the stored rows", async ({ page, db, workerTenant }) => {
     const { rows } = await db.query<{ status: string; n: number }>("select status, count(*)::int as n from bookings where organization_id = $1 group by status", [workerTenant.organizationId]);
     const stored = statusCounts(rows);
-    expect(stored).toEqual({ pending: 2, confirmed: 5, completed: 6 });
-    expect(BOOKINGS).toHaveLength(13);
+    expect(stored).toEqual({ pending: 2, confirmed: 6, completed: 6 });
+    expect(BOOKINGS).toHaveLength(14);
     await page.goto("/bookings");
     await expect(page.getByRole("tablist", { name: "Booking lists" }).getByRole("tab")).toHaveText([
       new RegExp(`^Requests\\s*${stored.pending}$`),
@@ -133,7 +133,7 @@ test.describe("Create booking persists", () => {
     ]);
 
     await page.goto("/bookings?tab=upcoming");
-    await expect(bookingRows(page, "Upcoming")).toHaveCount(6);
+    await expect(bookingRows(page, "Upcoming")).toHaveCount(7);
     await expect(page.getByRole("button", { name: /^Review booking BK-1043 / })).toBeVisible();
     await page.reload();
     await expect(page.getByRole("button", { name: /^Review booking BK-1043 / })).toBeVisible();
@@ -206,7 +206,7 @@ test.describe("Create booking persists", () => {
     await wizard.getByRole("button", { name: "Create booking" }).click();
     await expect(wizard.getByRole("alert").filter({ hasText: "closed" })).toBeVisible();
     const stored = await db.query("select count(*)::int as n from bookings where organization_id = $1", [workerTenant.organizationId]);
-    expect(stored.rows[0].n).toBe(13);
+    expect(stored.rows[0].n).toBe(14);
   });
 });
 
@@ -220,7 +220,7 @@ test.describe("status changes persist", () => {
     const stored = await db.query("select status, confirmed_at is not null as stamped from bookings where organization_id = $1 and number = 1040", [workerTenant.organizationId]);
     expect(stored.rows[0]).toEqual({ status: "confirmed", stamped: true });
     await page.goto("/bookings?tab=upcoming");
-    await expect(bookingRows(page, "Upcoming")).toHaveCount(6);
+    await expect(bookingRows(page, "Upcoming")).toHaveCount(7);
     await expect(tab(page, "Requests")).toContainText("1");
   });
 

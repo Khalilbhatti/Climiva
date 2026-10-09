@@ -225,8 +225,12 @@ test.describe("the totals the screens report", () => {
     expect(sarah.name).toBe("Comfort Care");
     const [first, second] = sarah.visits;
     expect(getVisitState(first, OPERATIONS)).toBe("completed");
-    expect(getVisitState(second, OPERATIONS)).toBe("needs-scheduling");
-    expect(getVisitBooking(second, OPERATIONS)).toBeUndefined();
+    // Visit 2 is scheduled as BK-1048; take the booking away and the visit is open again.
+    expect(getVisitState(second, OPERATIONS)).toBe("scheduled");
+    expect(getVisitBooking(second, OPERATIONS)?.id).toBe("BK-1048");
+    const without = { ...OPERATIONS, bookings: OPERATIONS.bookings.filter((booking) => booking.id !== "BK-1048") };
+    expect(getVisitState(second, without)).toBe("needs-scheduling");
+    expect(getVisitBooking(second, without)).toBeUndefined();
     expect(getNextVisit(sarah, OPERATIONS)?.id).toBe(second.id);
     expect(isRenewingSoon(sarah, TODAY)).toBe(false);
   });

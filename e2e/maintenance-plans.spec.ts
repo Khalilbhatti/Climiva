@@ -5,11 +5,11 @@ const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary
 const tab = (page: Page, name: string) => page.getByRole("tab", { name: new RegExp(`^${name}`) });
 const main = (page: Page) => page.getByRole("main");
 
-/** Walks Schedule included visit for Sarah's Cooling visit to Nov 19, 10:00 AM – 12:00 PM with Marcus Vance, ending on Review. */
-async function fillVisit(page: Page) {
+/** Walks Schedule included visit for a Cooling visit to 10:00 AM – 12:00 PM with Marcus Vance, ending on Review. */
+async function fillVisit(page: Page, date = "2024-11-20") {
   const wizard = page.getByRole("dialog", { name: "Schedule included visit" });
   await wizard.getByRole("button", { name: /^Next: Date & time/ }).click();
-  await wizard.getByLabel("Service date").fill("2024-11-19");
+  await wizard.getByLabel("Service date").fill(date);
   await wizard.getByRole("radio", { name: /^Midday/ }).check();
   await wizard.getByRole("button", { name: /^Next: Assignment/ }).click();
   await wizard.getByRole("radio", { name: /^Marcus Vance/ }).check();
@@ -124,14 +124,20 @@ test.describe("Maintenance Plans list", () => {
     await page.goto("/maintenance-plans?view=upcoming");
     const rows = page.getByRole("table", { name: "Upcoming service" }).locator("tbody tr");
     await expect(rows).toHaveCount(3);
+    // Sarah's cooling visit is already scheduled (BK-1048): it shows its booking and offers no second one.
     const sarah = rows.filter({ hasText: "Sarah Mitchell" });
     await expect(sarah).toContainText("Comfort Care");
     await expect(sarah).toContainText("Cooling maintenance");
-    await expect(sarah).toContainText("Due November 2024");
-    await expect(sarah.getByRole("button", { name: "Schedule visit for Sarah Mitchell" })).toBeVisible();
+    await expect(sarah).toContainText("Booking #BK-1048");
+    await expect(sarah.getByRole("button", { name: /^Schedule visit/ })).toHaveCount(0);
+    // The others are still to schedule.
+    await expect(rows.filter({ hasText: "David Chen" }).getByRole("button", { name: "Schedule visit for David Chen" })).toBeVisible();
 
     await page.getByLabel("Booking status", { exact: true }).selectOption("scheduled");
-    await expect(page.getByText("No visits match your filters.")).toBeVisible();
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText("Sarah Mitchell");
+    await page.getByLabel("Booking status", { exact: true }).selectOption("needs-scheduling");
+    await expect(rows.filter({ hasText: "Sarah Mitchell" })).toHaveCount(0);
   });
 
   test("the empty state offers one primary action and no promotional cards", async ({ page }) => {
@@ -166,13 +172,15 @@ test.describe("Maintenance plan detail", () => {
     for (const other of ["Furnace Safety", "AC Repair", "Heat Pump", "Emergency", "Mini-Split", "Duct"]) await expect(coverage).not.toContainText(other);
 
     const history = page.getByRole("table", { name: "Plan service history" });
-    // History lists visits that happened or are booked; the visit still to schedule is the upcoming service.
-    await expect(history.locator("tbody tr")).toHaveCount(1);
+    // History lists visits that happened or are booked: the May heating visit, and the cooling visit already scheduled as BK-1048.
+    await expect(history.locator("tbody tr")).toHaveCount(2);
     await expect(history).toContainText("Heating maintenance");
     await expect(history).toContainText("Completed");
+    await expect(history).toContainText("BK-1048");
+    await expect(history).toContainText("Scheduled");
     const upcoming = page.getByRole("region", { name: "Upcoming included service" });
     await expect(upcoming).toContainText("Cooling maintenance");
-    await expect(upcoming).toContainText("Due November 2024");
+    await expect(upcoming).toContainText("BK-1048");
 
     await page.getByRole("link", { name: "Back to Maintenance Plans" }).click();
     await expect(page).toHaveURL("/maintenance-plans");
@@ -293,7 +301,7 @@ test.describe("Create maintenance plan", () => {
 
     // Nothing else was created: Bookings still shows the approved lists.
     await primaryNav(page).getByRole("link", { name: /^Bookings/ }).click();
-    await expect(page.getByRole("tablist", { name: "Booking lists" }).getByRole("tab")).toHaveText([/^Requests\s*2$/, /^Upcoming\s*5$/, /^Past\s*6$/, /^Cancelled\s*0$/]);
+    await expect(page.getByRole("tablist", { name: "Booking lists" }).getByRole("tab")).toHaveText([/^Requests\s*2$/, /^Upcoming\s*6$/, /^Past\s*6$/, /^Cancelled\s*0$/]);
   });
 
   test("a created plan is stored: it survives a reload; View plan opens it", async ({ page }) => {
@@ -328,33 +336,24 @@ test.describe("Create maintenance plan", () => {
 });
 
 test.describe("Schedule an included visit", () => {
-  test("creates BK-1048 for Sarah's Cooling visit and shows it in Bookings, Schedule and the plan", async ({ page }) => {
+  /** A new plan for Elena Rodriguez, then straight into scheduling its first (Cooling) visit. */
+  async function startFirstVisit(page: Page) {
+    await page.goto("/maintenance-plans?new=1");
+    const planWizard = await fillPlan(page, "Peace of Mind");
+    await planWizard.getByRole("button", { name: "Create plan" }).click();
+    await page.getByRole("dialog", { name: "Maintenance plan created" }).getByRole("button", { name: "Schedule first visit" }).click();
+    return page.getByRole("dialog", { name: "Schedule included visit" });
+  }
+
+  test("Sarah's cooling visit is already BK-1048: the plan, Bookings and the Schedule all show it, and no second booking is offered", async ({ page }) => {
     await page.goto("/maintenance-plans/plan-sarah-comfort-care");
-    await page.getByRole("button", { name: "Schedule visit" }).first().click();
-    const wizard = page.getByRole("dialog", { name: "Schedule included visit" });
-    await expect(wizard).toContainText("Cooling maintenance");
-    await expect(wizard).toContainText("Visit 2 of 2");
-    await expect(wizard).toContainText("No new Invoice or Payment is created");
-    await fillVisit(page);
-    await expect(wizard).toContainText("Nov 19, 2024");
-    await expect(wizard).toContainText("10:00 AM – 12:00 PM");
-    await expect(wizard).toContainText("Marcus Vance (Technician)");
-    await expect(wizard).toContainText("Cooling maintenance");
-    await wizard.getByRole("button", { name: "Create booking" }).click();
-
-    const done = page.getByRole("dialog", { name: "Maintenance visit scheduled" });
-    await expect(done).toContainText("Booking #BK-1048 confirmed");
-    await expect(done).toContainText("2 of 2");
-    await expect(done).toContainText("No Job, Invoice or Payment is created");
-    await done.getByRole("button", { name: "Close", exact: true }).click();
-
-    // The plan now points at the booking.
     const history = page.getByRole("table", { name: "Plan service history" });
     await expect(history).toContainText("BK-1048");
     await expect(history).toContainText("Scheduled");
     await expect(page.getByRole("region", { name: "Upcoming included service" })).toContainText("BK-1048");
+    await expect(page.getByRole("button", { name: "Schedule visit" })).toHaveCount(0);
 
-    // Bookings: one more upcoming booking, labelled as the plan's visit.
+    // Bookings: an upcoming booking, labelled as the plan's visit.
     await primaryNav(page).getByRole("link", { name: /^Bookings/ }).click();
     await expect(page.getByRole("tablist", { name: "Booking lists" }).getByRole("tab")).toHaveText([/^Requests\s*2$/, /^Upcoming\s*6$/, /^Past\s*6$/, /^Cancelled\s*0$/]);
     await tab(page, "Upcoming").click();
@@ -382,16 +381,48 @@ test.describe("Schedule an included visit", () => {
     await expect(event).toContainText("Tue, Nov 19 · 10:00 AM – 12:00 PM");
   });
 
+  test("scheduling a plan's due visit creates the next booking for that plan's customer, and shows it in Bookings, Schedule and the plan", async ({ page }) => {
+    const wizard = await startFirstVisit(page);
+    await expect(wizard).toContainText("Cooling maintenance");
+    await expect(wizard).toContainText("Visit 1 of 2");
+    await expect(wizard).toContainText("No new Invoice or Payment is created");
+    await fillVisit(page);
+    await expect(wizard).toContainText("Nov 20, 2024");
+    await expect(wizard).toContainText("10:00 AM – 12:00 PM");
+    await expect(wizard).toContainText("Marcus Vance (Technician)");
+    await wizard.getByRole("button", { name: "Create booking" }).click();
+
+    // The next ordinary booking number, never BK-1048 (Sarah's visit already has it).
+    const done = page.getByRole("dialog", { name: "Maintenance visit scheduled" });
+    await expect(done).toContainText("Booking #BK-1043 confirmed");
+    await expect(done).toContainText("1 of 2");
+    await expect(done).toContainText("No Job, Invoice or Payment is created");
+    await done.getByRole("link", { name: "View booking" }).click();
+    await expect(page).toHaveURL(/booking=BK-1043/);
+    const drawer = page.getByRole("complementary", { name: "Booking details" });
+    await expect(drawer).toContainText("Elena Rodriguez");
+    await expect(drawer).toContainText("Marcus Vance");
+    await expect(drawer.getByRole("link", { name: /Peace of Mind/ })).toBeVisible();
+    await expect(drawer.getByRole("link", { name: /View job/ })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: /^Upcoming/ })).toContainText("7");
+
+    await drawer.getByRole("link", { name: "View in schedule" }).click();
+    await expect(page).toHaveURL(/\/schedule\?view=day&date=2024-11-20&event=BK-1043/);
+
+    await page.goto("/maintenance-plans/plan-elena-rodriguez-peace-of-mind");
+    await expect(page.getByRole("table", { name: "Plan service history" })).toContainText("BK-1043");
+    await expect(page.getByRole("table", { name: "Plan service history" })).toContainText("Scheduled");
+  });
+
   test("scheduling an included visit leaves Jobs, Quotes, Invoices and Payments exactly as approved", async ({ page }) => {
-    await page.goto("/maintenance-plans/plan-sarah-comfort-care");
-    await page.getByRole("button", { name: "Schedule visit" }).first().click();
-    const wizard = await fillVisit(page);
+    const wizard = await startFirstVisit(page);
+    await fillVisit(page);
     await wizard.getByRole("button", { name: "Create booking" }).click();
     await page.getByRole("dialog", { name: "Maintenance visit scheduled" }).getByRole("button", { name: "Close", exact: true }).click();
 
     await primaryNav(page).getByRole("link", { name: /^Jobs/ }).click();
-    await expect(main(page)).not.toContainText("BK-1048");
-    await expect(main(page)).not.toContainText("Nov 19");
+    await expect(main(page)).not.toContainText("BK-1043");
+    await expect(main(page)).not.toContainText("Nov 20");
 
     await primaryNav(page).getByRole("link", { name: /^Overview/ }).click();
     const metrics = page.getByRole("region", { name: "Key metrics" });
@@ -401,31 +432,28 @@ test.describe("Schedule an included visit", () => {
 
     await primaryNav(page).getByRole("link", { name: /^Payments/ }).click();
     await expect(main(page)).toContainText("$2,130");
-    await expect(main(page)).not.toContainText("Comfort Care");
+    await expect(main(page)).not.toContainText("Peace of Mind");
   });
 
   test("the visit date must fall inside the visit's target window", async ({ page }) => {
-    await page.goto("/maintenance-plans/plan-sarah-comfort-care");
+    // Arthur Pendleton's second visit is due in December 2024. It names no coverage, so the Service is chosen first.
+    await page.goto("/maintenance-plans/plan-arthur-seasonal-maintenance");
     await page.getByRole("button", { name: "Schedule visit" }).first().click();
     const wizard = page.getByRole("dialog", { name: "Schedule included visit" });
+    await wizard.getByLabel(/^Service for this visit/).selectOption("furnace-safety-inspection");
     await wizard.getByRole("button", { name: /^Next: Date & time/ }).click();
     await wizard.getByRole("button", { name: /^Next: Assignment/ }).click();
     await expect(wizard.getByText("Select a service date.")).toBeVisible();
-    await wizard.getByLabel("Service date").fill("2024-12-10");
+    await wizard.getByLabel("Service date").fill("2024-11-10");
     await wizard.getByRole("button", { name: /^Next: Assignment/ }).click();
-    await expect(wizard.getByText(/Select a date between Nov 1, 2024 and Nov 30, 2024/)).toBeVisible();
+    await expect(wizard.getByText(/Select a date between Dec 1, 2024 and Dec 31, 2024/)).toBeVisible();
     // A closed day offers no arrival windows.
-    await wizard.getByLabel("Service date").fill("2024-11-17");
+    await wizard.getByLabel("Service date").fill("2024-12-08");
     await expect(wizard.getByText("The business is closed on Suns.")).toBeVisible();
   });
 
   test("cancelling the booking reopens the visit for scheduling", async ({ page }) => {
-    await page.goto("/maintenance-plans/plan-sarah-comfort-care");
-    await page.getByRole("button", { name: "Schedule visit" }).first().click();
-    const wizard = await fillVisit(page);
-    await wizard.getByRole("button", { name: "Create booking" }).click();
-    await page.getByRole("dialog", { name: "Maintenance visit scheduled" }).getByRole("link", { name: "View booking" }).click();
-    await expect(page).toHaveURL(/booking=BK-1048/);
+    await page.goto("/bookings?tab=upcoming&booking=BK-1048");
     await page.getByRole("complementary", { name: "Booking details" }).getByRole("button", { name: "Cancel booking" }).click();
     const dialog = page.getByRole("dialog", { name: "Cancel this booking?" });
     await dialog.getByLabel("Reason").fill("Customer asked to rebook.");

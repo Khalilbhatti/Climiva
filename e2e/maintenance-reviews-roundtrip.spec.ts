@@ -11,6 +11,7 @@ import { Pool } from "pg";
 import type { MaintenancePlan } from "../src/data/maintenance-plans";
 import type { Review } from "../src/data/reviews";
 import { loadMaintenance } from "../src/db/maint-queries";
+import { loadOperations } from "../src/db/ops-queries";
 import { loadReviews } from "../src/db/review-queries";
 import { stableId } from "../src/db/stable-id";
 import { withTenant } from "../src/db/tenant";
@@ -130,8 +131,25 @@ test.describe("identity and repeatability", () => {
     expect((await admin.query("select booking_id, count(*)::int as n from maintenance_plan_visits where booking_id is not null group by booking_id having count(*) > 1")).rows).toEqual([]);
   });
 
-  test("the sample business's Booking BK-1048 is not created by seeding, however many times it runs", async () => {
-    expect((await admin.query("select count(*)::int as n from bookings where organization_id = $1 and number = 1048", [ids.apex])).rows[0].n).toBe(0);
-    expect((await admin.query("select status, booking_id from maintenance_plan_visits where organization_id = $1 and ref = 'plan-sarah-comfort-care-v2'", [ids.apex])).rows[0]).toEqual({ status: "due", booking_id: null });
+  test("the sample business has exactly one BK-1048, however many times the seed runs, and visit 2 points at it", async () => {
+    const check = async () => {
+      expect((await admin.query("select count(*)::int as n from bookings where organization_id = $1 and number = 1048", [ids.apex])).rows[0].n).toBe(1);
+      const visit = (await admin.query("select v.status, b.number from maintenance_plan_visits v join bookings b on b.id = v.booking_id where v.organization_id = $1 and v.ref = 'plan-sarah-comfort-care-v2'", [ids.apex])).rows;
+      expect(visit).toEqual([{ status: "scheduled", number: 1048 }]);
+      expect((await admin.query("select next_value from organization_sequences where organization_id = $1 and kind = 'booking'", [ids.apex])).rows[0].next_value).toBe(1043);
+    };
+    await check();
+    await seedDevelopmentData();
+    await check();
+  });
+
+  test("a booking's plan label is the visit's: the bookings read back with the planVisit their visit gives them, and the seeds say the same", async () => {
+    const apexBookings = await withTenant({ userId: ids.alex, organizationId: ids.apex }, (tx) => loadOperations(tx, ids.apex, "America/Chicago"));
+    expect(apexBookings.bookings.filter((booking) => booking.planVisit).map((booking) => [booking.id, booking.planVisit])).toEqual([["BK-1048", { planId: "plan-sarah-comfort-care", visitId: "plan-sarah-comfort-care-v2" }]]);
+    const seeded = (plans: readonly { id: string; visits: readonly { id: string; bookingId?: string }[] }[]) =>
+      plans.flatMap((plan) => plan.visits.filter((visit) => visit.bookingId).map((visit) => [visit.bookingId, { planId: plan.id, visitId: visit.id }]));
+    expect(seeded(PLANS)).toEqual(apexBookings.bookings.filter((booking) => booking.planVisit).map((booking) => [booking.id, booking.planVisit]));
+    const northstarBookings = await withTenant({ userId: ids.taylor, organizationId: ids.northstar }, (tx) => loadOperations(tx, ids.northstar, "America/Denver"));
+    expect(seeded(NORTHSTAR_MAINTENANCE.plans)).toEqual(northstarBookings.bookings.filter((booking) => booking.planVisit).map((booking) => [booking.id, booking.planVisit]));
   });
 });

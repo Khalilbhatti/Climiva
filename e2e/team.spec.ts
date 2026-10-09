@@ -304,7 +304,7 @@ test.describe("Schedule & availability", () => {
     await expect(page.getByRole("checkbox", { name: "Sunday" })).not.toBeChecked();
 
     // A heads-up about work already booked, but no calendar or events on this page.
-    await expect(page.getByText("Upcoming assignment check · 1 active job")).toBeVisible();
+    await expect(page.getByText("Upcoming assignment check · 2 active jobs")).toBeVisible();
     await expect(page.locator("[id^='event-']")).toHaveCount(0);
     await expect(page.getByText("Annual Vacation")).toBeVisible();
     await expect(page.getByText("Oct 14, 2024 – Oct 18, 2024")).toBeVisible();
@@ -489,8 +489,10 @@ test.describe("Deactivate member", () => {
     await expect(dialog).toContainText("Unchanged");
     await expect(dialog).toContainText("Historical Jobs & activity");
     await expect(dialog).toContainText("Preserved");
-    await expect(dialog).toContainText("Marcus has 1 upcoming Job assignment");
+    // JB-201, and Sarah's scheduled maintenance visit (BK-1048, a booking with no job yet).
+    await expect(dialog).toContainText("Marcus has 2 upcoming Job assignments");
     await expect(dialog).toContainText("#JB-201 · David Chen");
+    await expect(dialog).toContainText("#BK-1048 · Sarah Mitchell");
     await expect(dialog).toContainText("Climvia does not automatically reassign scheduled Jobs");
     await expect(dialog.getByRole("link", { name: "View job #JB-201" })).toHaveAttribute("href", "/jobs/JB-201");
     await expect(dialog.getByRole("button", { name: "Deactivate member" })).toBeDisabled();
@@ -500,6 +502,10 @@ test.describe("Deactivate member", () => {
     await expect(assign.getByRole("radio", { name: /^Marcus Vance/ })).toHaveCount(0); // not offered to himself
     await assign.getByRole("radio", { name: /^Samira Patel/ }).check();
     await assign.getByRole("button", { name: "Save assignment" }).click();
+    await expect(dialog.getByRole("button", { name: "Deactivate member" })).toBeDisabled(); // BK-1048 is still his
+    await dialog.getByRole("button", { name: "Reassign BK-1048" }).click();
+    await page.getByRole("dialog", { name: "Assign technician" }).getByRole("radio", { name: /^Alex Morgan/ }).check();
+    await page.getByRole("dialog", { name: "Assign technician" }).getByRole("button", { name: "Save assignment" }).click();
 
     await expect(dialog).toContainText("No upcoming Job assignments");
     await expect(dialog.getByRole("button", { name: "Deactivate member" })).toBeEnabled();
@@ -515,6 +521,9 @@ test.describe("Deactivate member", () => {
     const dialog = page.getByRole("dialog", { name: "Deactivate Marcus Vance?" });
     await dialog.getByRole("button", { name: "Reassign JB-201" }).click();
     await page.getByRole("dialog", { name: "Assign technician" }).getByRole("radio", { name: /^Samira Patel/ }).check();
+    await page.getByRole("dialog", { name: "Assign technician" }).getByRole("button", { name: "Save assignment" }).click();
+    await dialog.getByRole("button", { name: "Reassign BK-1048" }).click();
+    await page.getByRole("dialog", { name: "Assign technician" }).getByRole("radio", { name: /^Alex Morgan/ }).check();
     await page.getByRole("dialog", { name: "Assign technician" }).getByRole("button", { name: "Save assignment" }).click();
     await dialog.getByRole("button", { name: "Deactivate member" }).click();
 

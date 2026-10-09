@@ -166,22 +166,11 @@ test.describe("recording #PAY-1009 reaches Payments, the invoice, the Overview a
   });
 });
 
-test.describe("scheduling Sarah's included visit reaches Plans, Bookings and Schedule", () => {
-  test("#BK-1048 is one booking everywhere, with no Job, Invoice or Payment", async ({ page }) => {
+test.describe("Sarah's scheduled included visit reaches Plans, Bookings and Schedule", () => {
+  test("#BK-1048 is one booking everywhere, with no Job, Invoice or Payment, and it is still there after a reload", async ({ page }) => {
     await page.goto("/maintenance-plans/plan-sarah-comfort-care");
-    await page.getByRole("button", { name: "Schedule visit" }).first().click();
-    const wizard = page.getByRole("dialog", { name: "Schedule included visit" });
-    await wizard.getByRole("button", { name: /^Next: Date & time/ }).click();
-    await wizard.getByLabel("Service date").fill("2024-11-19");
-    await wizard.getByRole("radio", { name: /^Midday/ }).check();
-    await wizard.getByRole("button", { name: /^Next: Assignment/ }).click();
-    await wizard.getByRole("radio", { name: /^Marcus Vance/ }).check();
-    await wizard.getByRole("button", { name: /^Next: Review/ }).click();
-    await wizard.getByRole("button", { name: "Create booking" }).click();
-    const done = page.getByRole("dialog", { name: "Maintenance visit scheduled" });
-    await expect(done).toContainText("Booking #BK-1048 confirmed");
-    await done.getByRole("button", { name: "Close", exact: true }).click();
     await expect(page.getByRole("table", { name: "Plan service history" })).toContainText("BK-1048");
+    await expect(page.getByRole("button", { name: "Schedule visit" })).toHaveCount(0);
 
     await go(page, "/bookings?tab=upcoming&booking=BK-1048");
     const drawer = page.getByRole("complementary", { name: "Booking details" });
@@ -197,9 +186,8 @@ test.describe("scheduling Sarah's included visit reaches Plans, Bookings and Sch
     await go(page, "/payments");
     await expect(main(page)).toContainText("$2,130.00");
 
-    // The booking is stored: a reload still has it, on the plan and in Bookings.
+    // The booking is stored, so a reload still has it, on the plan and in Bookings.
     await page.reload();
-    await expect(main(page)).not.toContainText("BK-1048");
     await go(page, "/bookings?tab=upcoming&booking=BK-1048");
     await expect(page.getByRole("complementary", { name: "Booking details" })).toContainText("Marcus Vance");
     await go(page, "/maintenance-plans/plan-sarah-comfort-care");

@@ -343,7 +343,7 @@ test.describe("Start and complete a job", () => {
     await expect(page).toHaveURL(/\/bookings\?tab=past&booking=BK-1039$/);
     await expect(page.getByRole("complementary", { name: "Booking details" })).toContainText("Completed");
     await expect(tab(page, "Past")).toContainText("7");
-    await expect(tab(page, "Upcoming")).toContainText("4");
+    await expect(tab(page, "Upcoming")).toContainText("5");
 
     // Schedule shows the work as completed.
     await primaryNav(page).getByRole("link", { name: "Schedule" }).click();

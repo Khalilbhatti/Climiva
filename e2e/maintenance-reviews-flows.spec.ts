@@ -27,27 +27,16 @@ const closeDialog = (dialog: Locator) => dialog.getByRole("button", { name: "Clo
 const APPROVED_REVIEW_TABS = [/^All reviews\s*12$/, /^Awaiting reply\s*3$/, /^Responded\s*9$/];
 const AFTER_REPLY_TABS = [/^All reviews\s*12$/, /^Awaiting reply\s*2$/, /^Responded\s*10$/];
 
-/** Walks Schedule included visit for Sarah's Cooling visit to Nov 19, 10:00 AM – 12:00 PM with Marcus Vance, ending on Review. */
-async function fillVisit(page: Page) {
+/** Walks Schedule included visit for a Cooling visit to 10:00 AM – 12:00 PM with Marcus Vance, ending on Review. */
+async function fillVisit(page: Page, date = "2024-11-20") {
   const wizard = page.getByRole("dialog", { name: "Schedule included visit" });
   await wizard.getByRole("button", { name: /^Next: Date & time/ }).click();
-  await wizard.getByLabel("Service date").fill("2024-11-19");
+  await wizard.getByLabel("Service date").fill(date);
   await wizard.getByRole("radio", { name: /^Midday/ }).check();
   await wizard.getByRole("button", { name: /^Next: Assignment/ }).click();
   await wizard.getByRole("radio", { name: /^Marcus Vance/ }).check();
   await wizard.getByRole("button", { name: /^Next: Review/ }).click();
   return wizard;
-}
-
-/** Schedule Sarah's included visit through the screens. Resolves with the confirmation dialog. */
-async function scheduleSarah(page: Page) {
-  await page.goto("/maintenance-plans/plan-sarah-comfort-care");
-  await page.getByRole("button", { name: "Schedule visit" }).first().click();
-  const wizard = await fillVisit(page);
-  await wizard.getByRole("button", { name: "Create booking" }).click();
-  const done = page.getByRole("dialog", { name: "Maintenance visit scheduled" });
-  await expect(done).toContainText("Booking #BK-1048 confirmed");
-  return done;
 }
 
 /** Create maintenance plan for Elena Rodriguez through the screens, stopping on Review. */
@@ -69,6 +58,17 @@ async function createElenaPlan(page: Page, name = "Peace of Mind") {
   await wizard.getByRole("button", { name: "Create plan" }).click();
   const done = page.getByRole("dialog", { name: "Maintenance plan created" });
   await expect(done).toBeVisible();
+  return done;
+}
+
+/** A new plan for Elena Rodriguez, then its first (Cooling) visit scheduled: the next ordinary booking. Resolves with the confirmation dialog. */
+async function scheduleElena(page: Page, name = "Peace of Mind") {
+  const created = await createElenaPlan(page, name);
+  await created.getByRole("button", { name: "Schedule first visit" }).click();
+  const wizard = await fillVisit(page);
+  await wizard.getByRole("button", { name: "Create booking" }).click();
+  const done = page.getByRole("dialog", { name: "Maintenance visit scheduled" });
+  await expect(done).toContainText(/Booking #BK-\d+ confirmed/);
   return done;
 }
 
@@ -147,17 +147,11 @@ test.describe("Sarah Mitchell's Comfort Care plan comes from the database", () =
   });
 });
 
-/* ───────────────────────── scheduling creates BK-1048 ───────────────────────── */
+/* ───────────────────────── BK-1048 is part of the baseline ───────────────────────── */
 
-test.describe("scheduling the included visit makes the one real booking BK-1048", () => {
+test.describe("Sarah's second visit is already the one real booking BK-1048 after a clean seed", () => {
   test("it is stored: one booking for Sarah, Nov 19 10:00 AM to 12:00 PM with Marcus Vance, confirmed, linked to visit 2, and no Job, Invoice, Quote or Payment", async ({ page, db, workerTenant }) => {
     const org = workerTenant.organizationId;
-    const before = await moneyCounts(db, org);
-    expect((await db.query("select count(*)::int as n from bookings where organization_id = $1 and number = 1048", [org])).rows[0].n).toBe(0);
-
-    const done = await scheduleSarah(page);
-    await closeDialog(done);
-
     const booking = await one(
       db,
       `select b.number, b.status, b.source, b.service_date::text as day, b.start_time::text as start, b.end_time::text as ending, c.name as customer, p.slug as property, m.name as technician, s.name as service,
@@ -181,22 +175,21 @@ test.describe("scheduling the included visit makes the one real booking BK-1048"
       jobs: 0,
     });
     expect(await visitRow(db, org, "plan-sarah-comfort-care-v2")).toMatchObject({ status: "scheduled", booking: 1048 });
-    // The first visit is untouched, and nothing financial or operational came with the booking but the booking itself.
+    // The first visit is untouched, and exactly one booking is numbered 1048.
     expect(await visitRow(db, org, "plan-sarah-comfort-care-v1")).toMatchObject({ status: "completed", booking: null, completed_on: "2024-05-22" });
-    expect(await moneyCounts(db, org)).toEqual({ ...before, jobs: before.jobs });
-    expect((await db.query("select count(*)::int as n from bookings where organization_id = $1", [org])).rows[0].n).toBe(
-      (await db.query("select count(*)::int as n from bookings where organization_id = $1 and number <> 1048", [org])).rows[0].n + 1,
-    );
+    expect((await db.query("select count(*)::int as n from bookings where organization_id = $1 and number = 1048", [org])).rows[0].n).toBe(1);
+    expect((await db.query("select count(*)::int as n from bookings b join maintenance_plan_visits v on v.booking_id = b.id where b.organization_id = $1 and b.number = 1048", [org])).rows[0].n).toBe(1);
     // The plan's price is not money received: nothing in the money totals moved.
     await page.goto("/payments");
     await expect(main(page)).toContainText("$2,130.00");
   });
 
-  test("it is still there after a reload and in a fresh session, on the plan, in Bookings and on the customer's page", async ({ page, browser, clientAddresses, workerTenant }) => {
-    await closeDialog(await scheduleSarah(page));
+  test("it is there after a reload and in a fresh session, on the plan, in Bookings and on the customer's page, with no second Schedule visit offered", async ({ page, browser, clientAddresses, workerTenant }) => {
+    await page.goto("/maintenance-plans/plan-sarah-comfort-care");
     await page.reload();
     await expect(page.getByRole("table", { name: "Plan service history" })).toContainText("BK-1048");
     await expect(page.getByRole("region", { name: "Upcoming included service" })).toContainText("BK-1048");
+    await expect(page.getByRole("button", { name: "Schedule visit" })).toHaveCount(0);
 
     const fresh = await browser.newContext({ baseURL: ORIGIN, storageState: workerTenant.storageState, extraHTTPHeaders: { "x-forwarded-for": clientAddresses() } });
     const other = await fresh.newPage();
@@ -209,48 +202,71 @@ test.describe("scheduling the included visit makes the one real booking BK-1048"
     await expect(other.getByRole("region", { name: "Maintenance agreement" })).toContainText("BK-1048");
     await other.goto("/maintenance-plans/plan-sarah-comfort-care");
     await expect(other.getByRole("table", { name: "Plan service history" })).toContainText("BK-1048");
+    await expect(other.getByRole("button", { name: "Schedule visit" })).toHaveCount(0);
     await fresh.close();
   });
 
-  test("there is only one booking: Bookings lists a single Comfort Care visit, and a second attempt is refused", async ({ page, db, workerTenant }) => {
-    await closeDialog(await scheduleSarah(page));
+  test("there is only one booking: Bookings lists a single Comfort Care visit, and the server refuses a second one for the visit", async ({ page, db, workerTenant }) => {
+    const org = workerTenant.organizationId;
     await page.goto("/bookings?tab=upcoming");
     await expect(page.getByRole("table", { name: "Upcoming bookings" }).locator("tbody tr", { hasText: "Comfort Care" })).toHaveCount(1);
 
-    // The visit is no longer offered...
-    await page.goto("/maintenance-plans/plan-sarah-comfort-care");
-    await expect(page.getByRole("button", { name: "Schedule visit" })).toHaveCount(0);
-    // ...and the server refuses it when it is asked anyway.
-    await page.goto("/maintenance-plans/plan-sarah-comfort-care");
-    expect((await db.query("select count(*)::int as n from bookings where organization_id = $1 and number >= 1048", [workerTenant.organizationId])).rows[0].n).toBe(1);
-  });
-
-  test("two people scheduling the same visit at once get one booking between them", async ({ page, db, workerTenant }) => {
-    const org = workerTenant.organizationId;
-    // Capture a real scheduling call from a plan of Elena's (the visit is Cooling, like Sarah's), then replay it at Sarah's visit, six at a time.
+    // A real scheduling call (for a new plan of Elena's), aimed at Sarah's already scheduled visit.
     await closeDialog(await createElenaPlan(page, "Peace of Mind"));
     await page.goto("/maintenance-plans/plan-elena-rodriguez-peace-of-mind");
     await page.getByRole("button", { name: "Schedule visit" }).first().click();
     const wizard = await fillVisit(page);
     const captured = await captureAction(page, () => wizard.getByRole("button", { name: "Create booking" }).click());
     await expect(page.getByRole("dialog", { name: "Maintenance visit scheduled" })).toBeVisible();
+    const bookings = await count(db, "bookings", org);
+    const text = await (await replay(page.request, captured, withArguments(captured, (args) => ["plan-sarah-comfort-care", "plan-sarah-comfort-care-v2", args[2]]))).text();
+    expect(text).toContain("That visit already has a booking");
+    expect(await count(db, "bookings", org)).toBe(bookings);
+    expect((await db.query("select count(*)::int as n from bookings where organization_id = $1 and number = 1048", [org])).rows[0].n).toBe(1);
+    expect(await visitRow(db, org, "plan-sarah-comfort-care-v2")).toMatchObject({ status: "scheduled", booking: 1048 });
+  });
 
-    const aimed = withArguments(captured, (args) => ["plan-sarah-comfort-care", "plan-sarah-comfort-care-v2", { ...(args[2] as object) }]);
-    const owner = page.request;
-    const answers = await Promise.all(Array.from({ length: 6 }, () => replay(owner, captured, aimed).then((response) => response.text())));
+  test("the booking counter never hands out 1048 again: with it at 1046 the next bookings are 1046, 1047, then 1049", async ({ page, db, workerTenant }) => {
+    const org = workerTenant.organizationId;
+    await db.query("update organization_sequences set next_value = 1046 where organization_id = $1 and kind = 'booking'", [org]);
+    const numbers: number[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      await closeDialog(await scheduleElena(page, `Plan ${index}`));
+      numbers.push((await one(db, "select max(number)::int as n from bookings where organization_id = $1 and source = 'Maintenance plan' and number <> 1048", [org])).n);
+    }
+    expect(numbers).toEqual([1046, 1047, 1049]);
+    expect((await db.query("select count(*)::int as n from bookings where organization_id = $1 and number = 1048", [org])).rows[0].n).toBe(1);
+  });
+
+  test("two people scheduling the same due visit at once get one booking between them", async ({ page, db, workerTenant }) => {
+    const org = workerTenant.organizationId;
+    // Capture a real scheduling call from one plan of Elena's, then replay it at the first visit of a second plan, six at a time.
+    await closeDialog(await scheduleElena(page, "Peace of Mind"));
+    await closeDialog(await createElenaPlan(page, "Second Plan"));
+    const before = await count(db, "bookings", org);
+    const captured = await (async () => {
+      await page.goto("/maintenance-plans/plan-elena-rodriguez-second-plan");
+      await page.getByRole("button", { name: "Schedule visit" }).first().click();
+      const wizard = await fillVisit(page, "2024-11-21");
+      return captureAction(page, () => wizard.getByRole("button", { name: "Create booking" }).click());
+    })();
+    await expect(page.getByRole("dialog", { name: "Maintenance visit scheduled" })).toBeVisible();
+    expect(await count(db, "bookings", org)).toBe(before + 1);
+
+    await closeDialog(await createElenaPlan(page, "Third Plan"));
+    const aimed = withArguments(captured, (args) => ["plan-elena-rodriguez-third-plan", "plan-elena-rodriguez-third-plan-v1", { ...(args[2] as object) }]);
+    const answers = await Promise.all(Array.from({ length: 6 }, () => replay(page.request, captured, aimed).then((response) => response.text())));
     const scheduled = answers.filter((text) => /"ok":true/.test(text));
     expect(scheduled.length, answers.join("\n---\n").slice(0, 2000)).toBe(1);
     for (const text of answers.filter((value) => !scheduled.includes(value))) expect(text).toMatch(/already has a booking|same moment|next included visit/);
-
-    expect((await db.query("select count(*)::int as n from bookings b join customers c on c.id = b.customer_id where b.organization_id = $1 and c.slug = 'sarah-mitchell' and b.source = 'Maintenance plan'", [org])).rows[0].n).toBe(1);
+    expect(await count(db, "bookings", org)).toBe(before + 2);
+    expect(await visitRow(db, org, "plan-elena-rodriguez-third-plan-v1")).toMatchObject({ status: "scheduled" });
     expect(await visitRow(db, org, "plan-sarah-comfort-care-v2")).toMatchObject({ status: "scheduled", booking: 1048 });
-    expect((await db.query("select count(*)::int as n from maintenance_plan_visits where organization_id = $1 and booking_id is not null", [org])).rows[0].n).toBe(2);
   });
 
-  test("cancelling the booking reopens the visit; booking it again makes a new booking and keeps the cancelled one as history", async ({ page, db, workerTenant }) => {
+  test("cancelling BK-1048 reopens the visit; booking it again makes a new booking and keeps the cancelled one as history", async ({ page, db, workerTenant }) => {
     const org = workerTenant.organizationId;
-    const done = await scheduleSarah(page);
-    await done.getByRole("link", { name: "View booking" }).click();
+    await page.goto("/bookings?tab=upcoming&booking=BK-1048");
     await page.getByRole("complementary", { name: "Booking details" }).getByRole("button", { name: "Cancel booking" }).click();
     const dialog = page.getByRole("dialog", { name: "Cancel this booking?" });
     await dialog.getByLabel("Reason").fill("Customer asked to rebook.");
@@ -263,22 +279,22 @@ test.describe("scheduling the included visit makes the one real booking BK-1048"
 
     await page.goto("/maintenance-plans/plan-sarah-comfort-care");
     await page.getByRole("button", { name: "Schedule visit" }).first().click();
-    const wizard = await fillVisit(page);
+    const wizard = await fillVisit(page, "2024-11-19");
     await wizard.getByRole("button", { name: "Create booking" }).click();
     const again = page.getByRole("dialog", { name: "Maintenance visit scheduled" });
-    await expect(again).toBeVisible();
+    await expect(again).toContainText("Booking #BK-1043 confirmed");
     const rebooked = await visitRow(db, org, "plan-sarah-comfort-care-v2");
     expect(rebooked.status).toBe("scheduled");
-    expect(rebooked.booking).not.toBe(1048);
+    expect(rebooked.booking).toBe(1043);
     // Exactly one live booking for the visit, and the cancelled one is still in the history of bookings.
-    expect((await db.query("select count(*)::int as n from bookings b join maintenance_plan_visits v on v.booking_id = b.id where b.organization_id = $1 and b.status <> 'cancelled'", [org])).rows[0].n).toBe(1);
+    expect((await db.query("select count(*)::int as n from bookings b join maintenance_plan_visits v on v.booking_id = b.id where b.organization_id = $1 and b.status <> 'cancelled' and v.ref = 'plan-sarah-comfort-care-v2'", [org])).rows[0].n).toBe(1);
     expect((await one(db, "select status from bookings where organization_id = $1 and number = 1048", [org])).status).toBe("cancelled");
   });
 
-  test("scheduling leaves Jobs, Quotes, Invoices and Payments exactly as approved, and no review or request appears", async ({ page, db, workerTenant }) => {
+  test("scheduling a due visit leaves Jobs, Quotes, Invoices and Payments exactly as approved, and no review or request appears", async ({ page, db, workerTenant }) => {
     const org = workerTenant.organizationId;
     const before = { ...(await moneyCounts(db, org)), reviews: await count(db, "reviews", org), requests: await count(db, "review_requests", org) };
-    await closeDialog(await scheduleSarah(page));
+    await closeDialog(await scheduleElena(page));
     expect({ ...(await moneyCounts(db, org)), reviews: await count(db, "reviews", org), requests: await count(db, "review_requests", org) }).toEqual(before);
   });
 });
@@ -563,6 +579,8 @@ test.describe("the server decides who may change plans and reviews, and what", (
     await expect(main(page).getByRole("button", { name: /^Schedule visit/ })).toHaveCount(0);
     await page.goto("/maintenance-plans/plan-sarah-comfort-care");
     await expect(page.getByRole("heading", { level: 1, name: "Comfort Care" })).toBeVisible();
+    await page.goto("/maintenance-plans/plan-david-seasonal-maintenance");
+    await expect(page.getByRole("heading", { level: 1, name: "Seasonal Maintenance" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Schedule visit" })).toHaveCount(0);
     await page.goto("/maintenance-plans?new=1");
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -640,7 +658,8 @@ test.describe("the server decides who may change plans and reviews, and what", (
   });
 
   test("another business's owner cannot reach Apex's plans, visits or reviews by replaying the references", async ({ page, apiAs, db }) => {
-    await page.goto("/maintenance-plans/plan-sarah-comfort-care");
+    await closeDialog(await createElenaPlan(page, "Peace of Mind"));
+    await page.goto("/maintenance-plans/plan-elena-rodriguez-peace-of-mind");
     await page.getByRole("button", { name: "Schedule visit" }).first().click();
     const wizard = await fillVisit(page);
     const schedule = await captureAction(page, () => wizard.getByRole("button", { name: "Create booking" }).click());
@@ -712,8 +731,9 @@ test.describe("the server decides who may change plans and reviews, and what", (
     const send = async (body: string) => (await replay(page.request, captured, body)).text();
     const SARAH = "plan-sarah-comfort-care";
     const SECOND = "plan-elena-rodriguez-second-plan";
-    // The completed first visit cannot be booked, and a visit that does not exist is unknown; so is a plan that does not exist.
+    // The completed first visit cannot be booked, the scheduled second one already has its booking, a visit that does not exist is unknown, and so is a plan.
     expect(await send(aim(SARAH, `${SARAH}-v1`))).toContain("already completed");
+    expect(await send(aim(SARAH, `${SARAH}-v2`))).toContain("already has a booking");
     expect(await send(aim(SARAH, `${SARAH}-v9`))).toContain("no longer exists");
     expect(await send(aim("plan-nobody", "plan-nobody-v1"))).toContain("That plan no longer exists");
     // A visit is used in order: the second visit of a plan waits for the first.
@@ -722,7 +742,7 @@ test.describe("the server decides who may change plans and reviews, and what", (
     expect(await send(aim("plan-elena-rodriguez-peace-of-mind", "plan-elena-rodriguez-peace-of-mind-v1"))).toContain("already has a booking");
     // The mapped Service, the window, the past, the opening hours and the team.
     expect(await send(aim(SECOND, `${SECOND}-v1`, { serviceId: "ac-repair-diagnostics" }))).toContain("is booked as");
-    expect(await send(aim(SARAH, `${SARAH}-v2`, { date: "2024-12-10" }))).toContain("target window");
+    expect(await send(aim("plan-arthur-seasonal-maintenance", "plan-arthur-seasonal-maintenance-v2", { date: "2024-11-10" }))).toContain("target window");
     expect(await send(aim(SECOND, `${SECOND}-v1`, { date: "2024-10-24" }))).toContain("already passed");
     expect(await send(aim(SECOND, `${SECOND}-v1`, { date: "2024-11-17" }))).toContain("closed");
     expect(await send(aim(SECOND, `${SECOND}-v1`, { start: "02:00", end: "04:00" }))).toContain("outside the business hours");
@@ -732,7 +752,8 @@ test.describe("the server decides who may change plans and reviews, and what", (
     // None of them stored anything.
     expect(await count(db, "bookings", org)).toBe(bookings);
     expect(await visitRow(db, org, `${SECOND}-v1`)).toMatchObject({ status: "due", booking: null });
-    expect(await visitRow(db, org, "plan-sarah-comfort-care-v2")).toMatchObject({ status: "due", booking: null });
+    expect(await visitRow(db, org, "plan-sarah-comfort-care-v2")).toMatchObject({ status: "scheduled", booking: 1048 });
+    expect(await visitRow(db, org, "plan-arthur-seasonal-maintenance-v2")).toMatchObject({ status: "due", booking: null });
   });
 
   test("only an active plan has a visit scheduled: the paused plan's due visits wait", async ({ page, db, workerTenant }) => {

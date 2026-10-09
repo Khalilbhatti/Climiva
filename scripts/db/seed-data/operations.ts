@@ -123,6 +123,24 @@ export const BOOKINGS: readonly Booking[] = [
     assigneeId: "alex-morgan",
     jobId: "JB-189",
   },
+  // BK-1048 is Sarah Mitchell's included Comfort Care visit 2 (Cooling maintenance), already scheduled in the approved baseline. It is a
+  // real booking like any other (no Job yet); the maintenance plan's visit points at it (scripts/db/seed-data/maintenance.ts), and
+  // `planVisit` below is only how the screens read that link back: the database holds it on the visit.
+  {
+    id: "BK-1048",
+    customerId: "sarah-mitchell",
+    propertyId: "prop-sarah-home",
+    serviceId: "annual-cooling-tune-up",
+    date: "2024-11-19",
+    start: "10:00",
+    end: "12:00",
+    status: "confirmed",
+    assigneeId: "marcus-vance",
+    source: "Maintenance plan",
+    receivedAt: "2024-10-25T10:45",
+    confirmedAt: "2024-10-25T10:45",
+    planVisit: { planId: "plan-sarah-comfort-care", visitId: "plan-sarah-comfort-care-v2" },
+  },
 
   // ── Completed this week
   {

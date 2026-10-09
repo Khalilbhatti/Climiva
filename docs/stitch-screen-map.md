@@ -508,7 +508,7 @@ reload restores the baseline. The Phase 1 to 4 modules, tokens and tests are unc
 ### Sarah Mitchell's Comfort Care (locked, asserted by tests)
 
 1402 Kinney Ave, Austin, TX 78704 ("Home") · Comfort Care · **$189 / year** · **2 visits / year** · May 14, 2024 to May 14, 2025 · Active · coverage Cooling maintenance and Heating maintenance only.
-Visit 1 (Heating maintenance) is recorded as fulfilled on May 22, 2024 with no Booking or Job link (see conflicts). Visit 2 (Cooling maintenance) is due November 2024.
+Visit 1 (Heating maintenance) is recorded as fulfilled on May 22, 2024 with no Booking or Job link (see conflicts). Visit 2 (Cooling maintenance) is scheduled for November 2024 as BK-1048 (below); since Phase 13 a clean seed already stores that booking.
 
 ### BK-1048 integration
 
@@ -516,7 +516,7 @@ Schedule included visit (4 steps: Service, Date & time, Assignment, Review) crea
 **BK-1048 · Cooling maintenance (booked as Annual Cooling Tune-Up & Maintenance) · Visit 2 of 2 · Tue Nov 19, 2024 · 10:00 AM to 12:00 PM · Marcus Vance (Technician) · Confirmed**,
 source "Maintenance plan". It appears in Bookings (Upcoming 6 to 7, labelled "Comfort Care · Visit 2 of 2"), in Schedule on Marcus Vance's Nov 19 row, and on the plan.
 **No Job, Quote, Invoice or Payment is created**; the Phase 4 baselines ($6,240 total invoiced, $2,130 received, $680 outstanding, 7 payments) are untouched.
-`RESERVED_BOOKING_NUMBERS` (`data/operations.ts`) holds BK-1048 for Sarah's visit 2: that visit takes it whenever it is scheduled, and every other booking skips it.
+**Phase 13:** BK-1048 is part of the stored baseline (Upcoming 6 before anything is scheduled) rather than a number held for later: `RESERVED_BOOKING_NUMBERS` is gone, the visit points at the booking, the plan offers no second Schedule visit for it, and every other booking takes the next free number and skips 1048 (the sample counter still starts at 1043).
 
 ### Plan labels: resolved and omitted
 
@@ -562,7 +562,7 @@ touch content or the published flag. Publishing needs no custom domain.
 - `e2e/shell.spec.ts`: Create maintenance plan now goes to `/maintenance-plans?new=1`; `/maintenance-plans` and `/website` are no longer placeholders.
 - Customers reads plans through `getCustomerPlanSummary` (David Chen: "Seasonal Maintenance"); Bookings gains the "Maintenance plan" source and the plan label under the service.
 - The Bookings "Copy booking link" now uses the Website's Booking page path (`/booking`); it was `/book`.
-- `createBooking` allocates numbers through `RESERVED_BOOKING_NUMBERS`; `nextId` accepts any prefix.
+- `createBooking` allocates numbers through `RESERVED_BOOKING_NUMBERS`; `nextId` accepts any prefix. (Phase 13: bookings are stored; the reservation was replaced by the stored BK-1048 and a counter that skips numbers in use.)
 
 ### Source conflicts and how they were resolved
 

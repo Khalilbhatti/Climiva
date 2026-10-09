@@ -172,7 +172,7 @@ test.describe("starting and completing a job", () => {
     await page.goto("/bookings?tab=past&booking=BK-1039");
     await expect(drawer(page)).toContainText("Completed");
     await expect(bookingTab(page, "Past")).toContainText("7");
-    await expect(bookingTab(page, "Upcoming")).toContainText("4");
+    await expect(bookingTab(page, "Upcoming")).toContainText("5");
     await page.goto("/jobs");
     await expect(tab(page, "Completed")).toContainText("8");
     await expect(tab(page, "Active")).toContainText("3");

@@ -333,7 +333,7 @@ test.describe("Customer-facing preview", () => {
     // Nothing was added to Bookings.
     await page.getByRole("link", { name: "Back to editor" }).click();
     await primaryNav(page).getByRole("link", { name: /^Bookings/ }).click();
-    await expect(page.getByRole("tablist", { name: "Booking lists" }).getByRole("tab")).toHaveText([/^Requests\s*2$/, /^Upcoming\s*5$/, /^Past\s*6$/, /^Cancelled\s*0$/]);
+    await expect(page.getByRole("tablist", { name: "Booking lists" }).getByRole("tab")).toHaveText([/^Requests\s*2$/, /^Upcoming\s*6$/, /^Past\s*6$/, /^Cancelled\s*0$/]);
   });
 
   test("Preview and the live view are different versions, and live follows publishing", async ({ page }) => {
@@ -422,7 +422,7 @@ test.describe("Booking on the website", () => {
     // It is in Bookings as a pending request from the website, with the details the customer gave.
     await page.getByRole("link", { name: "Back to editor" }).click();
     await primaryNav(page).getByRole("link", { name: /^Bookings/ }).click();
-    await expect(page.getByRole("tablist", { name: "Booking lists" }).getByRole("tab")).toHaveText([/^Requests\s*3$/, /^Upcoming\s*5$/, /^Past\s*6$/, /^Cancelled\s*0$/]);
+    await expect(page.getByRole("tablist", { name: "Booking lists" }).getByRole("tab")).toHaveText([/^Requests\s*3$/, /^Upcoming\s*6$/, /^Past\s*6$/, /^Cancelled\s*0$/]);
     const row = page.getByRole("table", { name: "Requests bookings" }).locator("tbody tr", { hasText: "Jordan Miller" });
     await expect(row).toContainText("AC Repair & Diagnostics");
     await expect(row).toContainText("Website");
@@ -466,7 +466,7 @@ test.describe("Booking on the website", () => {
     await page.getByRole("link", { name: "Back to editor" }).click();
     await primaryNav(page).getByRole("link", { name: /^Bookings/ }).click();
     // Confirmed on the spot: an upcoming booking, not a request. No job came with it.
-    await expect(page.getByRole("tablist", { name: "Booking lists" }).getByRole("tab")).toHaveText([/^Requests\s*2$/, /^Upcoming\s*6$/, /^Past\s*6$/, /^Cancelled\s*0$/]);
+    await expect(page.getByRole("tablist", { name: "Booking lists" }).getByRole("tab")).toHaveText([/^Requests\s*2$/, /^Upcoming\s*7$/, /^Past\s*6$/, /^Cancelled\s*0$/]);
     await page.getByRole("tab", { name: /^Upcoming/ }).click();
     const row = page.getByRole("table", { name: "Upcoming bookings" }).locator("tbody tr", { hasText: "Jordan Miller" });
     await expect(row).toContainText("Confirmed");

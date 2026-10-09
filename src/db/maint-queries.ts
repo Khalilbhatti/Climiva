@@ -176,7 +176,6 @@ export async function scheduleVisitTx(work: BookingWork, input: ScheduleVisit): 
       assigneeId: input.assigneeSlug,
       internalNotes: input.internalNotes,
     },
-    target.ref,
   );
 
   const linked = await tx

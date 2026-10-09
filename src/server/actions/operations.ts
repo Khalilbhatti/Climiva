@@ -71,8 +71,6 @@ type Work = {
   refs: Refs;
   hours: WeeklyHours;
   clock: BusinessClock;
-  /** The sample business: the only one that holds booking numbers back for its sample records. */
-  sample: boolean;
   /** The instant a system event (confirmed, completed …) happening now is stamped with. */
   stamp: Date;
 };
@@ -103,7 +101,6 @@ async function mutate<T extends object = object>(change: (work: Work) => Promise
         refs,
         hours: snapshot.settings.hours,
         clock: snapshot.clock,
-        sample: snapshot.hasSampleData,
         stamp: stampInstant(snapshot.hasSampleData, timeZone, PROTOTYPE_NOW),
       });
       return ok({ operations: await loadOperations(tx, organizationId, timeZone, refs), ...extra });

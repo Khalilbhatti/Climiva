@@ -58,6 +58,8 @@ test.beforeAll(async () => {
   a.planDavid = await bySlug("maintenance_plans", apex, "plan-david-seasonal-maintenance");
   a.v1 = await byRef(apex, "plan-sarah-comfort-care-v1");
   a.v2 = await byRef(apex, "plan-sarah-comfort-care-v2");
+  a.davidV1 = await byRef(apex, "plan-david-seasonal-maintenance-v1");
+  a.booking1048 = await byNumber("bookings", apex, 1048);
   a.revSarah = await bySlug("reviews", apex, "rev-sarah-mitchell");
   a.revDavid = await bySlug("reviews", apex, "rev-david-chen");
   a.revElena = await bySlug("reviews", apex, "rev-elena-rodriguez");
@@ -220,19 +222,52 @@ test.describe("what the seed holds", () => {
     expect((await admin.query("select name from services where organization_id = $1 and name ilike any(array['%cooling maintenance%', '%heating maintenance%'])", [apex])).rows).toEqual([]);
   });
 
-  test("its first visit was fulfilled on May 22, 2024 with no booking; its second is due in November 2024 and has no booking yet", async () => {
+  test("its first visit was fulfilled on May 22, 2024 with no booking; its second is scheduled for November 2024 and points at BK-1048", async () => {
     const visits = (await admin.query("select ref, sequence, label, status, booking_id, completed_on::text as completed_on, window_start::text as w_start, window_end::text as w_end from maintenance_plan_visits where plan_id = $1 order by sequence", [a.planSarah])).rows;
     expect(visits).toEqual([
       { ref: "plan-sarah-comfort-care-v1", sequence: 1, label: "Heating maintenance", status: "completed", booking_id: null, completed_on: "2024-05-22", w_start: null, w_end: null },
-      { ref: "plan-sarah-comfort-care-v2", sequence: 2, label: "Cooling maintenance", status: "due", booking_id: null, completed_on: null, w_start: "2024-11-01", w_end: "2024-11-30" },
+      { ref: "plan-sarah-comfort-care-v2", sequence: 2, label: "Cooling maintenance", status: "scheduled", booking_id: a.booking1048, completed_on: null, w_start: "2024-11-01", w_end: "2024-11-30" },
     ]);
   });
 
-  test("BK-1048 does not exist until the visit is scheduled: no booking is seeded for it, so scheduling creates the one and only booking", async () => {
-    expect((await admin.query("select count(*)::int as n from bookings where organization_id = $1 and number = 1048", [apex])).rows[0].n).toBe(0);
-    // The number is held for the visit by the application (RESERVED_BOOKING_NUMBERS), and no plan or visit carries a copy of the appointment.
+  test("BK-1048 is the canonical scheduled visit: exactly one booking, Sarah Mitchell's, Nov 19 2024, 10:00 AM to 12:00 PM, Marcus Vance, confirmed, no job", async () => {
+    const rows = (
+      await admin.query(
+        `select b.number, b.status, b.source, b.service_date::text as day, b.start_time::text as start, b.end_time::text as ending, c.name as customer, p.address_line1 as street, p.city, p.state_region as state, p.postal_code as zip,
+                m.name as technician, s.name as service, (select count(*)::int from jobs j where j.booking_id = b.id) as jobs
+           from bookings b join customers c on c.id = b.customer_id join customer_properties p on p.id = b.property_id
+           join team_members m on m.id = b.assignee_id join services s on s.id = b.service_id
+          where b.organization_id = $1 and b.number = 1048`,
+        [apex],
+      )
+    ).rows;
+    expect(rows).toEqual([
+      {
+        number: 1048,
+        status: "confirmed",
+        source: "Maintenance plan",
+        day: "2024-11-19",
+        start: "10:00:00",
+        ending: "12:00:00",
+        customer: "Sarah Mitchell",
+        street: "1402 Kinney Ave",
+        city: "Austin",
+        state: "TX",
+        zip: "78704",
+        technician: "Marcus Vance",
+        service: "Annual Cooling Tune-Up & Maintenance",
+        jobs: 0,
+      },
+    ]);
+    // It is the booking visit 2 points at, and no other visit points at it. Neither plan nor visit carries a copy of the appointment.
+    expect((await admin.query("select v.ref from maintenance_plan_visits v where v.booking_id = $1", [a.booking1048])).rows).toEqual([{ ref: "plan-sarah-comfort-care-v2" }]);
     const columns = (await admin.query<{ column_name: string }>("select column_name from information_schema.columns where table_name = 'maintenance_plan_visits' and column_name in ('service_date', 'start_time', 'end_time', 'assignee_id', 'service_id', 'customer_id', 'property_id')")).rows;
     expect(columns).toEqual([]);
+  });
+
+  test("the booking counter starts where the approved baseline put it (BK-1043 next) and numbers walk past the stored BK-1048", async () => {
+    expect((await admin.query("select next_value from organization_sequences where organization_id = $1 and kind = 'booking'", [apex])).rows[0].next_value).toBe(1043);
+    expect((await admin.query("select max(number)::int as n from bookings where organization_id = $1", [apex])).rows[0].n).toBe(1048);
   });
 
   test("a plan's price bills no one: no invoice, quote or payment names a plan, and no column in them could", async () => {
@@ -567,13 +602,18 @@ test.describe("tenant isolation: writing", () => {
     expect(coverage.constraint).toBe("plan_visits_coverage_fk");
     // Scheduling an Apex visit with a Northstar booking is refused, and the visit is unchanged.
     const crossBooking = await as(user.alex, apex, async (client) => {
-      await client.query("update maintenance_plan_visits set status = 'scheduled', booking_id = $2 where id = $1", [a.v2, n.booking1001]);
+      await client.query("update maintenance_plan_visits set status = 'scheduled', booking_id = $2 where id = $1", [a.davidV1, n.booking1001]);
     });
     expect(crossBooking.error).toBeDefined();
     expect(crossBooking.code).toBe(CHECK);
-    expect((await admin.query("select status, booking_id from maintenance_plan_visits where id = $1", [a.v2])).rows[0]).toEqual({ status: "due", booking_id: null });
+    expect(crossBooking.constraint).toBe("plan_visits_booking_party");
+    expect((await admin.query("select status, booking_id from maintenance_plan_visits where id = $1", [a.davidV1])).rows[0]).toEqual({ status: "due", booking_id: null });
+    // Sarah's visit is scheduled already: its booking cannot be swapped for another business's, or anyone's.
+    const swap = await as(user.alex, apex, (client) => client.query("update maintenance_plan_visits set booking_id = $2 where id = $1", [a.v2, n.booking1001]));
+    expect(swap.constraint).toBe("plan_visits_status_transition");
+    expect((await admin.query("select status, booking_id from maintenance_plan_visits where id = $1", [a.v2])).rows[0]).toEqual({ status: "scheduled", booking_id: a.booking1048 });
     // And through the owner role the composite key refuses a booking of another business outright.
-    const throughOwnerBooking = await asOwner((client) => client.query("alter table maintenance_plan_visits disable trigger plan_visits_guard_update").then(() => client.query("update maintenance_plan_visits set status = 'scheduled', booking_id = $2 where id = $1", [a.v2, n.booking1001])));
+    const throughOwnerBooking = await asOwner((client) => client.query("alter table maintenance_plan_visits disable trigger plan_visits_guard_update").then(() => client.query("update maintenance_plan_visits set status = 'scheduled', booking_id = $2 where id = $1", [a.davidV1, n.booking1001])));
     expect(throughOwnerBooking.code).toBe(FOREIGN_KEY);
     expect(throughOwnerBooking.constraint).toBe("plan_visits_booking_fk");
   });
@@ -735,6 +775,21 @@ test.describe("a visit's life: due, scheduled, completed", () => {
     });
     expect(result.code).toBe(UNIQUE);
     expect(result.constraint).toBe("plan_visits_org_booking_unique");
+  });
+
+  test("BK-1048 cannot be attached to a second visit, and visit 2 cannot take a second booking", async () => {
+    const second = await as(user.alex, apex, async (client) => {
+      const { visits } = await newPlan(client, apex, a.sarah, a.sarahHome, 1);
+      await client.query("update maintenance_plan_visits set status = 'scheduled', booking_id = $2 where id = $1", [visits[0], a.booking1048]);
+    });
+    expect(second.code).toBe(UNIQUE);
+    expect(second.constraint).toBe("plan_visits_org_booking_unique");
+    const another = await as(user.alex, apex, async (client) => {
+      const booking = await copyBooking(client, a.bookingSarah, 9001);
+      await client.query("update maintenance_plan_visits set booking_id = $2 where id = $1", [a.v2, booking]);
+    });
+    expect(another.constraint).toBe("plan_visits_status_transition");
+    expect((await admin.query("select count(*)::int as n from bookings where organization_id = $1 and number = 1048", [apex])).rows[0].n).toBe(1);
   });
 
   test("a due visit cannot jump to completed, and a completed visit is final", async () => {

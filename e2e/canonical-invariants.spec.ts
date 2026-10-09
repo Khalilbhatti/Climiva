@@ -28,7 +28,7 @@ import {
   getTotalInvoiced,
 } from "../src/data/financials";
 import { BUSINESS_TIME_ZONE, PROTOTYPE_NOW, PROTOTYPE_TODAY, business, businessHoursByWeekday, currentUser, overviewMetrics } from "../src/data/fixtures";
-import { COVERAGE, PLAN_BASELINE, getCurrentPlanForCustomer, getPlanById, getPlanMetrics } from "../src/data/maintenance-plans";
+import { COVERAGE, PLAN_BASELINE, getCurrentPlanForCustomer, getPlanById, getPlanMetrics, getVisitState } from "../src/data/maintenance-plans";
 import { CAMPAIGN_BASELINE, MARKETING_DATA, getCampaignMetrics } from "../src/data/marketing";
 import { BASELINE_EXCLUDED_SERVICE_ID, getEligibleServices, getListingServices, initialMarketplaceState } from "../src/data/marketplace";
 import { getBookingById, getJobById } from "../src/data/operations";
@@ -37,7 +37,6 @@ import { getPublicActiveServices } from "../src/data/services";
 import { initialSettings } from "../src/data/settings";
 import { getTeamMemberById } from "../src/data/team";
 import { WEBSITE_PAGES, defaultSiteContent, getShownServices } from "../src/data/website";
-import { RESERVED_BOOKING_NUMBERS } from "../src/lib/operations-rules";
 import { BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, INVOICES, JOBS, OPERATIONS, PLANS, PLANS_DATA, REVIEWS, REVIEWS_DATA, ROLES, SCHEDULE_BLOCKS, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
 import { withPayment } from "./financial-edits";
 
@@ -178,14 +177,26 @@ test.describe("Job #JB-204 and Sarah's record", () => {
     expect(getCustomerById("sarah-mitchell", BOOK)?.lastService?.jobId).toBe("JB-204");
   });
 
-  test("her Comfort Care plan is $189 a year, two visits, May 14 2024 to May 14 2025, and BK-1048 is held for its cooling visit", () => {
+  test("her Comfort Care plan is $189 a year, two visits, May 14 2024 to May 14 2025, and its cooling visit is already scheduled as BK-1048", () => {
     const plan = getCurrentPlanForCustomer("sarah-mitchell", PLANS_DATA)!;
     expect(plan).toMatchObject({ id: "plan-sarah-comfort-care", name: "Comfort Care", status: "active", price: 189, cadence: "year", visitsPerYear: 2, startDate: "2024-05-14", endDate: "2025-05-14", propertyId: "prop-sarah-home" });
     expect(plan.visits).toHaveLength(2);
     expect(getPlanById("plan-sarah-comfort-care", PLANS_DATA)).toBe(plan);
-    expect(RESERVED_BOOKING_NUMBERS).toEqual({ "plan-sarah-comfort-care-v2": 1048 });
-    // Not scheduled yet: the number is held, not used.
-    expect(getBookingById("BK-1048", OPERATIONS)).toBeUndefined();
+    // Visit 1 was fulfilled in May; visit 2 is scheduled, and BK-1048 is the one real booking it points at.
+    expect(plan.visits.map((visit) => getVisitState(visit, OPERATIONS))).toEqual(["completed", "scheduled"]);
+    expect(getBookingById("BK-1048", OPERATIONS)).toMatchObject({
+      customerId: "sarah-mitchell",
+      propertyId: "prop-sarah-home",
+      source: "Maintenance plan",
+      date: "2024-11-19",
+      start: "10:00",
+      end: "12:00",
+      assigneeId: "marcus-vance",
+      status: "confirmed",
+      planVisit: { planId: "plan-sarah-comfort-care", visitId: "plan-sarah-comfort-care-v2" },
+    });
+    expect(getBookingById("BK-1048", OPERATIONS)?.jobId).toBeUndefined();
+    expect(OPERATIONS.bookings.filter((booking) => booking.id === "BK-1048")).toHaveLength(1);
   });
 });
 

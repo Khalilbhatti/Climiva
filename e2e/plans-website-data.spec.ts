@@ -16,7 +16,6 @@ import {
   getVisitState,
   type MaintenancePlan,
 } from "../src/data/maintenance-plans";
-import type { Booking } from "../src/data/operations";
 import {
   getInvoiceById,
   getOutstandingBalance,
@@ -48,7 +47,7 @@ import {
   unpublish,
 } from "../src/lib/website-state";
 import { BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, JOBS, OPERATIONS, PLANS, PLANS_DATA, PROPERTIES, SERVICES } from "./apex-data";
-import { cancelled, withBooking } from "./operations-edits";
+import { cancelled } from "./operations-edits";
 
 // Pure data/selector/state tests: no browser needed.
 
@@ -77,28 +76,8 @@ const createdPlan = (): MaintenancePlan => {
 const TODAY = "2024-10-25";
 const visit2 = () => getPlanById("plan-sarah-comfort-care", PLANS_DATA)!.visits[1];
 
-/**
- * BK-1048 as the Schedule Included Visit flow stores it (the booking itself is created by the server action; bookings-db and
- * operations-bridges check that flow and its number against PostgreSQL). Here it is the record the plan screens READ.
- */
-function scheduleVisit2(): { data: typeof OPERATIONS; booking: Booking } {
-  const booking: Booking = {
-    id: "BK-1048",
-    customerId: "sarah-mitchell",
-    propertyId: "prop-sarah-home",
-    serviceId: COVERAGE.cooling.bookingServiceId,
-    source: "Maintenance plan",
-    date: "2024-11-19",
-    start: "10:00",
-    end: "12:00",
-    assigneeId: "marcus-vance",
-    status: "confirmed",
-    receivedAt: "2024-10-25T10:45",
-    confirmedAt: "2024-10-25T10:45",
-    planVisit: { planId: "plan-sarah-comfort-care", visitId: visit2().id },
-  };
-  return { data: withBooking(OPERATIONS, booking), booking };
-}
+/** BK-1048 is the canonical scheduled visit: Sarah's Comfort Care visit 2, in the baseline operations. */
+const bk1048 = () => OPERATIONS.bookings.find((booking) => booking.id === "BK-1048")!;
 
 test.describe("maintenance plan data", () => {
   test("Sarah Mitchell's Comfort Care plan is the canonical record", () => {
@@ -133,13 +112,13 @@ test.describe("maintenance plan data", () => {
     }
   });
 
-  test("visit 1 is fulfilled; visit 2 is the cooling visit due in November and has no booking yet", () => {
+  test("visit 1 is fulfilled; visit 2 is the cooling visit for November and is already scheduled as BK-1048", () => {
     const [v1, v2] = getPlanById("plan-sarah-comfort-care", PLANS_DATA)!.visits;
     expect(v1).toMatchObject({ coverageId: "heating", completed: true, completedOn: "2024-05-22" });
     expect(getVisitBooking(v1, OPERATIONS)).toBeUndefined();
     expect(v2).toMatchObject({ coverageId: "cooling", windowStart: "2024-11-01", windowEnd: "2024-11-30" });
-    expect(getVisitBooking(v2, OPERATIONS)).toBeUndefined();
-    expect(getVisitState(v2, OPERATIONS)).toBe("needs-scheduling");
+    expect(getVisitBooking(v2, OPERATIONS)?.id).toBe("BK-1048");
+    expect(getVisitState(v2, OPERATIONS)).toBe("scheduled");
   });
 
   test("aggregates are the approved 14 / 5 / 3 / 2, not a made-up 24 records", () => {
@@ -212,8 +191,8 @@ test.describe("creating a plan and scheduling an included visit", () => {
     }
   });
 
-  test("visit 2's booking is BK-1048 (Nov 19, 10:00–12:00, Marcus Vance) with no job", () => {
-    const { data, booking } = scheduleVisit2();
+  test("visit 2's booking is BK-1048 (Nov 19, 10:00–12:00, Marcus Vance) with no job, and there is exactly one", () => {
+    const booking = bk1048();
     expect(booking).toMatchObject({
       id: "BK-1048",
       customerId: "sarah-mitchell",
@@ -225,30 +204,30 @@ test.describe("creating a plan and scheduling an included visit", () => {
       assigneeId: "marcus-vance",
       status: "confirmed",
       source: "Maintenance plan",
+      planVisit: { planId: "plan-sarah-comfort-care", visitId: visit2().id },
     });
     expect(booking.jobId).toBeUndefined();
-    expect(data.jobs).toHaveLength(JOBS.length);
-    expect(data.bookings).toHaveLength(BOOKINGS.length + 1);
+    expect(OPERATIONS.bookings.filter((item) => item.id === "BK-1048")).toHaveLength(1);
+    expect(OPERATIONS.jobs).toHaveLength(JOBS.length);
     expect(OPERATIONS.bookings).toHaveLength(BOOKINGS.length);
+    expect(BOOKINGS).toHaveLength(14);
   });
 
   test("the plan holds no pointer of its own: the visit state is read from the stored booking that points at it", () => {
-    const { data: ops, booking } = scheduleVisit2();
     const plan = getPlanById("plan-sarah-comfort-care", PLANS_DATA)!;
-    expect(getVisitBooking(plan.visits[1], ops)?.id).toBe("BK-1048");
-    expect(getVisitBooking(plan.visits[1], OPERATIONS)).toBeUndefined();
-    expect(getPlanVisitForBooking(booking, PLANS_DATA)).toMatchObject({ visit: { id: visit2().id } });
-    expect(getVisitState(plan.visits[1], ops)).toBe("scheduled");
+    expect(getVisitBooking(plan.visits[1], OPERATIONS)?.id).toBe("BK-1048");
+    expect(getPlanVisitForBooking(bk1048(), PLANS_DATA)).toMatchObject({ visit: { id: visit2().id } });
+    expect(getVisitState(plan.visits[1], OPERATIONS)).toBe("scheduled");
     // Still counted as due until it is completed; the approved total does not move.
-    expect(getPlanMetrics(PLANS_DATA, ops, TODAY, PLAN_BASELINE).visitsDue).toBe(5);
-    expect(getUpcomingVisits(PLANS_DATA, ops).find(({ plan: item }) => item.id === plan.id)?.visit.id).toBe(visit2().id);
+    expect(getPlanMetrics(PLANS_DATA, OPERATIONS, TODAY, PLAN_BASELINE).visitsDue).toBe(5);
+    expect(getUpcomingVisits(PLANS_DATA, OPERATIONS).find(({ plan: item }) => item.id === plan.id)?.visit.id).toBe(visit2().id);
 
-    // Cancelling the booking reopens the visit rather than leaving it scheduled.
-    expect(getVisitState(plan.visits[1], cancelled(ops, "BK-1048", "Customer asked to rebook"))).toBe("needs-scheduling");
+    // Cancelling the booking reopens the visit rather than leaving it scheduled; without the booking there is nothing to read.
+    expect(getVisitState(plan.visits[1], cancelled(OPERATIONS, "BK-1048", "Customer asked to rebook"))).toBe("needs-scheduling");
+    expect(getVisitState(plan.visits[1], { ...OPERATIONS, bookings: OPERATIONS.bookings.filter((booking) => booking.id !== "BK-1048") })).toBe("needs-scheduling");
   });
 
-  test("scheduling a visit leaves quotes, invoices, payments and the Overview financial baseline untouched", () => {
-    scheduleVisit2();
+  test("a scheduled visit leaves quotes, invoices, payments and the Overview financial baseline untouched", () => {
     expect(getRecordedPaymentsCount(FINANCIALS)).toBe(7);
     expect(getPaymentsReceivedTotal(FINANCIALS)).toBe(2130);
     expect(getOutstandingBalance(FINANCIALS)).toBe(680);

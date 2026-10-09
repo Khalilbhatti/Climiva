@@ -176,6 +176,7 @@ export const NORTHSTAR_OPERATIONS: OperationsData = {
       confirmedAt: "2024-10-22T13:05",
       note: "Annual tune-up before the heating season",
       jobId: "JB-1001",
+      planVisit: { planId: "plan-marta-olsen-furnace-care", visitId: "plan-marta-olsen-furnace-care-v1" },
     },
     {
       id: "BK-1002",

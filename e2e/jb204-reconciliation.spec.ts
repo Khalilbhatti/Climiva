@@ -65,7 +65,10 @@ test.describe("every module shows JB-204 as completed work", () => {
 
   test("Bookings: BK-1042 is under Past, Completed, and no longer under Upcoming", async ({ page }) => {
     await page.goto("/bookings?tab=upcoming");
-    await expect(bookingRows(page, "Upcoming").filter({ hasText: "Sarah Mitchell" })).toHaveCount(0);
+    // Sarah's only upcoming booking is her scheduled maintenance visit (BK-1048); BK-1042 is not there.
+    await expect(bookingRows(page, "Upcoming").filter({ hasText: "Sarah Mitchell" })).toHaveCount(1);
+    await expect(page.getByRole("button", { name: /^Review booking BK-1048/ })).toHaveCount(1);
+    await expect(page.getByRole("button", { name: /^Review booking BK-1042/ })).toHaveCount(0);
     await page.goto("/bookings?tab=past&booking=BK-1042");
     await expect(bookingRows(page, "Past").filter({ hasText: "Sarah Mitchell" })).toContainText("Completed");
     await expect(page.getByRole("complementary", { name: "Booking details" })).toContainText("Completed");

@@ -13,7 +13,6 @@ import { Pool, type PoolClient } from "pg";
 import { insertServices } from "../src/db/core-queries";
 import { allocateBookingNumber } from "../src/db/ops-queries";
 import { withTenant } from "../src/db/tenant";
-import { RESERVED_BOOKING_NUMBERS } from "../src/lib/operations-rules";
 import { adminDb } from "../scripts/db/lib";
 import { SERVICES } from "../scripts/db/seed-data/services";
 import { APEX, ensureMembership, ensureOrganization, ensureUser, seedAuth } from "../scripts/db/seed-lib";
@@ -166,7 +165,7 @@ test.describe("what the seed holds", () => {
          from organizations o where o.slug in ('apex-climate-heating-air', 'northstar-heating-cooling') order by o.slug`,
     );
     expect(counts.rows).toEqual([
-      { slug: "apex-climate-heating-air", bookings: 13, jobs: 11, files: 4, blocks: 2 },
+      { slug: "apex-climate-heating-air", bookings: 14, jobs: 11, files: 4, blocks: 2 },
       { slug: "northstar-heating-cooling", bookings: 2, jobs: 1, files: 0, blocks: 0 },
     ]);
     const numbers = await admin.query<{ slug: string; number: number }>(
@@ -284,7 +283,7 @@ test.describe("reading (SELECT)", () => {
       sequences: await count(client, "organization_sequences"),
       foreign: (await client.query("select 1 from bookings where organization_id = $1", [northstar])).rowCount,
     }));
-    expect(result.value).toEqual({ bookings: 13, jobs: 11, files: 4, blocks: 2, blockMembers: 4, sequences: 5, foreign: 0 });
+    expect(result.value).toEqual({ bookings: 14, jobs: 11, files: 4, blocks: 2, blockMembers: 4, sequences: 5, foreign: 0 });
   });
 
   test("the Northstar owner sees Northstar's operations and none of Apex's", async () => {
@@ -307,13 +306,13 @@ test.describe("reading (SELECT)", () => {
 
   test("a member can read the business's operations (they cannot change them, below)", async () => {
     const result = await as(user.jamie, apex, async (client) => ({ bookings: await count(client, "bookings"), jobs: await count(client, "jobs") }));
-    expect(result.value).toEqual({ bookings: 13, jobs: 11 });
+    expect(result.value).toEqual({ bookings: 14, jobs: 11 });
   });
 
   test("someone in both businesses sees only the active one at a time", async () => {
     const atApex = await as(user.casey, apex, (client) => count(client, "bookings"));
     const atNorthstar = await as(user.casey, northstar, (client) => count(client, "bookings"));
-    expect([atApex.value, atNorthstar.value]).toEqual([13, 2]);
+    expect([atApex.value, atNorthstar.value]).toEqual([14, 2]);
   });
 
   test("a booking id from another business cannot be read by naming it", async () => {
@@ -618,17 +617,33 @@ test.describe("numbering", () => {
     expect(results[21]).toBe(1001);
   });
 
-  test("the number held for Sarah's plan visit is held in the sample business only; another business uses every number", async () => {
-    const { userId, organizations } = await newBusinesses("held-number", 2);
-    const [plain, sample] = organizations;
-    for (const org of organizations) await admin.query("insert into organization_sequences (organization_id, kind, next_value) values ($1, 'booking', 1047)", [org]);
-    const take = (org: string, reserved: Readonly<Record<string, number>>, planVisitId?: string) =>
-      withTenant({ userId, organizationId: org }, (tx) => allocateBookingNumber(tx, org, reserved, planVisitId));
-    // Another business holds nothing back: 1047, then 1048.
-    expect([await take(plain, {}), await take(plain, {})]).toEqual([1047, 1048]);
-    // The sample business holds 1048 for the visit: the visit takes it, ordinary bookings walk past it.
-    expect(await take(sample, RESERVED_BOOKING_NUMBERS, "plan-sarah-comfort-care-v2")).toBe(1048);
-    expect([await take(sample, RESERVED_BOOKING_NUMBERS), await take(sample, RESERVED_BOOKING_NUMBERS)]).toEqual([1047, 1049]);
+  test("a number already in use is never handed out again: a counter that fell behind its data walks past BK-1048", async () => {
+    const { userId, organizations } = await newBusinesses("used-number", 1);
+    const [org] = organizations;
+    const { pool, db } = adminDb();
+    try {
+      await db.transaction((tx) => insertServices(tx as never, org, [SERVICES[0]]));
+    } finally {
+      await pool.end();
+    }
+    const service = (await admin.query<{ id: string }>("select id from services where organization_id = $1", [org])).rows[0].id;
+    // The counter says 1047, but a booking numbered 1048 is already stored (as the sample business's is).
+    await admin.query("insert into organization_sequences (organization_id, kind, next_value) values ($1, 'booking', 1047)", [org]);
+    await admin.query(
+      `insert into bookings (organization_id, number, contact_name, service_id, source, status, service_date, start_time, end_time, received_at)
+       values ($1, 1048, 'Pat', $2, 'Other', 'confirmed', '2030-01-07', '09:00', '10:00', now())`,
+      [org, service],
+    );
+    const take = () => withTenant({ userId, organizationId: org }, (tx) => allocateBookingNumber(tx, org));
+    expect([await take(), await take(), await take()]).toEqual([1047, 1049, 1050]);
+  });
+
+  test("the sample business keeps its approved booking counter (BK-1043 next) with its scheduled maintenance visit already stored as BK-1048", async () => {
+    const apex = (await admin.query<{ id: string }>("select id from organizations where slug = 'apex-climate-heating-air'")).rows[0].id;
+    expect((await admin.query("select next_value from organization_sequences where organization_id = $1 and kind = 'booking'", [apex])).rows[0].next_value).toBe(1043);
+    expect((await admin.query("select count(*)::int as n from bookings where organization_id = $1 and number = 1048", [apex])).rows[0].n).toBe(1);
+    // The counter is behind that booking, so the numbers it hands out walk past 1048 (the test above): none can repeat it.
+    expect((await admin.query("select max(number)::int as n from bookings where organization_id = $1", [apex])).rows[0].n).toBe(1048);
   });
 
   test("two requests creating a job for the same booking at once: exactly one succeeds", async () => {

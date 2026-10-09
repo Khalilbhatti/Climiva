@@ -42,7 +42,7 @@ import { EMPTY_TEAM, type TeamData } from "../../src/data/team";
 import { clearCoreData, insertCustomerBook, insertServices, persistTeamData } from "../../src/db/core-queries";
 import { clearFinancials, insertFinancials, loadFinRefs } from "../../src/db/fin-queries";
 import { clearMaintenance, insertMaintenance, type SeedPlans } from "../../src/db/maint-queries";
-import { clearOperations, insertOperations, loadRefs } from "../../src/db/ops-queries";
+import { clearOperations, insertOperations, loadRefs, type SeedNumbers } from "../../src/db/ops-queries";
 import { clearReviews, insertReviews } from "../../src/db/review-queries";
 import { createAuth, type Auth } from "../../src/lib/auth";
 import { adminDb, adminUrl, appUrl, requireEnv } from "./lib";
@@ -141,6 +141,8 @@ export type CoreDataset = {
   team: TeamData;
   /** Bookings, jobs and blocked time. They point at the customers, Services and team above by their public references. */
   operations: OperationsData;
+  /** Where the booking and job counters start when that is not simply above the seeded numbers. */
+  startAt?: SeedNumbers;
   /** Quotes, invoices and payments. They point at the customers, Services, jobs, bookings and team above by their public references. */
   financials: FinancialData;
   /** Maintenance plans with their coverage and visits. They point at the customers and properties above, and a visit at a booking. */
@@ -157,6 +159,9 @@ export const APEX_CORE: CoreDataset = {
   services: SERVICES,
   team: { members: TEAM, roles: ROLES },
   operations: OPERATIONS,
+  // The approved Create booking flow makes #BK-1043. Sarah's scheduled maintenance visit is already stored as BK-1048, which the
+  // counter walks past (it is skipped, never reused).
+  startAt: { booking: 1043 },
   financials: FINANCIALS,
   maintenance: MAINTENANCE,
   reviews: REVIEWS_DATA,
@@ -269,7 +274,7 @@ export async function writeCoreData(
   await insertServices(db, organizationId, core.services, { stableIds: true });
   await insertCustomerBook(db, organizationId, core.book, { stableIds: true });
   await persistTeamData(db, organizationId, EMPTY_TEAM, core.team, { stableIds: true, userIds });
-  await insertOperations(db, organizationId, timeZone, core.operations, await loadRefs(db, organizationId), { stableIds: true });
+  await insertOperations(db, organizationId, timeZone, core.operations, await loadRefs(db, organizationId), { stableIds: true, startAt: core.startAt });
   await insertFinancials(db, organizationId, timeZone, core.financials, await loadFinRefs(db, organizationId), { stableIds: true });
   const refs = await loadRefs(db, organizationId);
   await insertMaintenance(db, organizationId, core.maintenance, refs, { stableIds: true });

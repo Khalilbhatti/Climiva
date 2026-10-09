@@ -35,7 +35,7 @@ test.describe("Bookings list", () => {
     await expect(page.getByRole("button", { name: "Create booking" })).toBeVisible();
 
     const tabs = page.getByRole("tablist", { name: "Booking lists" });
-    await expect(tabs.getByRole("tab")).toHaveText([/^Requests\s*2$/, /^Upcoming\s*5$/, /^Past\s*6$/, /^Cancelled\s*0$/]);
+    await expect(tabs.getByRole("tab")).toHaveText([/^Requests\s*2$/, /^Upcoming\s*6$/, /^Past\s*6$/, /^Cancelled\s*0$/]);
     await expect(tab(page, "Requests")).toHaveAttribute("aria-selected", "true");
 
     const table = page.getByRole("table", { name: "Requests bookings" });
@@ -61,7 +61,7 @@ test.describe("Bookings list", () => {
     await page.goto("/bookings");
     const expected: [string, string, number, string][] = [
       ["Requests", "Requests", 2, "Pending confirmation"],
-      ["Upcoming", "Upcoming", 5, "Confirmed"],
+      ["Upcoming", "Upcoming", 6, "Confirmed"],
       ["Past", "Past", 6, "Completed"],
     ];
     for (const [tabName, tableName, count, status] of expected) {
@@ -97,8 +97,12 @@ test.describe("Bookings list", () => {
     await expect(bookingRows(page, "Past").first()).toContainText("Sarah Mitchell");
     await expect(bookingRows(page, "Past").first()).toContainText("Completed");
 
+    // Her included maintenance visit (BK-1048) is upcoming at the same address.
     await page.goto("/bookings?tab=upcoming");
     await search.fill("kinney");
+    await expect(bookingRows(page, "Upcoming")).toHaveCount(1);
+    await expect(bookingRows(page, "Upcoming").first()).toContainText("Sarah Mitchell");
+    await search.fill("zzz-nowhere");
     await expect(page.getByText("No bookings match your search.")).toBeVisible();
 
     await search.fill("bradley");
@@ -108,7 +112,7 @@ test.describe("Bookings list", () => {
     await search.fill("zzz-no-match");
     await expect(page.getByText("No bookings match your search.")).toBeVisible();
     await page.getByRole("button", { name: "Clear filters" }).click();
-    await expect(bookingRows(page, "Upcoming")).toHaveCount(5);
+    await expect(bookingRows(page, "Upcoming")).toHaveCount(6);
   });
 
   test("service and source filters combine with the tab", async ({ page }) => {
@@ -124,7 +128,7 @@ test.describe("Bookings list", () => {
     await expect(bookingRows(page, "Upcoming").first()).toContainText("Robert Ramirez");
 
     await page.getByRole("button", { name: "Clear filters" }).click();
-    await expect(bookingRows(page, "Upcoming")).toHaveCount(5);
+    await expect(bookingRows(page, "Upcoming")).toHaveCount(6);
   });
 
   test("snapshot names never show 'Elena Rostova'; Elena Rodriguez is the one name", async ({ page }) => {
@@ -169,7 +173,7 @@ test.describe("Booking details", () => {
     await drawer(page).getByRole("button", { name: "Confirm booking" }).click();
 
     await expect(tab(page, "Upcoming")).toHaveAttribute("aria-selected", "true");
-    await expect(tab(page, "Upcoming")).toContainText("6");
+    await expect(tab(page, "Upcoming")).toContainText("7");
     await expect(tab(page, "Requests")).toContainText("1");
     await expect(drawer(page)).toContainText("Confirmed");
 
@@ -317,14 +321,14 @@ test.describe("Create booking", () => {
     await success.getByRole("button", { name: "View booking" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page).toHaveURL(/\/bookings\?tab=upcoming&booking=BK-1043$/);
-    await expect(tab(page, "Upcoming")).toContainText("6");
-    await expect(bookingRows(page, "Upcoming")).toHaveCount(6);
+    await expect(tab(page, "Upcoming")).toContainText("7");
+    await expect(bookingRows(page, "Upcoming")).toHaveCount(7);
     await expect(drawer(page)).toContainText("Booking #BK-1043");
     await expect(drawer(page)).toContainText("Marcus Vance");
 
     // It is stored: a reload keeps it.
     await page.goto("/bookings?tab=upcoming");
-    await expect(bookingRows(page, "Upcoming")).toHaveCount(6);
+    await expect(bookingRows(page, "Upcoming")).toHaveCount(7);
     await expect(page.getByRole("button", { name: /^Review booking BK-1043 / })).toBeVisible();
   });
 

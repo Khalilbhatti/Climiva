@@ -8,9 +8,9 @@
  *
  *  - Sarah Mitchell's Comfort Care is locked: $189 / year, 2 visits a year, May 14, 2024 to May 14, 2025, Active, covering
  *    Cooling maintenance and Heating maintenance (coverage labels, NOT Services). Visit 1 (heating) was fulfilled on May 22,
- *    2024 with no Booking or Job link (the Stitch ids conflict with other records). Visit 2 (cooling) is due in November 2024:
- *    it is NOT scheduled here. Booking number BK-1048 is held for it, and scheduling it (the Schedule visit flow: Nov 19, 2024,
- *    10:00 AM to 12:00 PM, Marcus Vance) creates that one real Booking and links it to the visit.
+ *    2024 with no Booking or Job link (the Stitch ids conflict with other records). Visit 2 (cooling) is already SCHEDULED in the
+ *    approved baseline: it points at the real Booking BK-1048 (Nov 19, 2024, 10:00 AM to 12:00 PM, Marcus Vance, confirmed, no
+ *    Job), which scripts/db/seed-data/operations.ts writes. There is exactly one BK-1048, and the booking counter starts above it.
  *  - The six plans are `imported`: a representative sample of the workspace totals the screens report (14 active, 5 visits due,
  *    3 renewals, 1 paused, 1 ended), already inside them. Plans created since add to the totals.
  *  - People without a Customers record (Kevin Vance, Arthur Pendleton, Robert Miller, James Thornton) are a name and address
@@ -46,6 +46,7 @@ export const PLANS: SeedPlans["plans"] = [
         coverageId: "cooling",
         windowStart: "2024-11-01",
         windowEnd: "2024-11-30",
+        bookingId: "BK-1048",
       },
     ],
     imported: true,

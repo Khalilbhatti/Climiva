@@ -21,7 +21,6 @@ import { getTeamMemberById } from "../src/data/team";
 import { getSlotGroup } from "../src/lib/booking-slots";
 import { addDays, formatLongDate, formatTime, formatTimeRange, startOfWeek, weekDates, weekdayIndex } from "../src/lib/dates";
 import {
-  RESERVED_BOOKING_NUMBERS,
   assignBookingError,
   assignJobError,
   assignableError,
@@ -138,7 +137,7 @@ test.describe("operational fixtures reference the shared records", () => {
   });
 
   test("selectors group records by customer; jobs are newest first", () => {
-    expect(getBookingsForCustomer("sarah-mitchell", OPERATIONS).map((booking) => booking.id)).toEqual(["BK-1042"]);
+    expect(getBookingsForCustomer("sarah-mitchell", OPERATIONS).map((booking) => booking.id)).toEqual(["BK-1042", "BK-1048"]);
     expect(getJobsForCustomer("sarah-mitchell", OPERATIONS).map((job) => job.id)).toEqual(["JB-204", "JB-142"]);
     expect(getJobsForCustomer("david-chen", OPERATIONS).map((job) => job.id)).toEqual(["JB-201", "JB-178"]);
     expect(getAssigneeName(getJobById("JB-204", OPERATIONS)!, DIR)).toBe("Alex Morgan");
@@ -410,10 +409,6 @@ test.describe("operation rules (the checks the server runs before it writes)", (
     }
     expect(parseCompletionNotes("  Replaced the run capacitor.  ")).toEqual({ ok: true, value: "Replaced the run capacitor." });
     for (const bad of ["", "  ", undefined, 3, "x".repeat(10_001)]) expect(parseCompletionNotes(bad).ok, String(bad)).toBe(false);
-  });
-
-  test("BK-1048 is held for Sarah's included cooling visit", () => {
-    expect(RESERVED_BOOKING_NUMBERS).toEqual({ "plan-sarah-comfort-care-v2": 1048 });
   });
 
   test("the rules never mutate their input", () => {

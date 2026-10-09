@@ -24,13 +24,6 @@ import { isRecord, text, type Parsed } from "./validation";
 
 const fail = (error: string, fields?: Record<string, string>): { ok: false; error: string; fields?: Record<string, string> } => ({ ok: false, error, fields });
 
-/**
- * Booking numbers held for one maintenance plan visit, keyed by the visit's reference. Sarah Mitchell's included cooling visit is
- * #BK-1048: it gets that number whenever it is scheduled, and no other booking is given it first. (The booking is made by
- * scheduling the visit, which links the two in the database.)
- */
-export const RESERVED_BOOKING_NUMBERS: Readonly<Record<string, number>> = { "plan-sarah-comfort-care-v2": 1048 };
-
 /* ───────────────────────── identifiers ───────────────────────── */
 
 const REFERENCE = /^[a-z0-9][a-z0-9-]{0,99}$/;

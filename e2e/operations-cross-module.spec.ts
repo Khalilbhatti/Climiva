@@ -128,12 +128,22 @@ test.describe("Reviews read the stored job", () => {
 });
 
 test.describe("Maintenance Plans: the visit is a real booking", () => {
-  async function scheduleVisit2(page: Page) {
-    await page.goto("/maintenance-plans/plan-sarah-comfort-care");
-    await page.getByRole("button", { name: "Schedule visit" }).first().click();
+  /** A new plan for Elena Rodriguez, then its first (Cooling) visit scheduled for Nov 20, 10:00 AM – 12:00 PM with Marcus Vance. */
+  async function scheduleElenasVisit(page: Page) {
+    await page.goto("/maintenance-plans?new=1");
+    const plan = page.getByRole("dialog", { name: "Create maintenance plan" });
+    await plan.getByRole("radio", { name: /^Elena Rodriguez/ }).check();
+    await plan.getByRole("button", { name: /^Next: Property/ }).click();
+    await plan.getByRole("button", { name: /^Next: Coverage/ }).click();
+    await plan.getByRole("button", { name: /^Next: Plan terms/ }).click();
+    await plan.getByLabel(/^Plan name/).fill("Peace of Mind");
+    await plan.getByLabel(/^Agreement price/).fill("189");
+    await plan.getByRole("button", { name: /^Next: Review/ }).click();
+    await plan.getByRole("button", { name: "Create plan" }).click();
+    await page.getByRole("dialog", { name: "Maintenance plan created" }).getByRole("button", { name: "Schedule first visit" }).click();
     const wizard = page.getByRole("dialog", { name: "Schedule included visit" });
     await wizard.getByRole("button", { name: /^Next: Date & time/ }).click();
-    await wizard.getByLabel("Service date").fill("2024-11-19");
+    await wizard.getByLabel("Service date").fill("2024-11-20");
     await wizard.getByRole("radio", { name: /^Midday/ }).check();
     await wizard.getByRole("button", { name: /^Next: Assignment/ }).click();
     await wizard.getByRole("radio", { name: /^Marcus Vance/ }).check();
@@ -142,10 +152,7 @@ test.describe("Maintenance Plans: the visit is a real booking", () => {
     return page.getByRole("dialog", { name: "Maintenance visit scheduled" });
   }
 
-  test("scheduling visit 2 stores BK-1048 for Sarah on Nov 19, 10:00 AM – 12:00 PM with Marcus Vance, and no job", async ({ page, db, workerTenant }) => {
-    const done = await scheduleVisit2(page);
-    await expect(done).toContainText("Booking #BK-1048 confirmed");
-
+  test("a clean seed already stores BK-1048 for Sarah on Nov 19, 10:00 AM – 12:00 PM with Marcus Vance, linked to visit 2, and no job", async ({ db, workerTenant }) => {
     const stored = await db.query(
       `select b.number, b.status, b.source, b.service_date::text as date, b.start_time::text as start, b.end_time::text as stop,
               c.name as customer, m.name as technician, p.slug as plan_id, v.ref as plan_visit_id, v.status as visit_status,
@@ -175,11 +182,11 @@ test.describe("Maintenance Plans: the visit is a real booking", () => {
   });
 
   test("the plan reads the visit's state from the stored booking: Scheduled after a reload, and open again once the booking is cancelled", async ({ page }) => {
-    const done = await scheduleVisit2(page);
-    await done.getByRole("button", { name: "Close", exact: true }).click();
     await page.goto("/maintenance-plans/plan-sarah-comfort-care");
     await expect(page.getByRole("button", { name: "Schedule visit" })).toHaveCount(0);
     await expect(page.locator("main")).toContainText("Scheduled");
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Schedule visit" })).toHaveCount(0);
 
     await page.goto("/bookings?tab=upcoming&booking=BK-1048");
     const drawer = page.getByRole("complementary", { name: "Booking details" });
@@ -194,22 +201,23 @@ test.describe("Maintenance Plans: the visit is a real booking", () => {
     await expect(page.getByRole("button", { name: "Schedule visit" }).first()).toBeVisible();
   });
 
-  test("BK-1048 is held for the visit: other bookings walk past it, and the visit takes it whenever it is scheduled", async ({ page, db, workerTenant }) => {
-    // Move the booking counter up to the held number, so the next ordinary booking would be BK-1048.
-    await db.query("update organization_sequences set next_value = 1048 where organization_id = $1 and kind = 'booking'", [workerTenant.organizationId]);
-    const success = await createBooking(page);
-    await expect(success).toContainText("#BK-1049");
-    await success.getByRole("button", { name: "Close" }).first().click();
-    const visit = await scheduleVisit2(page);
-    await expect(visit).toContainText("Booking #BK-1048 confirmed");
+  test("BK-1048 is never handed out again: with the counter at 1047 the next bookings are 1047 and 1049, and there is still one BK-1048", async ({ page, db, workerTenant }) => {
+    await db.query("update organization_sequences set next_value = 1047 where organization_id = $1 and kind = 'booking'", [workerTenant.organizationId]);
+    const first = await createBooking(page);
+    await expect(first).toContainText("#BK-1047");
+    await first.getByRole("button", { name: "Close" }).first().click();
+    const second = await createBooking(page);
+    await expect(second).toContainText("#BK-1049");
+    expect((await db.query("select count(*)::int as n from bookings where organization_id = $1 and number = 1048", [workerTenant.organizationId])).rows[0].n).toBe(1);
   });
 
-  test("scheduling a visit creates no quote, invoice or payment", async ({ page }) => {
-    const done = await scheduleVisit2(page);
+  test("scheduling another plan's due visit makes the next ordinary booking and creates no quote, invoice or payment", async ({ page }) => {
+    const done = await scheduleElenasVisit(page);
+    await expect(done).toContainText("Booking #BK-1043 confirmed");
     await done.getByRole("button", { name: "Close", exact: true }).click();
     await primaryNav(page).getByRole("link", { name: /^Payments/ }).click();
     await expect(page.getByRole("main")).toContainText("$2,130");
-    await expect(page.getByRole("main")).not.toContainText("Comfort Care");
+    await expect(page.getByRole("main")).not.toContainText("Peace of Mind");
   });
 });
 
@@ -222,9 +230,9 @@ test.describe("operations follow the workspace and the session", () => {
     await primaryNav(page).getByRole("link", { name: /^Jobs/ }).click();
     await primaryNav(page).getByRole("link", { name: /^Bookings/ }).click();
     await page.getByRole("tab", { name: /^Upcoming/ }).click();
-    await expect(bookingRows(page, "Upcoming")).toHaveCount(6);
+    await expect(bookingRows(page, "Upcoming")).toHaveCount(7);
     await page.reload();
-    await expect(bookingRows(page, "Upcoming")).toHaveCount(6);
+    await expect(bookingRows(page, "Upcoming")).toHaveCount(7);
   });
 
   test("switching workspace replaces every booking, job and event with the other business's", async ({ openAs }) => {

@@ -66,7 +66,6 @@ async function mutate<T extends object = object>(change: (work: Work) => Promise
         refs,
         hours: snapshot.settings.hours,
         clock: snapshot.clock,
-        sample: snapshot.hasSampleData,
         stamp: stampInstant(snapshot.hasSampleData, organization.timezone, PROTOTYPE_NOW),
       });
       return ok({ plans: await loadMaintenance(tx, organizationId, refs), ...extra });

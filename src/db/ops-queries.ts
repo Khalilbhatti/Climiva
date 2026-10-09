@@ -35,6 +35,9 @@ import { stableId } from "./stable-id";
 
 export type IdOptions = { stableIds?: boolean };
 
+/** Where a seeded business's counters start when that is not simply above its largest seeded number. */
+export type SeedNumbers = { booking?: number; job?: number };
+
 const idFor = (options: IdOptions, organizationId: string, kind: string, reference: string) =>
   options.stableIds ? { id: stableId(organizationId, kind, reference) } : {};
 
@@ -136,19 +139,15 @@ export async function takeNumber(tx: Tx, kind: SequenceKind): Promise<number> {
 }
 
 /**
- * A new booking number. A number `reserved` for one maintenance plan visit (the sample business holds BK-1048 for Sarah's) is
- * never handed to anything else; the visit itself takes it while it is free. A number that already exists (a counter that
- * fell behind its data) is skipped. Other businesses reserve nothing.
+ * A new booking number, from the business's counter (never `MAX + 1`). A number that already exists is skipped, so a number in use
+ * is never handed out again: the sample business's counter starts at 1043 (the approved Create booking number) with its scheduled
+ * maintenance visit already stored as BK-1048, and its bookings walk 1043 … 1047, then 1049.
  */
-export async function allocateBookingNumber(tx: Tx, organizationId: string, reserved: Readonly<Record<string, number>>, planVisitId?: string): Promise<number> {
-  const exists = async (number: number) =>
-    (await tx.select({ id: bookings.id }).from(bookings).where(and(eq(bookings.organizationId, organizationId), eq(bookings.number, number))).limit(1)).length > 0;
-  const held = Object.values(reserved);
-  const own = planVisitId ? reserved[planVisitId] : undefined;
-  if (own !== undefined && !(await exists(own))) return own;
+export async function allocateBookingNumber(tx: Tx, organizationId: string): Promise<number> {
   for (let attempt = 0; attempt < 200; attempt += 1) {
     const number = await takeNumber(tx, "booking");
-    if (!held.includes(number) && !(await exists(number))) return number;
+    const taken = await tx.select({ id: bookings.id }).from(bookings).where(and(eq(bookings.organizationId, organizationId), eq(bookings.number, number))).limit(1);
+    if (taken.length === 0) return number;
   }
   throw new Error("Could not find a free booking number.");
 }
@@ -206,7 +205,7 @@ const highest = (references: readonly string[], prefix: "BK" | "JB") => referenc
  * and jobs keep the numbers their references carry, the counters are set above the largest of them, and appointment times
  * are stored as the local times they are. Instants are read from the local wall-clock strings in the business's time zone.
  */
-export async function insertOperations(tx: Tx, organizationId: string, timeZone: string, data: OperationsData, refs: Refs, options: IdOptions = {}): Promise<void> {
+export async function insertOperations(tx: Tx, organizationId: string, timeZone: string, data: OperationsData, refs: Refs, options: IdOptions & { startAt?: SeedNumbers } = {}): Promise<void> {
   const instant = (local: string | undefined) => (local ? localToInstant(local, timeZone) : null);
   const need = (map: ReadonlyMap<string, string>, slug: string | undefined, what: string): string | null => {
     if (slug === undefined) return null;
@@ -323,11 +322,12 @@ export async function insertOperations(tx: Tx, organizationId: string, timeZone:
     }
   }
 
-  // The counters continue after what was seeded (BK-1043 after BK-1042, JB-205 after JB-204), and start at 1001 for a business with none.
+  // The counters continue after what was seeded (JB-205 after JB-204), start at 1001 for a business with none, and start where the
+  // dataset says when it says so (the sample business's bookings: BK-1043, with BK-1048 already stored and walked past).
   const next = (kind: "booking" | "job", references: readonly string[], prefix: "BK" | "JB") => ({
     organizationId,
     kind,
-    nextValue: references.length > 0 ? highest(references, prefix) + 1 : 1001,
+    nextValue: options.startAt?.[kind] ?? (references.length > 0 ? highest(references, prefix) + 1 : 1001),
   });
   await tx
     .insert(organizationSequences)

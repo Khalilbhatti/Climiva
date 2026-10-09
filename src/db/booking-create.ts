@@ -12,7 +12,7 @@
 import { and, eq } from "drizzle-orm";
 import type { WeeklyHours } from "@/data/settings";
 import type { BusinessClock } from "@/lib/business-time";
-import { assignableError, initialBookingStatus, RESERVED_BOOKING_NUMBERS, slotError, type NewBookingInput } from "@/lib/operations-rules";
+import { assignableError, initialBookingStatus, slotError, type NewBookingInput } from "@/lib/operations-rules";
 import { refuse } from "@/lib/refusal";
 import { loadServices } from "./core-queries";
 import type { Tx } from "./index";
@@ -25,8 +25,6 @@ export type BookingWork = {
   refs: Refs;
   hours: WeeklyHours;
   clock: BusinessClock;
-  /** The sample business: the only one that holds booking numbers back for its sample records. */
-  sample: boolean;
   /** The instant a system event happening now is stamped with. */
   stamp: Date;
 };
@@ -40,10 +38,9 @@ export async function findMember(tx: Tx, organizationId: string, slug: string) {
 /**
  * Validate and store a booking, returning its id and number. Every reference it names (customer, property, Service, assignee) is
  * resolved inside THIS business; one that belongs to another business is indistinguishable from one that never existed.
- * `visitRef` is the maintenance plan visit it schedules, when it schedules one: that visit takes the booking number held for it.
  */
-export async function insertBookingTx(work: BookingWork, booking: NewBookingInput, visitRef?: string): Promise<{ id: string; number: number }> {
-  const { tx, organizationId, refs, hours, clock, sample, stamp } = work;
+export async function insertBookingTx(work: BookingWork, booking: NewBookingInput): Promise<{ id: string; number: number }> {
+  const { tx, organizationId, refs, hours, clock, stamp } = work;
 
   let customerId: string | null = null;
   let propertyId: string | null = null;
@@ -75,7 +72,7 @@ export async function insertBookingTx(work: BookingWork, booking: NewBookingInpu
   if (timeProblem) refuse(timeProblem, { slot: timeProblem });
 
   const status = initialBookingStatus(booking.source, service.bookingMethod);
-  const number = await allocateBookingNumber(tx, organizationId, sample ? RESERVED_BOOKING_NUMBERS : {}, visitRef);
+  const number = await allocateBookingNumber(tx, organizationId);
   const [row] = await tx
     .insert(bookings)
     .values({

@@ -174,12 +174,19 @@ test.describe("creating the workspace", () => {
     await expect(switcher(page)).toContainText("Blank Slate Cooling");
     // Sidebar counts belong to the sample business.
     await expect(page.getByRole("navigation", { name: "Primary" }).locator("a span.font-mono")).toHaveCount(0);
-    // The modules that still run on sample data say so.
-    for (const [path, name] of [["/payments", "Payments"], ["/quotes-invoices", "Quotes & Invoices"]]) {
-      await page.goto(path);
-      await expect(page.getByRole("heading", { level: 2, name: `${name} isn't available for Blank Slate Cooling yet` })).toBeVisible();
-      await expect(page.getByText("Sarah Mitchell")).toHaveCount(0);
+    // Payments and Quotes & Invoices are the business's own now, and it has none yet: real empty states with zero totals, not "isn't available".
+    await page.goto("/payments");
+    await expect(page.getByRole("heading", { name: "No payments recorded yet" })).toBeVisible();
+    const paymentTotals = page.getByRole("region", { name: "Payment totals" });
+    for (const [label, value] of [["Payments recorded", "0"], ["Amount received", "$0.00"], ["Outstanding invoices", "0"], ["Outstanding balance", "$0.00"]]) {
+      await expect(paymentTotals.getByText(label, { exact: true }).locator("xpath=../..")).toContainText(value);
     }
+    await page.goto("/quotes-invoices");
+    await expect(page.getByText("No quotes yet.")).toBeVisible();
+    await page.getByRole("tab", { name: /^Invoices/ }).click();
+    await expect(page.getByText("No invoices yet.")).toBeVisible();
+    await expect(page.getByText(/isn't available for Blank Slate Cooling yet/)).toHaveCount(0);
+    await expect(page.getByText("Sarah Mitchell")).toHaveCount(0);
     // Bookings, Jobs and the Schedule are the business's own now, and it has none yet: real empty states.
     await page.goto("/bookings");
     await expect(page.getByText("No bookings yet. Create a booking to get started.")).toBeVisible();

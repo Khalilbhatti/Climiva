@@ -29,6 +29,13 @@ export const QUOTE_BASELINE = {
 /** Invoices by status at the baseline; invoices created and payments recorded in a session move them. */
 export const INVOICE_BASELINE_COUNTS = { paid: 12, unpaid: 4, "partially-paid": 2 } as const;
 
+/**
+ * The invoices the canonical records themselves hold, by status (7 paid, INV-1051 unpaid, INV-1050 partially paid). The baseline
+ * above covers more invoicing history than those nine records, so Analytics shows the baseline moved by what changed since: the
+ * difference between today's tally and this one.
+ */
+export const CANONICAL_INVOICE_COUNTS = { paid: 7, unpaid: 1, "partially-paid": 1 } as const;
+
 /** Bookings and completed jobs per week of the period. They sum to 24 and 18. */
 export const WEEKLY_ACTIVITY: readonly { label: string; bookings: number; completedJobs: number }[] = [
   { label: "Oct 1–6", bookings: 5, completedJobs: 3 },

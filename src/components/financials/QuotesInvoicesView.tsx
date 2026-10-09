@@ -22,6 +22,7 @@ import {
   getInvoiceTotal,
   getQuoteTotal,
   getRelatedWork,
+  newestFirst,
   type Invoice,
   type InvoiceStatus,
   type Quote,
@@ -88,8 +89,8 @@ export function QuotesInvoicesView() {
   const [customer, setCustomer] = useState("all");
   const [service, setService] = useState("all");
 
-  const quotes = [...data.quotes].sort((a, b) => b.id.localeCompare(a.id));
-  const invoices = [...data.invoices].sort((a, b) => b.id.localeCompare(a.id));
+  const quotes = [...data.quotes].sort(newestFirst);
+  const invoices = [...data.invoices].sort(newestFirst);
   const statusOf = (id: string) => getInvoiceStatus(data.invoices.find((invoice) => invoice.id === id)!, data);
 
   const needle = query.trim().toLowerCase();

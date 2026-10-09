@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, CircleCheck } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { KeyValueList } from "@/components/ui/KeyValueList";
 import { Modal } from "@/components/ui/Modal";
@@ -11,11 +12,11 @@ import { invoiceHref, paymentHref } from "@/config/routes";
 import {
   PAYMENT_METHOD_LABEL,
   VOID_REASONS,
+  getInvoiceAfterVoid,
   getInvoiceBalance,
   getInvoiceById,
   getInvoicePaid,
   getInvoiceStatus,
-  getInvoiceTotal,
   getPaymentById,
   type Invoice,
   type Payment,
@@ -28,7 +29,8 @@ import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 /**
  * Void a recorded payment. It stays in the invoice's history as Voided and stops counting toward the balance;
- * related quote, job and booking are not changed. This is separate from Record payment: it never creates a payment.
+ * related quote, job and booking are not changed. This is separate from Record payment: it never creates a payment. The server
+ * stores the void (once: a voided payment is final) and answers with the invoice reopened.
  */
 export function VoidPaymentModal({ payment, onClose }: { payment: Payment; onClose: () => void }) {
   const dir = useDirectory();
@@ -39,6 +41,8 @@ export function VoidPaymentModal({ payment, onClose }: { payment: Payment; onClo
   const [note, setNote] = useState("");
   const [showError, setShowError] = useState(false);
   const [done, setDone] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
   useEffect(() => {
@@ -97,8 +101,18 @@ export function VoidPaymentModal({ payment, onClose }: { payment: Payment; onClo
     );
   }
 
-  const paidAfter = Math.max(0, getInvoicePaid(invoice, data) - payment.amount);
-  const balanceAfter = Math.max(0, getInvoiceTotal(invoice) - paidAfter);
+  const { paid: paidAfter, balance: balanceAfter } = getInvoiceAfterVoid(invoice, payment, data);
+
+  async function confirm() {
+    if (saving) return;
+    if (!reason) return setShowError(true);
+    setSaving(true);
+    setProblem(undefined);
+    const result = await voidPayment(payment.id, reason, note);
+    setSaving(false);
+    if (!result.ok) return setProblem(result.error);
+    setDone(true);
+  }
 
   return (
     <Modal
@@ -112,15 +126,8 @@ export function VoidPaymentModal({ payment, onClose }: { payment: Payment; onClo
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            variant="destructive-solid"
-            onClick={() => {
-              if (!reason) return setShowError(true);
-              voidPayment(payment.id, reason, note);
-              setDone(true);
-            }}
-          >
-            Void payment
+          <Button variant="destructive-solid" onClick={confirm} disabled={saving}>
+            {saving ? "Voiding…" : "Void payment"}
           </Button>
         </>
       }
@@ -168,6 +175,7 @@ export function VoidPaymentModal({ payment, onClose }: { payment: Payment; onClo
         Payment #{payment.id} will remain in the invoice&rsquo;s payment history with status Voided. The related quote, job and booking are not
         changed.
       </p>
+      {problem && <FormAlert>{problem}</FormAlert>}
     </Modal>
   );
 }

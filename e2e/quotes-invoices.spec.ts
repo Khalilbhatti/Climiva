@@ -158,8 +158,7 @@ test.describe("Quote #QT-884", () => {
     await expect(page.getByRole("region", { name: "Customer", exact: true })).toContainText("No customer record yet.");
   });
 
-  test("an unknown quote or invoice shows a not-found state in the shell", async ({ page, consoleGuard }) => {
-    consoleGuard.allow(/status of 404/);
+  test("an unknown quote or invoice shows a not-found state in the shell", async ({ page }) => {
     await page.goto("/quotes-invoices/quotes/QT-000");
     await expect(page.getByText("Quote not found")).toBeVisible();
     await page.goto("/quotes-invoices/invoices/INV-0000");
@@ -190,7 +189,7 @@ test.describe("Create invoice from the approved quote", () => {
     await expect(page.getByRole("region", { name: "Quote status" })).toContainText("No invoice created yet");
   });
 
-  test("creating adds an unpaid INV-1052 in this session, links it to the quote, and records no payment", async ({ page }) => {
+  test("creating stores an unpaid INV-1052, links it to the quote, and records no payment", async ({ page }) => {
     await page.goto("/quotes-invoices/quotes/QT-884");
     await page.getByRole("button", { name: "Create invoice" }).first().click();
     const dialog = page.getByRole("dialog", { name: "Create invoice" });
@@ -213,6 +212,13 @@ test.describe("Create invoice from the approved quote", () => {
     await expect(page.getByRole("region", { name: "Quote status" })).toContainText("#INV-1052");
     await expect(page.getByRole("button", { name: "Create invoice" })).toHaveCount(0);
     await expect(page.getByText("Quote approved by customer · Invoiced")).toBeVisible();
+
+    // It is stored, not held in the page: after a reload the invoice and the link are still there.
+    await page.reload();
+    await expect(page.getByRole("region", { name: "Quote status" })).toContainText("#INV-1052");
+    await page.goto("/quotes-invoices/invoices/INV-1052");
+    await expect(page.locator("header").filter({ hasText: "INV-1052" }).last()).toContainText("Unpaid");
+    await expect(page.getByRole("region", { name: "Invoice summary" })).toContainText("Net 15 · due Nov 9, 2024");
   });
 
   test("nothing is paid automatically: Payments still has 7 recorded payments and the new invoice is outstanding", async ({ page }) => {
@@ -227,7 +233,7 @@ test.describe("Create invoice from the approved quote", () => {
     await expect(page.getByRole("table", { name: "Outstanding invoices" }).locator("tbody tr").filter({ hasText: "INV-1052" })).toContainText("$285.00");
   });
 
-  test("the Overview's Total Invoiced includes the new invoice for the session", async ({ page }) => {
+  test("the Overview's Total Invoiced includes the new invoice, and keeps it after a reload", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("region", { name: "Key metrics" })).toContainText("$6,240");
     await createInvoiceFromQuote(page);
@@ -235,7 +241,7 @@ test.describe("Create invoice from the approved quote", () => {
     await expect(page.getByRole("region", { name: "Key metrics" })).toContainText("$6,525");
     await expect(page.getByRole("region", { name: "Key metrics" })).toContainText("$2,130");
     await page.reload();
-    await expect(page.getByRole("region", { name: "Key metrics" })).toContainText("$6,240");
+    await expect(page.getByRole("region", { name: "Key metrics" })).toContainText("$6,525");
   });
 });
 

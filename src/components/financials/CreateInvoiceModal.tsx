@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Info, Link2 } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { Button } from "@/components/ui/Button";
 import { KeyValueList } from "@/components/ui/KeyValueList";
 import { Modal } from "@/components/ui/Modal";
@@ -12,31 +13,38 @@ import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/components/ui/Toast";
 import { invoiceHref } from "@/config/routes";
 import { PAYMENT_TERMS, getLineAmount, getLineItemsTotal, type PaymentTerms, type Quote } from "@/data/financials";
-import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import { getPartyName } from "@/data/operations";
 import { formatDate } from "@/lib/format";
 import { useFinancials } from "./FinancialProvider";
 import { usd } from "./shared";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useClock } from "@/components/workspace/WorkspaceProvider";
 
 /**
- * Create an invoice from an approved quote. The quote's details are shown for review first; creating adds an
- * unpaid invoice to this session's data (the number is assigned on creation). It never records a payment and
- * never changes the quote.
+ * Create an invoice from an approved quote. The quote's details are shown for review first; creating stores an unpaid
+ * invoice (the server assigns its number, in one step with its lines). It never records a payment and never changes the quote.
  */
 export function CreateInvoiceModal({ quote, onClose }: { quote: Quote; onClose: () => void }) {
   const dir = useDirectory();
   const { createInvoiceFromQuote } = useFinancials();
   const { toast } = useToast();
   const router = useRouter();
+  const { today } = useClock();
 
   const [terms, setTerms] = useState<PaymentTerms>("due-on-receipt");
   const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
   const total = getLineItemsTotal(quote.lineItems);
 
-  function create() {
-    const invoice = createInvoiceFromQuote(quote.id, { terms, message });
-    if (!invoice) return;
+  async function create() {
+    if (saving) return;
+    setSaving(true);
+    setProblem(undefined);
+    const result = await createInvoiceFromQuote(quote.id, { terms, message });
+    setSaving(false);
+    if (!result.ok) return setProblem(result.error);
+    const { invoice } = result.data;
     toast(`Invoice #${invoice.id} created from Quote #${quote.id}.`);
     onClose();
     router.push(invoiceHref(invoice.id));
@@ -54,7 +62,9 @@ export function CreateInvoiceModal({ quote, onClose }: { quote: Quote; onClose: 
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={create}>Create invoice</Button>
+          <Button onClick={create} disabled={saving}>
+            {saving ? "Creating…" : "Create invoice"}
+          </Button>
         </>
       }
     >
@@ -113,7 +123,7 @@ export function CreateInvoiceModal({ quote, onClose }: { quote: Quote; onClose: 
             <h3 id="invoice-details" className="text-sm font-semibold text-ink">
               Invoice details
             </h3>
-            <KeyValueList items={[{ label: "Invoice date", value: `Today (${formatDate(PROTOTYPE_TODAY)})` }]} />
+            <KeyValueList items={[{ label: "Invoice date", value: `Today (${formatDate(today)})` }]} />
             <Select label="Payment terms" value={terms} onChange={(event) => setTerms(event.target.value as PaymentTerms)}>
               {PAYMENT_TERMS.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -151,6 +161,7 @@ export function CreateInvoiceModal({ quote, onClose }: { quote: Quote; onClose: 
             Payments are recorded separately after the invoice is created. Changes here affect this invoice only and don&rsquo;t modify Quote #
             {quote.id}.
           </p>
+          {problem && <FormAlert>{problem}</FormAlert>}
         </aside>
       </div>
     </Modal>

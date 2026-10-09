@@ -10,6 +10,7 @@
  * docs/saas-architecture.md.
  */
 import type { CustomerBook } from "./customers";
+import type { FinancialData } from "./financials";
 import type { OperationsData } from "./operations";
 import type { Service } from "./services";
 import type { TeamData } from "./team";
@@ -26,4 +27,6 @@ export type CoreSnapshot = {
   book: CustomerBook;
   /** The business's Bookings, Jobs and blocked time: the Schedule is derived from these. */
   operations: OperationsData;
+  /** The business's Quotes, Invoices and Payments: balances and statuses are derived from these. */
+  financials: FinancialData;
 };

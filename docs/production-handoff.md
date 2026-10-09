@@ -14,6 +14,13 @@ only Business information, Business hours, Workspace preferences and each person
 > **Phase 10 update.** Customers (with their properties and equipment), Services and the Team (members, roles, availability, assigned Services) moved to PostgreSQL per business: they are read from the
 > database on every load, Services and the Team are changed through Server Actions that persist, and a new business starts with none of them. The sample records for those three now live in the seed
 > (`scripts/db/seed-data`), not in `src/data`. Everything else in this document about the other modules still holds. See [saas-architecture.md §13](saas-architecture.md#13-core-business-data-customers-services-team).
+>
+> **Phase 11 update.** Bookings, Jobs (with work details and photo metadata), the Schedule (derived) and blocked time moved to PostgreSQL per business, with organization-scoped numbers (`BK-`, `JB-`). See [saas-architecture.md §24](saas-architecture.md#24-operations-bookings-jobs-and-the-schedule).
+>
+> **Phase 12 update.** Quotes, Invoices (with line items) and Payments moved to PostgreSQL per business: money is stored as integer cents, an invoice's paid amount, balance and status are derived from its lines and payments, a payment is recorded once and
+> corrected only by voiding it (never edited, never deleted), and `QT-` / `INV-` / `PAY-` numbers are allocated per business by the database. Record payment, Void payment and Create invoice are Server Actions that persist, so the demo transition (#PAY-1009)
+> survives a reload. A customer's page lists their quotes, invoices and payments. A new business gets real empty states for Payments and Quotes & Invoices instead of "not available yet". `financial-state` and `next-id` are gone. Analytics is **not** migrated: its money lines read the stored
+> records through the same selectors as the Overview, and its other figures stay approved baselines. See [saas-architecture.md §25](saas-architecture.md#25-financials-quotes-invoices-and-payments).
 
 ## Contents
 
@@ -65,8 +72,8 @@ service media, tax rules, and anything that needs a backend (see [What is intent
   `config/navigation.ts`). The skip link, landmarks and one-`h1`-per-page structure live here and in `ui/PageHeader`.
 - **Shared UI.** `components/ui/`: Button, Card, Modal (native `<dialog>`: focus trap, Escape, focus return), Tabs and TabNav, Table, StatusBadge, FormField and
   inputs, Toast, UnsavedGuard, EmptyState, KpiCard. Colour, radius, shadow and type scale are tokens in `src/app/globals.css`; components use them, never raw values.
-- **Data and state.** `src/data/*` holds typed sample records and pure selectors. `src/lib/*-state.ts` holds pure transitions (`recordPayment`, `assign`,
-  `completeJob`, `createBooking`, …) that take the current data and return the next. One provider per area keeps the result in React state; all providers mount
+- **Data and state.** `src/data/*` holds types and pure selectors (and, for the modules not yet on PostgreSQL, typed sample records). `src/lib/*-state.ts` holds pure transitions for those modules (`assign`, …) that take the current data and return the next;
+  the financial and operational ones are Server Actions now (`src/server/actions`). One provider per area keeps the result in React state; all providers mount
   once at the app root (`components/providers/AppProviders`) so the public previews read the same session.
 - **Time.** `PROTOTYPE_TODAY` (2024-10-25) and `PROTOTYPE_NOW` (10:45) in `data/fixtures.ts` are the product's clock. `lib/dates.ts` and `lib/format.ts` format by hand
   from "YYYY-MM-DD" and "HH:mm" strings in the business's local time; nothing uses `Date.now`, `new Date()`, `Intl` or `toLocale*`, which a test enforces.
@@ -107,7 +114,7 @@ One set of records, read everywhere; nothing is typed twice. The facts every mod
   Bookings and jobs carry either a customer id or a contact snapshot for someone without a record.
 - **Money.** Seven recorded payments, $2,130 received, two outstanding invoices, $680 outstanding, $6,240 invoiced. #INV-1044 is paid and is never offered in Record payment;
   #PAY-1001 is the historical voided payment. Recording the $300 on #INV-1050 makes #PAY-1009: eight payments, $2,430, one outstanding invoice, $380. Every total is derived
-  from the records, never typed.
+  from the stored records, never typed. The $200 already paid on #INV-1050 is carried on the invoice (it is not a payment). $6,240 invoiced is a reporting baseline that covers more history than the nine stored invoices; invoices made since are added to it.
 - **Plans.** Sarah's Comfort Care: $189 a year, two visits, May 14 2024 to May 14 2025.
 - **Growth.** The Marketplace lists five of the six Services (Emergency No-Heat / No-Cool is not selected). Reviews: 12 · 4.7 average · 3 awaiting a reply · 5 requests.
   Marketing: 2 drafts · 1 scheduled · 8 sent · 146 recent recipients.
@@ -125,7 +132,7 @@ One set of records, read everywhere; nothing is typed twice. The facts every mod
 - Nothing is saved to `localStorage`. Two cookies exist: the Better Auth session cookie and the `climvia_org` active-workspace preference (both `httpOnly`). A second tab starts from the
   stored settings and the sample data; a different business never sees the sample data. **Exception (Phase 10):** Services and the Team are stored too, and Customers are read from the database.
 - Following an in-app link away from a form with unsaved changes asks "Discard unsaved changes?". Reloading or closing the tab is left to the browser, and loses the changes either way.
-- Created records take the next free number in the session (a booking, job, payment, invoice or plan), with #BK-1048 held back for Sarah's visit.
+- A booking, job, quote, invoice or payment takes the next number of its business from the database (never `MAX + 1`); a maintenance plan, review or campaign still takes the next free number in the session, with #BK-1048 held back for Sarah's visit.
 - The date and time style, the accent colour and the logo apply to everything read after they are saved; server-rendered text is limited to what does not depend on them.
 
 ## What is intentionally absent
@@ -133,10 +140,10 @@ One set of records, read everywhere; nothing is typed twice. The facts every mod
 None of this is missing by accident; each has no approved screen or needs infrastructure the project does not have.
 
 - **A backend for the sample modules.** Since Phase 9 there is server code (Better Auth's route handler, a proxy, Server Actions) and a PostgreSQL database, but only accounts,
-  businesses, memberships, the four Settings sections, `sites`, and (Phase 10) Customers, Services and the Team use it. Bookings, Jobs, financials, Website, Marketplace, Reviews, Marketing and
-  Analytics are still sample data.
+  businesses, memberships, the four Settings sections, `sites`, Customers, Services and the Team (Phase 10), Bookings, Jobs and the Schedule (Phase 11), and Quotes, Invoices and Payments (Phase 12) use it. Maintenance Plans, Website, Marketplace,
+  Reviews, Marketing and Analytics are still sample data.
 - **Authorization inside a business beyond owner / admin / member.** The Team module's roles and permission matrix are configuration that nothing enforces. SaaS roles are separate (see saas-architecture.md).
-- **Payments.** Record payment writes a record. No card, bank or processor is involved, and nothing is collected on the booking pages ("No payment is collected online").
+- **Payments.** Record payment stores a record of money the business received. No card, bank or processor is involved, and nothing is collected on the booking pages ("No payment is collected online"). There is no screen to write a quote, edit an invoice, refund or credit; invoices are made from approved quotes.
 - **Email and SMS.** Review requests and campaigns are recorded as sent or scheduled; nothing is delivered.
 - **Domains.** Connecting, verifying and removing a domain is a simulation of the screens; no DNS is touched.
 - **File storage.** Job photos keep a name and size for the visit; no file is read or kept.
@@ -153,8 +160,8 @@ Final verification, run on the finished source:
 | `npm run typecheck` | clean |
 | `npm run lint` (zero warnings allowed) | clean |
 | `npm run build` | succeeds with no warnings; every page is rendered on request (`ƒ`), none is prerendered |
-| `npm run test:e2e` (production build, own `climvia_test` database, Chromium) | **2118 passed, 0 failed, 0 flaky, 0 skipped**, 58 spec files, about 9 minutes on six workers (Phase 11: the earlier tests kept and adapted where operations are now stored, plus the operations specs). One test, the Schedule's keyboard-open check, can miss its keypress when forty copies of it run at once on six workers (it also did before Phase 11); on its own it passed 30 of 30 |
-| Repeats for flakiness | session flows, navigation, search, payments and financial transitions, quotes and invoices, Settings and the unsaved-changes guard, Website, Marketplace, Marketing, plans, jobs, reviews, bookings and schedule ×3 (1101 runs); responsive shell, dates and time zones, accessibility, route crawl and invariants ×2 (1128 runs). No failure in any. Phase 9: the SaaS specs, Settings, shell, session flows, navigation, Schedule, dates and search ×3 (927 runs), no failure. One existing test (Schedule: opening an event by keyboard) failed about once in thirty when run in parallel hundreds of times, because the address now changes only after a server round trip; it waits for that explicitly |
+| `npm run test:e2e` (production build, own `climvia_test` database, Chromium) | **2247 passed, 0 failed, 0 flaky, 0 skipped**, 63 spec files, about 11 minutes on six workers (Phase 12: the earlier tests kept and adapted where quotes, invoices and payments are now stored, plus the financial specs: money, rules, SQL as the restricted role including the concurrency tests, the seed round trip, and the flows through the real application). One test, the Schedule's keyboard-open check, can miss its keypress when forty copies of it run at once on six workers (it also did before Phase 11); on its own it passed 30 of 30 |
+| Repeats for flakiness | session flows, navigation, search, payments and financial transitions, quotes and invoices, Settings and the unsaved-changes guard, Website, Marketplace, Marketing, plans, jobs, reviews, bookings and schedule ×3 (1101 runs); responsive shell, dates and time zones, accessibility, route crawl and invariants ×2 (1128 runs). No failure in any. Phase 12: the financial flows, database, round-trip, payments, quotes and invoices and server-boundary specs ×3 (537 runs), no failure. Phase 9: the SaaS specs, Settings, shell, session flows, navigation, Schedule, dates and search ×3 (927 runs), no failure. One existing test (Schedule: opening an event by keyboard) failed about once in thirty when run in parallel hundreds of times, because the address now changes only after a server round trip; it waits for that explicitly |
 
 Every test runs behind a guard (`e2e/fixtures.ts`) that fails it on any console error, console warning (hydration mismatches included) or uncaught page error.
 
@@ -230,14 +237,14 @@ The code is arranged so these are the only places that change:
 | Concern | Today | Seam |
 | --- | --- | --- |
 | Reading records | `src/data/*` exports typed arrays and selectors that accept the data as an argument | Replace the arrays with fetched data; the selectors already work on any `…Data` value passed in |
-| Changing records | `src/lib/*-state.ts` pure functions: `(data, input) → next data` | Each is one API mutation; the provider keeps calling it optimistically or replaces it with a server call |
+| Changing records | Bookings, jobs and the financials are Server Actions already; `src/lib/*-state.ts` pure functions `(data, input) → next data` remain for the other modules | Each is one API mutation; the provider replaces it with a server call, as the financial provider does |
 | Holding state | `components/*/…Provider.tsx` (React state, ref for synchronous reads) | Swap for a data-fetching cache; the `use…()` hooks are the only interface components use |
-| Identifiers | **Done in Phase 11 for bookings and jobs:** `BK-` / `JB-` numbers are allocated per business by `app_next_number()`; `nextId` (`lib/next-id.ts`) still numbers the not-yet-migrated money records | Server-assigned ids for the rest, as bookings and jobs have them |
+| Identifiers | **Done in Phases 11 and 12:** `BK-` / `JB-` / `QT-` / `INV-` / `PAY-` numbers are allocated per business by `app_next_number()` | Server-assigned ids for plans, reviews and campaigns, as these have them |
 | Business facts | **Done in Phase 9:** `SettingsProvider` is fed by PostgreSQL through `resolveWorkspace()` and saves through Server Actions | Settings stays the single owner |
 | The clock | **Done in Phase 11 for operations:** `useClock()` (the business's own "today", computed on the server); the not-yet-migrated modules still use `PROTOTYPE_TODAY` / `PROTOTYPE_NOW` | A business-time-zone "now" for the rest; formatters already take business-local strings |
 | Sign-in and roles | **Done in Phase 9:** Better Auth + `organization_memberships` (owner / admin / member) | The Team module's own permissions still become enforced when Team moves to the database |
 | Public pages | `src/app/(site)`: the Website and Marketplace renderers read the same providers | Render per tenant from stored content; the renderers take content as props |
-| Sending and billing | Record-only actions in `reviews-state`, `marketing-state`, `financial-state` | Server-side delivery and a payment processor behind the same actions |
+| Sending and billing | Record-only actions in `reviews-state`, `marketing-state`; payments are recorded by hand in PostgreSQL (Phase 12) | Server-side delivery, and a payment processor behind the existing financial actions |
 | Files | Photo **metadata** is stored (`job_files`); a file chosen in the browser lives for the visit only (`OperationsProvider.addSessionFiles`) | Upload to storage and keep the reference in `job_files.storage_key` |
 | Reports | `lib/report-export.ts` builds CSV and a PDF in the browser | Keep, or generate server-side from the same model |
 

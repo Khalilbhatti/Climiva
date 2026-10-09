@@ -407,14 +407,15 @@ Status of an invoice, its paid amount and balance = derived from its line items,
 | INV-1044 | Paid, balance $0 | Paid by PAY-1008 ($285); never offered in Record payment |
 | Overview | $6,240 invoiced, $2,130 received, "7 recorded non-voided payments" | Payments are derived and equal the approved figures; $6,240 is a fixed approved baseline |
 
-### `#PAY-1009` session transition
+### `#PAY-1009` transition (stored since Phase 12)
 
 Record payment (from Payments, the Outstanding tab, an invoice page or the Overview quick action; all open the same `RecordPaymentModal`):
 choose `#INV-1050` (Arthur Pendleton, balance $300) → full payment defaults to $300, balance after $0 → Record payment creates **`#PAY-1009`**
 (Check, dated Oct 25, 2024, Recorded) → `#INV-1050` becomes **Paid** with a $0 balance → after Close, Payments shows **8 recorded, $2,430.00 received,
 1 outstanding invoice, $380.00** and the Outstanding tab lists only `#INV-1051`. `#PAY-1008` and the voided `#PAY-1001` are untouched.
-The values live in the workspace-level `FinancialProvider`, so they survive navigation between modules; a reload restores the baseline.
-A partial payment leaves the invoice Partially paid and outstanding. Overview "Payments Received" and its payment count follow the same data.
+**Phase 12:** the payment is no longer held in the page. The server records it in PostgreSQL (`payments`, one transaction that locks the invoice, checks the balance and
+takes the business's next PAY- number) and answers with the financials as stored, so the totals above survive navigation, a reload and a new session; the earlier "a reload restores the baseline" behaviour is gone.
+A partial payment leaves the invoice Partially paid and outstanding. Overview "Payments Received" and its payment count follow the same data. The void flow below is stored the same way: the voided payment stays in history and the reopened balance survives a reload. See `docs/saas-architecture.md` §25.
 
 ### Historical void flow (kept separate)
 
@@ -463,10 +464,10 @@ quote; the quote then reads "Invoice #INV-1052" and can't be invoiced again. No 
 ### Unresolved dependencies for later modules
 
 1. **Total Invoiced ($6,240)** and the Analytics figures built on it: the nine invoices total $3,010, so the Overview total is a fixed baseline plus
-   session invoices. Analytics must decide how it counts.
+   the invoices made since (Phase 12: stored invoices that are not `imported`). It is a reporting baseline, deliberately not backed by invented rows. Analytics is still to migrate and keeps its own baselines.
 2. ~~**Maintenance Plans** will create Bookings only.~~ **Done (Phase 5):** scheduling an included visit creates a Booking and nothing financial; no plan invoices exist.
 3. **Settings** will own business hours, timezone and tax settings; Team's availability presets and the invoice "Tax $0.00" line stand in until then.
-4. **Customers** has no bookings, quotes or invoices view yet; `getBookingsForCustomer` and the financial selectors are ready for one.
+4. ~~**Customers** has no bookings, quotes or invoices view yet.~~ **Done (Phase 12):** the customer page lists the customer's quotes, invoices (with balance) and payments from the stored records.
 5. People with a `contactName` snapshot in Bookings, Jobs and the financial records (Claire Dubois, Arthur Pendleton, Maya Lin…) have no Customers record.
 6. Roles are configuration only. Real authorization needs sign-in, which no phase has introduced.
 

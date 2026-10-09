@@ -130,7 +130,7 @@ test.describe("completing a job reaches the customer and Reviews", () => {
 });
 
 test.describe("recording #PAY-1009 reaches Payments, the invoice, the Overview and Analytics", () => {
-  test("the $300 on #INV-1050 moves every total together, and a reload restores the baseline", async ({ page }) => {
+  test("the $300 on #INV-1050 moves every total together, and a reload keeps it", async ({ page }) => {
     await page.goto("/payments");
     await page.getByRole("button", { name: "Record payment" }).first().click();
     const dialog = page.getByRole("dialog", { name: "Record payment" });
@@ -158,10 +158,11 @@ test.describe("recording #PAY-1009 reaches Payments, the invoice, the Overview a
     await go(page, "/payments?tab=outstanding");
     await expect(main(page)).toContainText("$380.00");
 
+    // The payment is stored in the database, so a reload shows the same totals.
     await page.reload();
     await go(page, "/");
-    await expect(kpis(page)).toContainText("$2,130");
-    await expect(kpis(page)).toContainText("7 recorded non-voided payments");
+    await expect(kpis(page)).toContainText("$2,430");
+    await expect(kpis(page)).toContainText("8 recorded non-voided payments");
   });
 });
 

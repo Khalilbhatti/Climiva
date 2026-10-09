@@ -9,7 +9,7 @@
  * No `server-only` import on purpose: scripts and tests use these too. Nothing under src/ that is a Client Component may
  * import this file (a test enforces it).
  */
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { OperationsData } from "@/data/operations";
 import { localToInstant } from "@/lib/business-time";
 import { numberOf } from "@/lib/operations-rules";
@@ -118,8 +118,10 @@ export async function loadOperations(tx: Tx, organizationId: string, timeZone: s
 
 /* ───────────────────────── numbers ───────────────────────── */
 
+export type SequenceKind = "booking" | "job" | "quote" | "invoice" | "payment";
+
 /** The next number of one kind for the ACTIVE organization (the context set by withTenant). Locks the counter until commit. */
-export async function takeNumber(tx: Tx, kind: "booking" | "job"): Promise<number> {
+export async function takeNumber(tx: Tx, kind: SequenceKind): Promise<number> {
   const result = await tx.execute<{ n: number }>(sql`select app_next_number(${kind}) as n`);
   return Number(result.rows[0].n);
 }
@@ -332,5 +334,6 @@ export async function clearOperations(tx: Tx, organizationId: string): Promise<v
   await tx.delete(jobs).where(eq(jobs.organizationId, organizationId));
   await tx.delete(bookings).where(eq(bookings.organizationId, organizationId));
   await tx.delete(scheduleBlocks).where(eq(scheduleBlocks.organizationId, organizationId));
-  await tx.delete(organizationSequences).where(eq(organizationSequences.organizationId, organizationId));
+  // Only the operations' own counters: the financial documents' counters are cleared with them (clearFinancials).
+  await tx.delete(organizationSequences).where(and(eq(organizationSequences.organizationId, organizationId), inArray(organizationSequences.kind, ["booking", "job"])));
 }

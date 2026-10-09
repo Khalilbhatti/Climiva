@@ -5,6 +5,7 @@ import { DisplayDate } from "@/components/ui/DisplayDate";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { KeyValueList } from "@/components/ui/KeyValueList";
 import { MaintenanceAgreementCard } from "@/components/customers/CustomerPlan";
+import { CustomerFinancialsCard } from "@/components/customers/CustomerFinancials";
 import { CurrentServiceCard, RecentVisitsCard } from "@/components/customers/CustomerWork";
 import { EquipmentCard } from "@/components/customers/EquipmentCard";
 import { customerPropertiesHref } from "@/config/routes";
@@ -88,6 +89,8 @@ export default async function CustomerOverviewPage({ params }: PageProps<"/custo
         </SectionCard>
 
         <RecentVisitsCard customerId={customer.id} />
+
+        <CustomerFinancialsCard customerId={customer.id} />
       </div>
 
       <div className="space-y-6 lg:col-span-5">

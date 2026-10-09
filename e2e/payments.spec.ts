@@ -278,7 +278,7 @@ test.describe("Record payment", () => {
     await expect(page.getByRole("region", { name: "Invoice items" })).toContainText("Previously paid");
   });
 
-  test("the new totals persist across navigation until reload, which restores the baseline", async ({ page }) => {
+  test("the new totals persist across navigation and across a reload, because the payment is stored", async ({ page }) => {
     await page.goto("/payments");
     const done = await recordFullPaymentOnInv1050(page);
     await done.getByRole("button", { name: "Close", exact: true }).click();
@@ -294,10 +294,12 @@ test.describe("Record payment", () => {
     await expectTotals(page, { recorded: "8", received: "$2,430.00", outstanding: "1", balance: "$380.00" });
     await expect(paymentRows(page).first()).toContainText("PAY-1009");
 
-    // A reload goes back to the canonical baseline.
+    // The payment is in the database: a reload keeps it, and so does the Overview.
     await page.reload();
-    await expectTotals(page, { recorded: "7", received: "$2,130.00", outstanding: "2", balance: "$680.00" });
-    await expect(page.getByRole("link", { name: "View payment PAY-1009" })).toHaveCount(0);
+    await expectTotals(page, { recorded: "8", received: "$2,430.00", outstanding: "1", balance: "$380.00" });
+    await expect(page.getByRole("link", { name: "View payment PAY-1009" })).toBeVisible();
+    await page.goto("/");
+    await expect(page.getByRole("region", { name: "Key metrics" })).toContainText("$2,430");
   });
 
   test("the Overview quick action opens this same flow, ending in the same PAY-1009 and totals", async ({ page }) => {
@@ -393,8 +395,7 @@ test.describe("Payment detail", () => {
     for (const term of ["ledger", "audit", "settlement", "gateway", "processor", "reconciliation"]) expect(text).not.toContain(term);
   });
 
-  test("an unknown payment (and a payment that was never created) shows a not-found state", async ({ page, consoleGuard }) => {
-    consoleGuard.allow(/status of 404/);
+  test("an unknown payment (and a payment that was never created) shows a not-found state", async ({ page }) => {
     await page.goto("/payments/PAY-9999");
     await expect(page.getByText("Payment not found")).toBeVisible();
     await page.goto("/payments/PAY-1009");
@@ -476,14 +477,17 @@ test.describe("Void payment: a separate, historical flow", () => {
     await expect(paymentRows(page).filter({ hasText: "PAY-1001" })).toContainText("Voided");
   });
 
-  test("a voided payment's historical record survives a reload exactly as in the baseline", async ({ page }) => {
+  test("a voided payment stays voided after a reload: still in history, still counted for nothing", async ({ page }) => {
     await page.goto("/payments/PAY-1008");
     await page.getByRole("button", { name: "Void payment" }).click();
     await page.getByRole("dialog", { name: "Void Payment #PAY-1008?" }).getByLabel("Reason for voiding").selectOption("Other");
     await page.getByRole("dialog", { name: "Void Payment #PAY-1008?" }).getByRole("button", { name: "Void payment" }).click();
+    await page.getByRole("dialog", { name: "Payment voided" }).getByRole("button", { name: "Close", exact: true }).click();
     await page.reload();
-    await expect(page.locator("header").filter({ hasText: "PAY-1008" }).last()).toContainText("Recorded");
+    await expect(page.locator("header").filter({ hasText: "PAY-1008" }).last()).toContainText("Voided");
+    await expect(page.getByRole("button", { name: "Void payment" })).toHaveCount(0);
     await page.goto("/payments");
-    await expectTotals(page, { recorded: "7", received: "$2,130.00", outstanding: "2", balance: "$680.00" });
+    await expectTotals(page, { recorded: "6", received: "$1,845.00", outstanding: "3", balance: "$965.00" });
+    await expect(paymentRows(page).filter({ hasText: "PAY-1008" })).toContainText("Voided");
   });
 });

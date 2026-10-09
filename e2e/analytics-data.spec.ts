@@ -13,13 +13,13 @@ import {
   SERVICE_ACTIVITY,
   WEEKLY_ACTIVITY,
 } from "../src/data/analytics";
-import { FINANCIALS, INVOICES, QUOTES, getInvoicesForQuote } from "../src/data/financials";
+import { getInvoiceTotal, getInvoicesForQuote } from "../src/data/financials";
 import { overviewMetrics } from "../src/data/fixtures";
 import { PLANS_DATA, getPlanMetrics } from "../src/data/maintenance-plans";
 import { buildAnalytics, formatRange, hasActivity, isReportPeriod, resolveRange, validateCustomRange } from "../src/lib/analytics-state";
-import { createInvoiceFromQuote, recordPayment, voidPayment } from "../src/lib/financial-state";
 import { buildReport, reportFileName, toCsv, toPdf } from "../src/lib/report-export";
-import { OPERATIONS, SERVICES } from "./apex-data";
+import { FINANCIALS, INVOICES, OPERATIONS, QUOTES, SERVICES } from "./apex-data";
+import { withInvoiceFromQuote, withPayment, withVoid } from "./financial-edits";
 import { completedJob } from "./operations-edits";
 
 const sum = (values: readonly number[]) => values.reduce((total, value) => total + value, 0);
@@ -76,7 +76,7 @@ test.describe("approved baselines", () => {
 
 test.describe("what follows the session", () => {
   test("a payment on INV-1050 moves received, recorded, outstanding and the invoice statuses together", () => {
-    const { data } = recordPayment(FINANCIALS, { invoiceId: "INV-1050", amount: 300, method: "check", date: "2024-10-25" });
+    const { data } = withPayment(FINANCIALS, "INV-1050", 300);
     const model = buildAnalytics(data, PLANS_DATA, OPERATIONS, SERVICES);
     expect(model.kpis.paymentsReceived).toBe(2430);
     expect(model.payments).toMatchObject({ recorded: 8, received: 2430 });
@@ -88,10 +88,9 @@ test.describe("what follows the session", () => {
   });
 
   test("an invoice created in the session is layered on $6,240 and adds one unpaid invoice", () => {
-    const quote = QUOTES.find((item) => item.status === "approved" && getInvoicesForQuote(item.id).length === 0)!;
-    const { data, invoice } = createInvoiceFromQuote(FINANCIALS, quote.id, { terms: "net-30" });
-    expect(invoice).toBeDefined();
-    const added = invoice!.lineItems.reduce((total, line) => total + line.quantity * line.rate, 0);
+    const quote = QUOTES.find((item) => item.status === "approved" && getInvoicesForQuote(item.id, FINANCIALS).length === 0)!;
+    const { data, invoice } = withInvoiceFromQuote(FINANCIALS, quote.id, "net-30");
+    const added = getInvoiceTotal(invoice);
     const model = buildAnalytics(data, PLANS_DATA, OPERATIONS, SERVICES);
     expect(model.kpis.invoiced).toBeCloseTo(6240 + added, 2);
     expect(model.invoices.count).toBe(19);
@@ -101,7 +100,7 @@ test.describe("what follows the session", () => {
   });
 
   test("voiding a payment takes it out of received and adds it to the voided list", () => {
-    const voided = voidPayment(FINANCIALS, "PAY-1005", "Entered by mistake");
+    const voided = withVoid(FINANCIALS, "PAY-1005", "Entered by mistake");
     const model = buildAnalytics(voided, PLANS_DATA, OPERATIONS, SERVICES);
     expect(model.payments.recorded).toBe(6);
     expect(model.payments.received).toBe(2130 - 210);

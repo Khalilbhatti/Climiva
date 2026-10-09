@@ -1,16 +1,18 @@
 import type { Metadata } from "next";
 import { QuoteDetail } from "@/components/financials/QuoteDetail";
-import { fixtureGate, hasSampleDataAccess } from "@/server/fixture-gate";
+import { getQuoteById } from "@/data/financials";
+import { getCoreSnapshot } from "@/server/core-data";
+import { requireWorkspaceContext } from "@/server/workspace";
 
+// A quote belongs to one business; see the payment page.
 export async function generateMetadata({ params }: PageProps<"/quotes-invoices/quotes/[quoteId]">): Promise<Metadata> {
-  if (!(await hasSampleDataAccess())) return { title: "Not available" };
   const { quoteId } = await params;
-  return { title: `Quote #${quoteId}` };
+  const core = await getCoreSnapshot();
+  return { title: core && getQuoteById(quoteId, core.financials) ? `Quote #${quoteId}` : "Quote" };
 }
 
 export default async function QuotePage({ params }: PageProps<"/quotes-invoices/quotes/[quoteId]">) {
-  const gate = await fixtureGate("Quotes & Invoices");
-  if (gate) return gate;
+  await requireWorkspaceContext();
   const { quoteId } = await params;
   return <QuoteDetail quoteId={quoteId} />;
 }

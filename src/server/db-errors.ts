@@ -17,3 +17,12 @@ export function isIntegrityViolation(error: unknown): boolean {
   }
   return false;
 }
+
+/** The name of the constraint a failed statement violated, for any PostgreSQL integrity error (unique, foreign key, check). */
+export function constraintOf(error: unknown): string | undefined {
+  for (let current: unknown = error; current && typeof current === "object"; current = (current as { cause?: unknown }).cause) {
+    const candidate = current as { code?: string; constraint?: string };
+    if (candidate.code && /^23/.test(candidate.code) && candidate.constraint) return candidate.constraint;
+  }
+  return undefined;
+}

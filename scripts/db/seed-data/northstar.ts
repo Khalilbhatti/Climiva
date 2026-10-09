@@ -7,6 +7,7 @@
  * unrelated records. It is not a copy of the Apex dataset.
  */
 import type { Customer, Equipment, Property } from "@/data/customers";
+import type { FinancialData } from "@/data/financials";
 import type { OperationsData } from "@/data/operations";
 import type { Service } from "@/data/services";
 import { SYSTEM_ROLES, weeklyFromBusinessHours, type TeamMember } from "@/data/team";
@@ -207,4 +208,86 @@ export const NORTHSTAR_OPERATIONS: OperationsData = {
     },
   ],
   blocks: [],
+};
+
+/**
+ * Northstar's financials: deliberately few and different from Apex's in every value. One approved quote that became an invoice
+ * (a partial payment is recorded against it, and a second payment was voided), a draft quote, and an invoice for someone with no
+ * customer record. Its numbers start at 1001 like every new business, so "PAY-1001" and "INV-1001" exist here AND are different
+ * records from any Apex one: a number is unique per business only. Nothing here exists in Apex, and no Apex record appears here.
+ */
+const NORTHSTAR_TUNE_UP_LINES: FinancialData["quotes"][number]["lineItems"] = [
+  { id: "line-1", description: "Furnace Tune-Up", detail: "Seasonal inspection, burner clean and carbon monoxide check", quantity: 1, rate: 109, serviceId: "furnace-tune-up" },
+  { id: "line-2", description: "Furnace filter replacement", quantity: 2, rate: 17.5 },
+];
+
+export const NORTHSTAR_FINANCIALS: FinancialData = {
+  quotes: [
+    {
+      id: "QT-1001",
+      customerId: "marta-olsen",
+      propertyId: "prop-olsen-house",
+      serviceId: "furnace-tune-up",
+      jobId: "JB-1001",
+      bookingId: "BK-1001",
+      status: "approved",
+      lineItems: NORTHSTAR_TUNE_UP_LINES,
+      createdOn: "2024-10-22",
+      approvedOn: "2024-10-23",
+      validThrough: "2024-11-22",
+      updatedOn: "2024-10-23",
+      message: "Annual furnace tune-up with two replacement filters.",
+      activity: [
+        { label: "Quote approved", on: "2024-10-23" },
+        { label: "Quote sent", on: "2024-10-22" },
+        { label: "Quote created", on: "2024-10-22" },
+      ],
+    },
+    {
+      id: "QT-1002",
+      customerId: "priya-raman",
+      propertyId: "prop-raman-loft",
+      serviceId: "ac-repair-diagnostics",
+      status: "draft",
+      lineItems: [{ id: "line-1", description: "Cooling Diagnostic Visit", quantity: 1, rate: 79, serviceId: "ac-repair-diagnostics" }],
+      createdOn: "2024-10-24",
+      updatedOn: "2024-10-24",
+      activity: [{ label: "Quote created", on: "2024-10-24" }],
+    },
+  ],
+  invoices: [
+    {
+      id: "INV-1001",
+      customerId: "marta-olsen",
+      propertyId: "prop-olsen-house",
+      serviceId: "furnace-tune-up",
+      jobId: "JB-1001",
+      bookingId: "BK-1001",
+      quoteId: "QT-1001",
+      date: "2024-10-29",
+      terms: "net-15",
+      lineItems: NORTHSTAR_TUNE_UP_LINES,
+      message: "Thank you for choosing Northstar.",
+    },
+    {
+      id: "INV-1002",
+      contactName: "Dev Kapoor",
+      date: "2024-10-30",
+      terms: "due-on-receipt",
+      lineItems: [{ id: "line-1", description: "Capacitor swap and hard-start kit", quantity: 1, rate: 225 }],
+    },
+  ],
+  payments: [
+    { id: "PAY-1001", invoiceId: "INV-1001", amount: 60, method: "check", date: "2024-10-30", checkNumber: "2210", status: "recorded", recordedBy: "taylor-brooks" },
+    {
+      id: "PAY-1002",
+      invoiceId: "INV-1001",
+      amount: 40,
+      method: "card",
+      date: "2024-10-30",
+      status: "voided",
+      recordedBy: "taylor-brooks",
+      void: { reason: "Incorrect amount", on: "2024-10-30", by: "taylor-brooks" },
+    },
+  ],
 };

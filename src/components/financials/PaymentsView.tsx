@@ -17,7 +17,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } fro
 import { Tabs } from "@/components/ui/Tabs";
 import { invoiceHref, paymentHref } from "@/config/routes";
 import {
-  INVOICES,
   PAYMENT_METHODS,
   PAYMENT_METHOD_LABEL,
   getInvoiceBalance,
@@ -30,6 +29,7 @@ import {
   getPaymentsReceivedTotal,
   getRecordedPaymentsCount,
   getRelatedWork,
+  newestFirst,
   type FinancialData,
   type InvoiceStatus,
   type PaymentMethod,
@@ -42,6 +42,7 @@ import { RecordPaymentModal } from "./RecordPaymentModal";
 import { InvoiceStatusBadge, PaymentStatusBadge } from "./StatusBadges";
 import { PartyName, usd } from "./shared";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 
 type TabId = "payments" | "outstanding";
 
@@ -50,6 +51,7 @@ const EMPTY_PREVIEW_INVOICES = ["INV-1044", "INV-1050", "INV-1051"];
 
 export function PaymentsView() {
   const dir = useDirectory();
+  const canManage = useCan("financials:manage");
   const { data: live } = useFinancials();
   const router = useRouter();
   const params = useSearchParams();
@@ -61,7 +63,7 @@ export function PaymentsView() {
   const previewEmpty = params.get("state") === "empty";
 
   const data: FinancialData = useMemo(
-    () => (previewEmpty ? { ...live, payments: [], invoices: INVOICES.filter((invoice) => EMPTY_PREVIEW_INVOICES.includes(invoice.id)) } : live),
+    () => (previewEmpty ? { ...live, payments: [], invoices: live.invoices.filter((invoice) => EMPTY_PREVIEW_INVOICES.includes(invoice.id)) } : live),
     [live, previewEmpty],
   );
 
@@ -81,7 +83,7 @@ export function PaymentsView() {
     router.replace((qs ? `/payments?${qs}` : "/payments") as Route, { scroll: false });
   }
 
-  const payments = [...data.payments].sort((a, b) => b.id.localeCompare(a.id));
+  const payments = [...data.payments].sort(newestFirst);
   const outstanding = getOutstandingInvoices(data);
   const partyOf = (invoiceId: string) => getInvoiceById(invoiceId, data);
   const customerNames = [...new Set(payments.map((payment) => getPartyName(partyOf(payment.invoiceId)!, dir)))].sort();
@@ -112,10 +114,12 @@ export function PaymentsView() {
         title="Payments"
         description="Track payments recorded against customer Invoices and review outstanding balances."
         actions={
-          <Button size="lg" onClick={() => setParams({ record: "1", invoice: null })}>
-            <Plus aria-hidden className="size-[18px]" />
-            Record payment
-          </Button>
+          canManage && (
+            <Button size="lg" onClick={() => setParams({ record: "1", invoice: null })}>
+              <Plus aria-hidden className="size-[18px]" />
+              Record payment
+            </Button>
+          )
         }
       />
 
@@ -156,10 +160,12 @@ export function PaymentsView() {
                 description="Payments will appear here when you record money received against an Invoice."
                 action={
                   <div className="flex flex-wrap items-center justify-center gap-3">
-                    <Button size="lg" onClick={() => setParams({ record: "1", invoice: null })}>
-                      <Plus aria-hidden className="size-[18px]" />
-                      Record payment
-                    </Button>
+                    {canManage && (
+                      <Button size="lg" onClick={() => setParams({ record: "1", invoice: null })}>
+                        <Plus aria-hidden className="size-[18px]" />
+                        Record payment
+                      </Button>
+                    )}
                     <Button size="lg" variant="secondary" onClick={() => setParams({ tab: "outstanding" })}>
                       View outstanding invoices
                     </Button>
@@ -373,14 +379,16 @@ export function PaymentsView() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center justify-end gap-1">
-                            <button
-                              type="button"
-                              onClick={() => setParams({ record: "1", invoice: invoice.id })}
-                              aria-label={`Record payment for invoice ${invoice.id}`}
-                              className="rounded-btn px-2 py-1 text-sm font-semibold whitespace-nowrap text-primary transition-colors hover:bg-primary-subtle"
-                            >
-                              Record payment
-                            </button>
+                            {canManage && (
+                              <button
+                                type="button"
+                                onClick={() => setParams({ record: "1", invoice: invoice.id })}
+                                aria-label={`Record payment for invoice ${invoice.id}`}
+                                className="rounded-btn px-2 py-1 text-sm font-semibold whitespace-nowrap text-primary transition-colors hover:bg-primary-subtle"
+                              >
+                                Record payment
+                              </button>
+                            )}
                             <Link
                               href={invoiceHref(invoice.id)}
                               aria-label={`View invoice ${invoice.id}`}
@@ -413,7 +421,7 @@ export function PaymentsView() {
         </p>
       </aside>
 
-      {recording && (
+      {recording && canManage && (
         <RecordPaymentModal
           key={presetInvoice ?? "pick"}
           initialInvoiceId={presetInvoice}

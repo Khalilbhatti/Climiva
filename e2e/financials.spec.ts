@@ -3,13 +3,13 @@ import { join } from "node:path";
 import { expect, test } from "playwright/test";
 import { getCustomerById, getPropertyById } from "../src/data/customers";
 import {
-  FINANCIALS,
-  INVOICES,
-  PAYMENTS,
-  QUOTES,
+  getBalanceAfter,
+  getCustomerFinancials,
+  getInvoiceAfterVoid,
   getInvoiceBalance,
   getInvoiceById,
   getInvoicePaid,
+  getInvoiceRecorded,
   getInvoiceStatus,
   getInvoiceTotal,
   getInvoicesForQuote,
@@ -22,28 +22,26 @@ import {
   getQuoteTotal,
   getRecordedPaymentsCount,
   getTotalInvoiced,
-  type FinancialData,
 } from "../src/data/financials";
 import { overviewMetrics } from "../src/data/fixtures";
 import { getBookingById, getJobById, getPartyName } from "../src/data/operations";
 import { getServiceById } from "../src/data/services";
 import { getTeamMemberById } from "../src/data/team";
-import { createInvoiceFromQuote, recordPayment, voidPayment } from "../src/lib/financial-state";
-import { BOOK, CUSTOMERS, DIR, OPERATIONS, SERVICES, TEAM_DATA } from "./apex-data";
+import { BOOK, CUSTOMERS, DIR, FINANCIALS, INVOICES, OPERATIONS, PAYMENTS, QUOTES, SERVICES, TEAM_DATA } from "./apex-data";
+import { withInvoiceFromQuote, withPayment, withVoid } from "./financial-edits";
 
-// Pure data/selector/state tests: no browser needed.
+// Pure data/selector tests: no browser needed. What recording, voiding and invoicing DO (they happen on the server, in PostgreSQL) is
+// tested in financials-database.spec.ts and financials-flows.spec.ts; here the selectors are asked what the figures are for given records.
 
 const snapshot = () => JSON.stringify(FINANCIALS);
-const pay = (data: FinancialData, invoiceId: string, amount: number) =>
-  recordPayment(data, { invoiceId, amount, method: "check", date: "2024-10-25" });
 
 test.describe("canonical financial baseline (post-#PAY-1008)", () => {
   test("payments recorded = 7 and amount received = $2,130; the voided payment contributes nothing", () => {
-    expect(getRecordedPaymentsCount()).toBe(7);
-    expect(getPaymentsReceivedTotal()).toBe(2130);
+    expect(getRecordedPaymentsCount(FINANCIALS)).toBe(7);
+    expect(getPaymentsReceivedTotal(FINANCIALS)).toBe(2130);
     expect(PAYMENTS).toHaveLength(8);
 
-    const voided = getPaymentById("PAY-1001")!;
+    const voided = getPaymentById("PAY-1001", FINANCIALS)!;
     expect(voided).toMatchObject({ status: "voided", amount: 285, invoiceId: "INV-1044" });
     expect(voided.void).toMatchObject({ reason: "Payment entered by mistake", by: "alex-morgan" });
     // The same total with the voided record removed: it never counted.
@@ -51,43 +49,55 @@ test.describe("canonical financial baseline (post-#PAY-1008)", () => {
   });
 
   test("outstanding invoices are exactly INV-1050 ($300) and INV-1051 ($380): 2 invoices, $680", () => {
-    const outstanding = getOutstandingInvoices();
+    const outstanding = getOutstandingInvoices(FINANCIALS);
     expect(outstanding.map((invoice) => invoice.id)).toEqual(["INV-1050", "INV-1051"]);
-    expect(getOutstandingBalance()).toBe(680);
+    expect(getOutstandingBalance(FINANCIALS)).toBe(680);
 
-    const arthur = getInvoiceById("INV-1050")!;
+    const arthur = getInvoiceById("INV-1050", FINANCIALS)!;
     expect(getPartyName(arthur, DIR)).toBe("Arthur Pendleton");
-    expect([getInvoiceTotal(arthur), getInvoicePaid(arthur), getInvoiceBalance(arthur), getInvoiceStatus(arthur)]).toEqual([500, 200, 300, "partially-paid"]);
+    const figures = (invoice: typeof arthur) => [getInvoiceTotal(invoice), getInvoicePaid(invoice, FINANCIALS), getInvoiceBalance(invoice, FINANCIALS), getInvoiceStatus(invoice, FINANCIALS)];
+    expect(figures(arthur)).toEqual([500, 200, 300, "partially-paid"]);
+    // The $200 is carried on the invoice, not invented as a payment: there is no recorded payment behind it.
+    expect(getInvoiceRecorded(arthur, FINANCIALS)).toBe(0);
+    expect(getPaymentsForInvoice("INV-1050", FINANCIALS)).toEqual([]);
 
-    const maya = getInvoiceById("INV-1051")!;
+    const maya = getInvoiceById("INV-1051", FINANCIALS)!;
     expect(getPartyName(maya, DIR)).toBe("Maya Lin");
-    expect([getInvoiceTotal(maya), getInvoicePaid(maya), getInvoiceBalance(maya), getInvoiceStatus(maya)]).toEqual([380, 0, 380, "unpaid"]);
+    expect(figures(maya)).toEqual([380, 0, 380, "unpaid"]);
   });
 
   test("INV-1044 is fully paid by PAY-1008 and never offered for payment", () => {
-    const invoice = getInvoiceById("INV-1044")!;
+    const invoice = getInvoiceById("INV-1044", FINANCIALS)!;
     expect(getPartyName(invoice, DIR)).toBe("Sarah Mitchell");
-    expect([getInvoiceTotal(invoice), getInvoicePaid(invoice), getInvoiceBalance(invoice), getInvoiceStatus(invoice)]).toEqual([285, 285, 0, "paid"]);
-    expect(getPaymentsForInvoice("INV-1044").map((payment) => [payment.id, payment.status])).toEqual([
+    expect([getInvoiceTotal(invoice), getInvoicePaid(invoice, FINANCIALS), getInvoiceBalance(invoice, FINANCIALS), getInvoiceStatus(invoice, FINANCIALS)]).toEqual([285, 285, 0, "paid"]);
+    expect(getPaymentsForInvoice("INV-1044", FINANCIALS).map((payment) => [payment.id, payment.status])).toEqual([
       ["PAY-1008", "recorded"],
       ["PAY-1001", "voided"],
     ]);
-    expect(getOutstandingInvoices().some((item) => item.id === "INV-1044")).toBe(false);
-    // Payments can't be piled onto a paid invoice either.
-    expect(pay(FINANCIALS, "INV-1044", 10).payment).toBeUndefined();
+    expect(getOutstandingInvoices(FINANCIALS).some((item) => item.id === "INV-1044")).toBe(false);
+    // The invoice is not linked to QT-884 (the source contradicted itself; the link is not restored).
+    expect(invoice.quoteId).toBeUndefined();
   });
 
   test("every other invoice is paid in full by its single payment", () => {
     for (const invoice of INVOICES.filter((item) => !["INV-1050", "INV-1051"].includes(item.id))) {
-      expect(getInvoiceStatus(invoice), invoice.id).toBe("paid");
+      expect(getInvoiceStatus(invoice, FINANCIALS), invoice.id).toBe("paid");
     }
     expect(INVOICES).toHaveLength(9);
   });
 
   test("the Overview totals are derived and equal the approved baseline", () => {
-    expect(getPaymentsReceivedTotal()).toBe(overviewMetrics.paymentsReceived);
-    expect(getRecordedPaymentsCount()).toBe(overviewMetrics.recordedPayments);
-    expect(getTotalInvoiced()).toBe(overviewMetrics.totalInvoiced);
+    expect(getPaymentsReceivedTotal(FINANCIALS)).toBe(overviewMetrics.paymentsReceived);
+    expect(getRecordedPaymentsCount(FINANCIALS)).toBe(overviewMetrics.recordedPayments);
+    expect(getTotalInvoiced(FINANCIALS)).toBe(overviewMetrics.totalInvoiced);
+  });
+
+  test("Total Invoiced is the $6,240 reporting baseline: the canonical invoices are inside it, a new invoice is added to it", () => {
+    expect(INVOICES.every((invoice) => invoice.imported)).toBe(true);
+    // The nine canonical invoices add up to less than the baseline, which covers more invoicing history than these records.
+    expect(INVOICES.reduce((total, invoice) => total + getInvoiceTotal(invoice), 0)).toBeLessThan(overviewMetrics.totalInvoiced);
+    const { data, invoice } = withInvoiceFromQuote(FINANCIALS, "QT-884");
+    expect(getTotalInvoiced(data)).toBe(overviewMetrics.totalInvoiced + getInvoiceTotal(invoice));
   });
 });
 
@@ -101,23 +111,23 @@ test.describe("financial records reference the shared records", () => {
       if (record.jobId) expect(getJobById(record.jobId, OPERATIONS), `${record.id}: job`).toBeDefined();
       if (record.bookingId) expect(getBookingById(record.bookingId, OPERATIONS), `${record.id}: booking`).toBeDefined();
     }
-    for (const invoice of INVOICES) if (invoice.quoteId) expect(getQuoteById(invoice.quoteId), invoice.id).toBeDefined();
+    for (const invoice of INVOICES) if (invoice.quoteId) expect(getQuoteById(invoice.quoteId, FINANCIALS), invoice.id).toBeDefined();
     for (const payment of PAYMENTS) {
-      expect(getInvoiceById(payment.invoiceId), payment.id).toBeDefined();
+      expect(getInvoiceById(payment.invoiceId, FINANCIALS), payment.id).toBeDefined();
       expect(getTeamMemberById(payment.recordedBy, TEAM_DATA), payment.id).toBeDefined();
     }
   });
 
   test("Sarah's quote, invoice and payments share her canonical customer, property, job and booking", () => {
-    const quote = getQuoteById("QT-884")!;
-    const invoice = getInvoiceById("INV-1044")!;
+    const quote = getQuoteById("QT-884", FINANCIALS)!;
+    const invoice = getInvoiceById("INV-1044", FINANCIALS)!;
     for (const record of [quote, invoice]) {
       expect(record).toMatchObject({ customerId: "sarah-mitchell", propertyId: "prop-sarah-home", jobId: "JB-204", bookingId: "BK-1042" });
     }
     expect(getJobById("JB-204", OPERATIONS)!.customerId).toBe("sarah-mitchell");
     expect(getQuoteTotal(quote)).toBe(285);
     expect(getInvoiceTotal(invoice)).toBe(285);
-    expect(getPartyName(getInvoiceById("INV-1048")!, DIR)).toBe("Elena Rodriguez");
+    expect(getPartyName(getInvoiceById("INV-1048", FINANCIALS)!, DIR)).toBe("Elena Rodriguez");
     expect(JSON.stringify(FINANCIALS)).not.toContain("Rostova");
   });
 
@@ -128,8 +138,8 @@ test.describe("financial records reference the shared records", () => {
   });
 
   test("QT-884 is approved and has no invoice yet; the other quotes keep their statuses", () => {
-    expect(getQuoteById("QT-884")!.status).toBe("approved");
-    expect(getInvoicesForQuote("QT-884")).toEqual([]);
+    expect(getQuoteById("QT-884", FINANCIALS)!.status).toBe("approved");
+    expect(getInvoicesForQuote("QT-884", FINANCIALS)).toEqual([]);
     expect(QUOTES.map((quote) => [quote.id, quote.status])).toEqual([
       ["QT-884", "approved"],
       ["QT-891", "sent"],
@@ -137,14 +147,25 @@ test.describe("financial records reference the shared records", () => {
       ["QT-879", "declined"],
     ]);
   });
+
+  test("a customer's financial history is their own quotes, invoices and the payments on those invoices", () => {
+    const sarah = getCustomerFinancials("sarah-mitchell", FINANCIALS);
+    expect(sarah.quotes.map((quote) => quote.id)).toEqual(["QT-884"]);
+    expect(sarah.invoices.map((invoice) => invoice.id)).toEqual(["INV-1044"]);
+    expect(sarah.payments.map((payment) => [payment.id, payment.status])).toEqual([
+      ["PAY-1008", "recorded"],
+      ["PAY-1001", "voided"],
+    ]);
+    expect(getCustomerFinancials("a-customer-without-records", FINANCIALS)).toEqual({ quotes: [], invoices: [], payments: [] });
+  });
 });
 
-test.describe("record payment (state transition)", () => {
-  test("a full $300 payment on INV-1050 creates PAY-1009 and reconciles every total", () => {
+test.describe("what the selectors answer once a payment is recorded", () => {
+  test("a full $300 payment on INV-1050 reconciles every total", () => {
     const before = snapshot();
-    const { data, payment } = pay(FINANCIALS, "INV-1050", 300);
+    const { data, payment } = withPayment(FINANCIALS, "INV-1050", 300);
 
-    expect(payment).toMatchObject({ id: "PAY-1009", invoiceId: "INV-1050", amount: 300, status: "recorded", method: "check" });
+    expect(payment.id).toBe("PAY-1009");
     const invoice = getInvoiceById("INV-1050", data)!;
     expect([getInvoiceBalance(invoice, data), getInvoiceStatus(invoice, data)]).toEqual([0, "paid"]);
 
@@ -154,7 +175,7 @@ test.describe("record payment (state transition)", () => {
     expect(getOutstandingBalance(data)).toBe(380);
 
     // Nothing historical moves.
-    expect(getPaymentById("PAY-1008", data)).toEqual(getPaymentById("PAY-1008"));
+    expect(getPaymentById("PAY-1008", data)).toEqual(getPaymentById("PAY-1008", FINANCIALS));
     expect(getPaymentById("PAY-1001", data)).toMatchObject({ status: "voided" });
     expect(getInvoiceStatus(getInvoiceById("INV-1044", data)!, data)).toBe("paid");
     expect(getInvoiceBalance(getInvoiceById("INV-1051", data)!, data)).toBe(380);
@@ -163,46 +184,33 @@ test.describe("record payment (state transition)", () => {
   });
 
   test("a partial payment leaves the invoice partially paid and outstanding", () => {
-    const { data, payment } = pay(FINANCIALS, "INV-1051", 100);
-    expect(payment?.id).toBe("PAY-1009");
+    const { data } = withPayment(FINANCIALS, "INV-1051", 100);
     const invoice = getInvoiceById("INV-1051", data)!;
     expect([getInvoiceBalance(invoice, data), getInvoiceStatus(invoice, data)]).toEqual([280, "partially-paid"]);
     expect(getOutstandingInvoices(data)).toHaveLength(2);
     expect(getOutstandingBalance(data)).toBe(580);
     expect(getPaymentsReceivedTotal(data)).toBe(2230);
+    // The Record payment screen shows the balance after before it is recorded.
+    expect(getBalanceAfter(getInvoiceById("INV-1051", FINANCIALS)!, FINANCIALS, 100)).toBe(280);
+    expect(getBalanceAfter(getInvoiceById("INV-1051", FINANCIALS)!, FINANCIALS, 380)).toBe(0);
   });
 
-  test("invalid amounts are refused and change nothing", () => {
-    for (const amount of [0, -5, 300.01, Number.NaN]) {
-      const result = pay(FINANCIALS, "INV-1050", amount);
-      expect(result.payment, `amount ${amount}`).toBeUndefined();
-      expect(result.data).toBe(FINANCIALS);
-    }
-    expect(pay(FINANCIALS, "INV-9999", 10).payment).toBeUndefined();
-  });
-
-  test("a second payment cannot exceed what is left, and payments get consecutive numbers", () => {
-    const first = pay(FINANCIALS, "INV-1050", 100);
-    expect(pay(first.data, "INV-1050", 200.01).payment).toBeUndefined();
-    const second = pay(first.data, "INV-1050", 200);
-    expect(second.payment?.id).toBe("PAY-1010");
-    expect(getInvoiceStatus(getInvoiceById("INV-1050", second.data)!, second.data)).toBe("paid");
-  });
-
-  test("record never touches invoices, quotes or the voided record, and creates no invoice", () => {
-    const { data } = pay(FINANCIALS, "INV-1050", 300);
-    expect(data.invoices).toBe(FINANCIALS.invoices);
-    expect(data.quotes).toBe(FINANCIALS.quotes);
-    expect(data.payments).toHaveLength(PAYMENTS.length + 1);
+  test("two payments make a paid invoice, and cents add up exactly (no float drift)", () => {
+    const first = withPayment(FINANCIALS, "INV-1050", 100.1);
+    const second = withPayment(first.data, "INV-1050", 199.9);
+    expect(second.payment.id).toBe("PAY-1010");
+    const invoice = getInvoiceById("INV-1050", second.data)!;
+    expect([getInvoiceRecorded(invoice, second.data), getInvoiceBalance(invoice, second.data), getInvoiceStatus(invoice, second.data)]).toEqual([300, 0, "paid"]);
+    expect(getPaymentsReceivedTotal(second.data)).toBe(2430);
   });
 });
 
-test.describe("void payment (separate, historical flow)", () => {
+test.describe("what the selectors answer once a payment is voided", () => {
   test("voiding PAY-1008 reopens INV-1044 and restores the earlier totals; it creates no payment", () => {
     const before = snapshot();
-    const data = voidPayment(FINANCIALS, "PAY-1008", "Duplicate payment", "  entered twice ");
+    const data = withVoid(FINANCIALS, "PAY-1008");
 
-    expect(getPaymentById("PAY-1008", data)).toMatchObject({ status: "voided", void: { reason: "Duplicate payment", by: "alex-morgan", note: "entered twice" } });
+    expect(getPaymentById("PAY-1008", data)).toMatchObject({ status: "voided" });
     const invoice = getInvoiceById("INV-1044", data)!;
     expect([getInvoiceBalance(invoice, data), getInvoiceStatus(invoice, data)]).toEqual([285, "unpaid"]);
     expect(getRecordedPaymentsCount(data)).toBe(6);
@@ -210,41 +218,34 @@ test.describe("void payment (separate, historical flow)", () => {
     expect(getOutstandingInvoices(data).map((item) => item.id)).toEqual(["INV-1044", "INV-1050", "INV-1051"]);
     expect(getOutstandingBalance(data)).toBe(965);
 
-    expect(data.payments).toHaveLength(PAYMENTS.length); // no new payment, so no PAY-1009
-    expect(data.payments.some((payment) => payment.id === "PAY-1009")).toBe(false);
+    expect(data.payments).toHaveLength(PAYMENTS.length); // no new payment
     expect(snapshot()).toBe(before);
   });
 
-  test("voiding does nothing to a payment that is already voided, and PAY-1001 stays historical", () => {
-    expect(voidPayment(FINANCIALS, "PAY-1001", "Other").payments).toEqual(PAYMENTS);
-    expect(getPaymentById("PAY-1001")!.void?.on).toBe("2024-10-25");
+  test("the Void payment screen's preview is what voiding then gives", () => {
+    const invoice = getInvoiceById("INV-1044", FINANCIALS)!;
+    const payment = getPaymentById("PAY-1008", FINANCIALS)!;
+    const preview = getInvoiceAfterVoid(invoice, payment, FINANCIALS);
+    const after = withVoid(FINANCIALS, "PAY-1008");
+    expect(preview).toEqual({ paid: getInvoicePaid(getInvoiceById("INV-1044", after)!, after), balance: getInvoiceBalance(getInvoiceById("INV-1044", after)!, after), status: "unpaid" });
   });
 
-  test("a payment recorded after a void is numbered after the existing records", () => {
-    const voided = voidPayment(FINANCIALS, "PAY-1008", "Incorrect amount");
-    const { payment } = pay(voided, "INV-1044", 285);
-    expect(payment?.id).toBe("PAY-1009");
+  test("a voided payment is already out of the figures: previewing its void changes nothing", () => {
+    const invoice = getInvoiceById("INV-1044", FINANCIALS)!;
+    const voided = getPaymentById("PAY-1001", FINANCIALS)!;
+    expect(getInvoiceAfterVoid(invoice, voided, FINANCIALS)).toEqual({ paid: 285, balance: 0, status: "paid" });
+    expect(voided.void?.on).toBe("2024-10-25");
   });
 });
 
-test.describe("create invoice from an approved quote", () => {
-  test("QT-884 becomes unpaid INV-1052 for the same customer, job and line items, with no payment", () => {
+test.describe("what the selectors answer once an invoice is made from a quote", () => {
+  test("QT-884 becomes an unpaid invoice for the same customer, job and line items, with no payment", () => {
     const before = snapshot();
-    const { data, invoice } = createInvoiceFromQuote(FINANCIALS, "QT-884", { terms: "net-15", message: " Thank you. " });
+    const { data, invoice } = withInvoiceFromQuote(FINANCIALS, "QT-884", "net-15");
 
-    expect(invoice).toMatchObject({
-      id: "INV-1052",
-      quoteId: "QT-884",
-      customerId: "sarah-mitchell",
-      propertyId: "prop-sarah-home",
-      jobId: "JB-204",
-      bookingId: "BK-1042",
-      terms: "net-15",
-      message: "Thank you.",
-      date: "2024-10-25",
-    });
-    expect(getInvoiceTotal(invoice!)).toBe(285);
-    expect(getInvoiceStatus(invoice!, data)).toBe("unpaid");
+    expect(invoice).toMatchObject({ id: "INV-1052", quoteId: "QT-884", customerId: "sarah-mitchell", propertyId: "prop-sarah-home", jobId: "JB-204", bookingId: "BK-1042", terms: "net-15" });
+    expect(getInvoiceTotal(invoice)).toBe(285);
+    expect(getInvoiceStatus(invoice, data)).toBe("unpaid");
     expect(getInvoicesForQuote("QT-884", data)).toHaveLength(1);
 
     // No payment is created and the quote is untouched; the new invoice is simply outstanding.
@@ -255,21 +256,6 @@ test.describe("create invoice from an approved quote", () => {
     expect(getOutstandingBalance(data)).toBe(965);
     expect(getTotalInvoiced(data)).toBe(overviewMetrics.totalInvoiced + 285);
     expect(snapshot()).toBe(before);
-  });
-
-  test("an invoice can't be created twice, or from a quote that isn't approved", () => {
-    const { data } = createInvoiceFromQuote(FINANCIALS, "QT-884", { terms: "due-on-receipt" });
-    expect(createInvoiceFromQuote(data, "QT-884", { terms: "due-on-receipt" }).invoice).toBeUndefined();
-    for (const quoteId of ["QT-891", "QT-893", "QT-879", "QT-000"]) {
-      expect(createInvoiceFromQuote(FINANCIALS, quoteId, { terms: "due-on-receipt" }).invoice, quoteId).toBeUndefined();
-    }
-  });
-
-  test("the new invoice can be paid like any other", () => {
-    const created = createInvoiceFromQuote(FINANCIALS, "QT-884", { terms: "due-on-receipt" });
-    const { data, payment } = pay(created.data, "INV-1052", 285);
-    expect(payment?.id).toBe("PAY-1009");
-    expect(getInvoiceStatus(getInvoiceById("INV-1052", data)!, data)).toBe("paid");
   });
 });
 
@@ -308,13 +294,42 @@ test.describe("source guardrails (financials)", () => {
   });
 
   test("financial code never reads the real clock or the browser's timezone", () => {
-    const files = [...sourceFiles("src/components/financials"), ...sourceFiles("src/components/team"), "src/data/financials.ts", "src/data/team.ts", "src/lib/financial-state.ts", "src/lib/team-state.ts"];
+    const files = [
+      ...sourceFiles("src/components/financials"),
+      ...sourceFiles("src/components/team"),
+      "src/data/financials.ts",
+      "src/data/team.ts",
+      "src/lib/financial-rules.ts",
+      "src/lib/money.ts",
+      "src/lib/team-state.ts",
+      "src/db/fin-mappers.ts",
+      "src/db/fin-queries.ts",
+      "src/server/actions/financials.ts",
+    ];
     const hits: string[] = [];
     for (const file of files) {
       const text = readFileSync(file, "utf8");
       for (const pattern of [/new Date\(\s*\)/, /Date\.now\(/, /Intl\.DateTimeFormat/, /toLocale(Date|Time)?String/, /getTimezoneOffset/]) {
         if (pattern.test(text)) hits.push(`${file}: ${pattern}`);
       }
+    }
+    expect(hits).toEqual([]);
+  });
+
+  test("the financial source holds no floating-point money arithmetic outside lib/money", () => {
+    // Every sum, difference and product of money goes through lib/money (integer cents). A bare `* rate` or `.toFixed(2)` on a
+    // dollar amount in the financial code would be the start of a rounding bug.
+    const files = ["src/data/financials.ts", "src/lib/financial-rules.ts", "src/db/fin-mappers.ts", "src/db/fin-queries.ts", ...sourceFiles("src/components/financials")];
+    const hits: string[] = [];
+    for (const file of files) {
+      const lines = readFileSync(file, "utf8").split(/\r?\n/);
+      lines.forEach((line, index) => {
+        if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+        // A quantity is not money: quantity.toFixed(2) writes a numeric(10,2) column and its two-decimal check is not a cents conversion.
+        // Math.round(x * 100) on anything else is the one thing lib/money exists to own.
+        if (/quantity/.test(line)) return;
+        if (/Math\.round\([^)]*\*\s*100\)/.test(line) || /\.toFixed\(2\)/.test(line)) hits.push(`${file}:${index + 1}: ${line.trim()}`);
+      });
     }
     expect(hits).toEqual([]);
   });

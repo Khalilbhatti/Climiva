@@ -14,7 +14,6 @@ import { ToastProvider } from "@/components/ui/Toast";
 import { WebsiteProvider } from "@/components/website/WebsiteProvider";
 import { DirectoryProvider } from "@/components/workspace/DirectoryProvider";
 import { WorkspaceProvider } from "@/components/workspace/WorkspaceProvider";
-import { EMPTY_FINANCIALS } from "@/data/financials";
 import { EMPTY_PLANS_DATA } from "@/data/maintenance-plans";
 import { EMPTY_MARKETING_DATA } from "@/data/marketing";
 import { EMPTY_REVIEWS_DATA } from "@/data/reviews";
@@ -28,9 +27,9 @@ import type { WorkspaceSnapshot } from "@/lib/workspace-types";
  * and operations) were read and verified on the server for this request. They are changed through server actions and re-read
  * from PostgreSQL on every load.
  *
- * Customers, Services, the team and the operations (Bookings, Jobs, the Schedule's blocks) are on the database: each business
- * gets its own, read for the active organization only. The modules that are not on the database yet (money, Reviews, Marketing …)
- * keep their in-memory stores. Those start from the built-in sample records ONLY for the sample business; every other business
+ * Customers, Services, the team, the operations (Bookings, Jobs, the Schedule's blocks) and the financials (Quotes, Invoices,
+ * Payments) are on the database: each business gets its own, read for the active organization only. The modules that are not
+ * on the database yet (Maintenance Plans, Reviews, Marketing …) keep their in-memory stores. Those start from the built-in sample records ONLY for the sample business; every other business
  * starts them empty, so a customer or a Service of one business can never be matched to another's sample records. The
  * customer-facing previews sit inside the same providers so they read what the workspace saved.
  *
@@ -46,7 +45,7 @@ export function AppProviders({ snapshot, core, children }: { snapshot: Workspace
             <TeamProvider initial={core.team}>
               <DirectoryProvider book={core.book}>
                 <OperationsProvider initial={core.operations}>
-                  <FinancialProvider initial={sample ? undefined : EMPTY_FINANCIALS}>
+                  <FinancialProvider initial={core.financials}>
                     <MaintenancePlansProvider initial={sample ? undefined : EMPTY_PLANS_DATA}>
                       <WebsiteProvider>
                         <MarketplaceProvider>

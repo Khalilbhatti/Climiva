@@ -43,6 +43,20 @@
       "when": 1791563231496,
       "tag": "0005_operations_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791570508695,
+      "tag": "0006_financials",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791570538702,
+      "tag": "0007_financials_rls",
+      "breakpoints": true
     }
   ]
 }

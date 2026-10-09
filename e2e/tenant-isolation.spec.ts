@@ -10,11 +10,10 @@
  */
 import type { Page } from "playwright/test";
 import { business } from "../src/data/fixtures";
-import { FINANCIALS } from "../src/data/financials";
 import { expect, hydrated, ORIGIN, switchWorkspace, test, waitsForHydration, watchConsole } from "./saas";
 import { ROUTE_INVENTORY } from "./route-inventory";
 import { NORTHSTAR_CUSTOMERS, NORTHSTAR_ROLES, NORTHSTAR_SERVICES, NORTHSTAR_TEAM } from "../scripts/db/seed-data/northstar";
-import { CUSTOMERS, JOBS, TEAM } from "./apex-data";
+import { CUSTOMERS, FINANCIALS, JOBS, TEAM } from "./apex-data";
 
 /** Everything that belongs to the sample business and so must never appear for anyone else. */
 const APEX_ONLY = [
@@ -25,7 +24,8 @@ const APEX_ONLY = [
   ...CUSTOMERS.map((customer) => customer.name),
   ...TEAM.map((member) => member.name),
   ...JOBS.slice(0, 5).map((job) => job.id),
-  ...FINANCIALS.payments.slice(0, 5).map((payment) => payment.id),
+  // PAY-1001 and PAY-1002 are skipped: Northstar numbers its own payments from 1001 too (a number belongs to its business).
+  ...FINANCIALS.payments.slice(2, 7).map((payment) => payment.id),
 ];
 
 const NORTHSTAR = { name: "Northstar Heating & Cooling", phone: "(555) 410-7788", email: "office@northstar-hvac.test" };
@@ -93,7 +93,7 @@ test.describe("the sample business belongs to Apex alone", () => {
   test("Taylor sees an unavailable state, not Apex's records, in every module that still runs on sample data", async ({ openAs }) => {
     const { page, problems } = await openAs("taylor");
     const modules: [string, string][] = [
-      ["/quotes-invoices", "Quotes & Invoices"], ["/payments", "Payments"], ["/maintenance-plans", "Maintenance Plans"], ["/website", "Website"],
+      ["/maintenance-plans", "Maintenance Plans"], ["/website", "Website"],
       ["/marketplace", "Marketplace"], ["/reviews", "Reviews"], ["/marketing", "Marketing"], ["/analytics", "Analytics"],
     ];
     for (const [path, name] of modules) {
@@ -102,8 +102,8 @@ test.describe("the sample business belongs to Apex alone", () => {
       await expect(page.getByRole("heading", { level: 2, name: `${name} isn't available for ${NORTHSTAR.name} yet` }), path).toBeVisible();
       expect(leaksIn(await page.locator("body").innerText(), APEX_ONLY), path).toEqual([]);
     }
-    // Bookings, the Schedule and Jobs are Northstar's own now: real pages with its own few records and none of Apex's.
-    for (const [path, name] of [["/bookings", "Bookings"], ["/schedule", "Schedule"], ["/jobs", "Jobs"]] as const) {
+    // Bookings, the Schedule, Jobs, Quotes & Invoices and Payments are Northstar's own now: real pages with its own few records and none of Apex's.
+    for (const [path, name] of [["/bookings", "Bookings"], ["/schedule", "Schedule"], ["/jobs", "Jobs"], ["/quotes-invoices", "Quotes & Invoices"], ["/payments", "Payments"]] as const) {
       await page.goto(path);
       await expect(page.getByRole("heading", { level: 1, name }), path).toBeVisible();
       await expect(page.getByRole("heading", { level: 2, name: `${name} isn't available for ${NORTHSTAR.name} yet` }), path).toHaveCount(0);
@@ -251,8 +251,9 @@ test.describe("switching between two workspaces", () => {
     await page.goto("/customers");
     await expect(page.getByText(NORTHSTAR_CUSTOMERS[0].name).first()).toBeVisible();
     expect(leaksIn(await page.content(), APEX_ONLY)).toEqual([]);
+    // Payments are Northstar's own: its payment, and none of Apex's.
     await page.goto("/payments");
-    await expect(page.getByRole("heading", { level: 2, name: `Payments isn't available for ${NORTHSTAR.name} yet` })).toBeVisible();
+    await expect(page.getByRole("link", { name: "#PAY-1001" })).toBeVisible();
     expect(leaksIn(await page.content(), APEX_ONLY)).toEqual([]);
     // Jobs are Northstar's own: its one job, and none of Apex's.
     await page.goto("/jobs");

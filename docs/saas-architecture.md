@@ -32,6 +32,7 @@ Read [production-handoff.md](production-handoff.md) for the front end, which thi
 22. [Testing](#22-testing)
 23. [Known limitations](#23-known-limitations)
 24. [Operations: bookings, jobs and the schedule](#24-operations-bookings-jobs-and-the-schedule)
+25. [Financials: quotes, invoices and payments](#25-financials-quotes-invoices-and-payments)
 
 ## 1. Status and scope
 
@@ -43,10 +44,11 @@ reload. Now:
 | Real sign-up, log-in, log-out (Better Auth, sessions in PostgreSQL) | Email verification, password reset, invitations by email (no mail service yet) |
 | Organizations, memberships, owner / admin / member roles | A UI to invite or remove members, or to change roles |
 | Many people ↔ many businesses; a workspace switcher | Billing for Climvia itself |
-| New-business onboarding in one transaction | Quotes, invoices, payments and the other money, growth and website modules (still sample data, see §12) |
+| New-business onboarding in one transaction | Maintenance Plans, Reviews, Marketing, Website, Marketplace and Analytics (still sample data, see §12) |
 | Business information, Business hours, Workspace preferences and the profile name stored in PostgreSQL | Logo / branding / avatar storage (needs object storage) |
 | Customers, properties, equipment, Services, the team and its roles stored in PostgreSQL per organization (§13) | A flow to add or edit a customer, email invitations for team members |
 | Bookings, Jobs (with work details and photo metadata), the Schedule (derived) and blocked time stored per organization (§24) | Rescheduling a booking, file storage for photos, a public booking page for a business's own domain |
+| Quotes, invoices (with line items) and payments stored per organization, money in integer cents, balances derived, payments voided rather than deleted (§25) | A payment processor, bank or accounting connection, Climvia's own subscription billing |
 | Strict tenant isolation: server authorization **and** PostgreSQL Row Level Security | The visual Website Builder, templates, domains |
 | `sites` table: one organization owns many sites | Deployment to AWS |
 
@@ -139,6 +141,8 @@ business's own employees and stay product data.
 | Read customers, Services and the team | ✓ | ✓ | ✓ |
 | Read bookings, jobs and the schedule | ✓ | ✓ | ✓ |
 | Create or change a booking or job: confirm, decline, cancel, assign, create a job, start, complete, edit work details (§24) | ✓ | ✓ | ✗ |
+| Read quotes, invoices and payments | ✓ | ✓ | ✓ |
+| Record or void a payment; create an invoice from an approved quote; create or move a quote (§25) | ✓ | ✓ | ✗ |
 | Change their own profile name | ✓ | ✓ | ✓ |
 | Invite admins / members (database-level; no UI yet) | ✓ | ✓ | ✗ |
 | Change a member's role (database-level; no UI yet) | ✓ | ✗ | ✗ |
@@ -214,14 +218,15 @@ verified the session and membership, as bound parameters.
 | `team_member_services`, `team_member_availability`, `team_member_unavailable_periods` | members of the active org | owner/admin of the active org |
 | `bookings`, `jobs` | members of the active org | owner/admin of the active org: INSERT, and UPDATE of a few columns only (§24); **nobody deletes** |
 | `job_files` | members of the active org | owner/admin: UPDATE of `visibility` only; no INSERT until an object store exists |
+| `quotes`, `quote_line_items`, `invoices`, `invoice_line_items`, `payments` | members of the active org | owner/admin of the active org: INSERT (a quote only as a draft, a payment only as recorded, lines only into a document created in the same transaction), UPDATE of a quote's status and step date and of a payment's void columns only (§25); **nobody deletes** |
 | `schedule_blocks`, `schedule_block_members`, `organization_sequences` | members of the active org | nobody directly; numbers are taken only through `app_next_number()` (§24) |
 | `auth_*` | Better Auth manages these before anyone is signed in | |
 
 **Least privilege.** Column-level grants mean the runtime role cannot set `fixture_set` or rewrite ids; it has no DELETE on organizations, no UPDATE/DELETE on memberships.
 
-The core business tables (`0003_core_data_rls.sql`, §13) and the operational tables (`0005_operations_rls.sql`, §24) use the same helpers; their composite `(organization_id, id)` foreign keys make a cross-organization reference impossible, and triggers guard a team member's login, the protected Owner role, and the status of bookings and jobs.
+The core business tables (`0003_core_data_rls.sql`, §13), the operational tables (`0005_operations_rls.sql`, §24) and the financial tables (`0007_financials_rls.sql`, §25) use the same helpers; their composite `(organization_id, id)` foreign keys make a cross-organization reference impossible, and triggers guard a team member's login, the protected Owner role, and the status of bookings and jobs.
 
-**Verified by tests** (`e2e/database-isolation.spec.ts`, `e2e/core-data-isolation.spec.ts` for the core tables and `e2e/operations-database.spec.ts` for the operational ones), connecting as `climvia_app` to a freshly migrated database: no context → no rows; user A sees only A's organization; user B only B's; a forged
+**Verified by tests** (`e2e/database-isolation.spec.ts`, `e2e/core-data-isolation.spec.ts` for the core tables, `e2e/operations-database.spec.ts` for the operational ones and `e2e/financials-database.spec.ts` for the financial ones), connecting as `climvia_app` to a freshly migrated database: no context → no rows; user A sees only A's organization; user B only B's; a forged
 `app.org_id` for an organization the user is not in → no rows; cross-tenant INSERT / UPDATE / DELETE blocked; the last owner cannot be removed; the runtime role cannot change `fixture_set`.
 
 What RLS does **not** protect against: a database superuser or the owner role (keep their credentials out of the app and the browser), and a mistake that grants a new table to `climvia_app` without a policy.
@@ -246,8 +251,8 @@ after hydration, which remounts the tree once. The first render is always the de
 
 ## 12. Transitional fixtures
 
-Quotes & Invoices, Payments, Maintenance Plans, Website, Marketplace, Reviews, Marketing, Analytics and the customer-facing previews still run on
-the sample dataset in `src/data/*`, held in React state for the visit. (Customers, Services and Team moved to PostgreSQL in §13, and Bookings, the Schedule and Jobs in §24; none of them is gated.)
+Maintenance Plans, Website, Marketplace, Reviews, Marketing, Analytics and the customer-facing previews still run on
+the sample dataset in `src/data/*`, held in React state for the visit. (Customers, Services and Team moved to PostgreSQL in §13, Bookings, the Schedule and Jobs in §24, and Quotes & Invoices and Payments in §25; none of them is gated.)
 
 - That dataset belongs to **one** business. An organization flagged `fixture_set = 'apex-demo'` sees it; **any other organization sees "isn't available for *Name* yet"**. The flag is set by the seed only
   (the runtime role has no column grant to set it).
@@ -256,8 +261,8 @@ the sample dataset in `src/data/*`, held in React state for the visit. (Customer
 - Overview shows a plain "Your workspace is ready" state with the real business card for any other workspace; sidebar counts are sample-business only, and global search finds the active business's own customers, jobs, bookings and schedule (§13, §24).
 - **No silent fallback.** If sign-in, the database, the organization or the membership fails, the app redirects to Log in, shows an error, or shows the unavailable state. It never falls back to
   showing the Apex sample.
-- The remaining sample dataset (money, plans, reviews, marketing, website …) is compiled into the browser JavaScript (it is static, fictional demo data, not tenant data). It is removed module by module as each moves to PostgreSQL (§21). The *foundations* it
-  points at (customers, Services, team) and the operations (bookings, jobs, blocked time) are not compiled in: they are read from PostgreSQL and reach the browser only for the business that owns them (§13, "Fixture compatibility bridge", §24).
+- The remaining sample dataset (plans, reviews, marketing, website …) is compiled into the browser JavaScript (it is static, fictional demo data, not tenant data). It is removed module by module as each moves to PostgreSQL (§21). The *foundations* it
+  points at (customers, Services, team) , the operations (bookings, jobs, blocked time) and the financials (quotes, invoices, payments) are not compiled in: they are read from PostgreSQL and reach the browser only for the business that owns them (§13, "Fixture compatibility bridge", §24, §25).
 
 ## 13. Core business data: customers, services, team
 
@@ -348,20 +353,20 @@ in a request is never read; the organization is the one the server resolved. The
 
 ### Fixture compatibility bridge
 
-Quotes & Invoices, Payments, Maintenance Plans, Reviews, Marketing, Analytics and the Website still run on the sample dataset (§12), and they reference customers, Services and team members by id (Bookings, Jobs and the Schedule now point at the same records through composite foreign keys, §24). The bridge:
+Maintenance Plans, Reviews, Marketing, Analytics and the Website still run on the sample dataset (§12), and they reference customers, Services and team members by id (Bookings, Jobs, the Schedule and the financial documents now point at the same records through composite foreign keys, §24, §25). The bridge:
 
 - Those ids are the **slugs**, and the Apex seed writes the same slugs, with deterministic UUIDv5 primary keys (`src/db/stable-id.ts`: `stableId(organization, kind, slug)`), so a booking that names `sarah-mitchell` and `ac-repair-diagnostics`
   resolves to the same people and Services after a re-seed.
 - The directory of the active business (customers, properties, equipment, Services, team) is loaded **on the server** and given to the browser by `DirectoryProvider`, which `useDirectory()` reads. The selectors in `src/data/{customers,services,team}.ts`
   take that data as an argument: there is **no module-level registry** to fill, because one server process serves many businesses and a shared registry would be a cross-tenant leak.
 - Every business is given **its own** customer book, Services, team and operations: Bookings and Jobs show a customer's name and address, so they need the book. At this scale the whole lists are sent with the page (windowing them by date and page is the next scaling step). Every
-  other business starts the not-yet-migrated modules **empty** (`EMPTY_FINANCIALS`, `EMPTY_PLANS_DATA`, …), so a Northstar or a brand-new workspace can never match another business's sample records, and none of the Apex sample is sent to its browser as data.
+  other business starts the not-yet-migrated modules **empty** (`EMPTY_PLANS_DATA`, …), so a Northstar or a brand-new workspace can never match another business's sample records, and none of the Apex sample is sent to its browser as data.
 - The seed data for all of this lives in `scripts/db/seed-data` (seed and test infrastructure); `src/` does not import it.
 
 ### A new organization
 
 Onboarding creates, in the same transaction as before, the six system roles and one team member for the owner. It creates no customers, no Services and none of Apex's records. Customers and Services show proper empty states; Team shows the owner;
-Bookings, the Schedule and Jobs show proper empty states with no sample records and no counters of another business (§24); the other fixture-backed modules still say "isn't available for *Name* yet" (§12).
+Bookings, the Schedule and Jobs show proper empty states with no sample records and no counters of another business (§24); so do Quotes & Invoices and Payments, with zero totals and nothing to record against (§25); the other fixture-backed modules still say "isn't available for *Name* yet" (§12).
 
 ### Global search and the public previews
 
@@ -501,10 +506,10 @@ Two different money flows. They must never share tables, code or credentials.
 | --- | --- | --- |
 | Who pays whom | A business pays **Climvia** for the product (plan, seats, usage) | A business's **customer** pays the **business** (invoices, deposits, maintenance plans) |
 | Belongs to | The Climvia platform; attached to an **organization** as the billed account | The business (a tenant); attached to its customers and invoices |
-| Where it lives | Future platform tables (`subscriptions`, `plans`, `billing_events`), a Climvia-owned Stripe account | The existing **Payments / Quotes & Invoices** modules, a Stripe Connect account *per business* |
-| Today | Not built | Sample data; payments are recorded manually (no processor) |
+| Where it lives | Future platform tables (`subscriptions`, `plans`, `billing_events`), a Climvia-owned Stripe account | The **Payments / Quotes & Invoices** modules: the `quotes`, `invoices`, `payments` and line tables of §25, a Stripe Connect account *per business* later |
+| Today | Not built | Built and stored per business (§25): payments are **recorded** by hand as money the business received; no processor, bank or accounting connection exists |
 
-Billing will hang off the organization (`organizations.id`), never off a user, because the business is the customer. Gating features by plan will be a check beside the role check in §9.
+Billing will hang off the organization (`organizations.id`), never off a user, because the business is the customer. Gating features by plan will be a check beside the role check in §9. The financial tables of §25 share nothing with it: no table, column, function or credential is common to both, and a test asserts no table in the database is named for subscriptions or a payment processor.
 
 ## 20. Future domain routing
 
@@ -520,9 +525,8 @@ Not built. The intended design: a request's host name selects the **site**, and 
 
 Each of these moves from sample data to PostgreSQL in its own phase, with `organization_id`, RLS and tests as in §9–§10. When a module moves, its `fixtureGate` call is deleted and it works for every organization.
 
-Done: Services, Customers (+ properties, equipment), Team (staff, roles) (§13); Bookings, Jobs, the Schedule (derived) and blocked time (§24). Suggested order for the rest (dependencies first): **Quotes & Invoices → Payments** (next: they point at jobs and bookings, which now have
-stable organization-scoped numbers and composite keys to reference, and need their own price snapshots) → Maintenance Plans (then `bookings.plan_id` / `plan_visit_id` become real foreign keys) → Reviews →
-Marketing → Website (then the Builder) → Marketplace → Analytics (derived last: its Bookings 24 / Completed Jobs 18 aggregates are still baselines, not counts of the stored records). Also pending: branding / logo / avatar storage and photo files (an object store), invitations and member management, email, a public booking page.
+Done: Services, Customers (+ properties, equipment), Team (staff, roles) (§13); Bookings, Jobs, the Schedule (derived) and blocked time (§24); Quotes, Invoices and Payments (§25). Suggested order for the rest (dependencies first): Maintenance Plans (next: then `bookings.plan_id` / `plan_visit_id` become real foreign keys, and a plan's price can reference the
+financial records) → Reviews → Marketing → Website (then the Builder) → Marketplace → Analytics (derived last: its Bookings 24 / Completed Jobs 18 / quote and invoice-count aggregates are still baselines, not counts of the stored records; its money lines already read §25 through the same selectors as the Overview). Also pending: branding / logo / avatar storage and photo files (an object store), invitations and member management, email, a public booking page.
 
 ## 22. Testing
 
@@ -539,11 +543,16 @@ The Playwright suite runs against a **production build** and a **separate databa
   application: persistence after reload, the seeds, empty states, forged and stale requests, atomic completion), `operations-cross-module.spec.ts` (Customers, search, Reviews, Maintenance Plans, switching, logout, Back), `business-time.spec.ts`
   (daylight-saving and zone conversions) and the pure rules in `operations.spec.ts`. The test database is rebuilt from the migrations and the seed on every run; `operations-edits.ts` holds the small pure edits the specs of other modules use to ask "what if this job were completed?".
 
+- Financials (§25): `financials-database.spec.ts` (SQL as `climvia_app`: reads, writes, column grants, the overpayment and void triggers, quote transitions, no DELETE, cross-business relations, numbering, and the concurrency tests: simultaneous payments on one invoice by raw SQL and through the application, simultaneous invoice numbering, one invoice per quote, one void per payment),
+  `financials-flows.spec.ts` (the real application: the canonical Record Payment flow, partial and void payments, Create Invoice, persistence after a reload and in a fresh session, member read-only, replayed and forged requests, customer financial history, tenant isolation, empty states for a new business), `financials-roundtrip.spec.ts` (what the seed wrote is what is read, stable ids, a second seed changes nothing),
+  `payments.spec.ts` and `quotes-invoices.spec.ts` (the screens), and the pure `money.spec.ts`, `financial-rules.spec.ts` and `financials.spec.ts`. `financial-edits.ts` holds the small pure builders other specs use to ask the selectors "what if this payment were recorded?".
+
 ## 23. Known limitations
 
 - Email verification, password reset, invitations and member management have no UI: they need a mail service and are the next SaaS work.
 - Branding, logo and avatar are session-only until object storage exists.
-- The money, plans, reviews, marketing and website sample dataset ships in the browser bundle (fictional, public, not tenant data) until its modules migrate. Customers, Services, the team, bookings, jobs and blocked time do not.
+- The plans, reviews, marketing and website sample dataset ships in the browser bundle (fictional, public, not tenant data) until its modules migrate. Customers, Services, the team, bookings, jobs, blocked time, quotes, invoices and payments do not.
+- Money (§25): there is no screen to write a quote or to edit, void or reissue an invoice (an invoice is made from an approved quote and is then fixed; a mistake in it is a new invoice for the quote's replacement), no refund or credit note, no tax model (an invoice shows Tax $0.00), no deposit or overpayment, no PDF, email or print, and no payment processor. The Overview's Total Invoiced and the Analytics quote and invoice-count aggregates are reporting baselines that cover more history than the stored records (see §25).
 - A booking's date and time cannot be changed after it is created (there is no rescheduling flow). When one is built it must change the booking and its job in the same transaction. Nothing creates blocked time yet either: the blocks are seeded and read.
 - Photos on a job: the database holds their **metadata** (name, size, category, caption, visibility); the file itself has no home until an object store exists, so a file chosen in the browser lasts for the visit and is labelled so. The whole booking, job and customer lists are sent to the browser with the page.
 - Customers, properties and equipment can be read but not yet added or edited (no flow exists, so the database grants none). Team members are added without an email or a sign-in; there is no resend and no invitation.
@@ -676,3 +685,84 @@ spam protection and a narrow public write path that does not use the tenant poli
 
 Quotes, invoices, payments, plan records, review records, marketing, the Website model, file storage, rescheduling, drag and drop, routing, notifications by email or SMS, and the Analytics aggregate facts. No Docker image was built or run for this phase: the Dockerfile and compose
 file are unchanged and compatible with the new migrations, and **Docker verification is required before AWS deployment** (§17).
+
+## 25. Financials: quotes, invoices and payments
+
+Phase 12 moved the business's money to PostgreSQL. It is the money **a business's customers owe and pay the business**; it is not Climvia's own billing (§19), shares no table with it, and involves no payment processor, bank connection or accounting package. Everything below belongs to exactly one organization, follows the rules of §9 and §13, and is read for the **active** business only.
+
+| Domain | Tables | Written by | Read by |
+| --- | --- | --- | --- |
+| Quotes | `quotes`, `quote_line_items` | owner, admin (server actions) | every member |
+| Invoices | `invoices`, `invoice_line_items` | owner, admin | every member |
+| Payments | `payments` | owner, admin | every member |
+| Numbering | `organization_sequences` (kinds `quote`, `invoice`, `payment` added to `booking`, `job`) | `app_next_number()` only | every member |
+
+Migrations: `0006_financials.sql` (tables, constraints, indexes; generated by drizzle-kit from `src/db/schema/financials.ts`, with the sequence-kind CHECK widened in `schema/operations.ts`) and `0007_financials_rls.sql` (policies, grants and the guard triggers; hand-written). The code is `src/db/fin-queries.ts` (every read and write), `src/db/fin-mappers.ts` (rows ↔ the shapes the screens use), `src/lib/financial-rules.ts` (what a request may ask, pure), `src/lib/money.ts` and `src/server/actions/financials.ts`.
+
+### Money is whole cents
+
+Every stored amount is an **integer number of cents** (`unit_price_cents`, `line_total_cents`, `amount_cents`, `previously_paid_cents`): $89.50 is `8950`. There is no `money`, `real` or `double precision` column (a test lists every `*_cents` column and asserts they are all `integer`, and that no float column exists). A quantity is `numeric(10,2)` (1.5 hours is `1.50`) and a
+line total is `round(quantity × unit_price_cents)` half up, which a CHECK constraint repeats so a row cannot carry another total; a test compares the application's rounding with PostgreSQL's for a spread of quantities and prices. The screens still hold dollars (89.5) because that is what a person reads, but such a number is only a **display value** derived from cents: every sum, difference and product goes
+through `src/lib/money.ts`, which converts to cents first and calculates in integers, and what a person types ("$1,234.56") is read digit by digit, never with floating point (a test rejects `.toFixed(2)` and `Math.round(x * 100)` in the financial source outside that module). There is no tax model: an invoice shows Tax $0.00.
+
+### What is stored and what is derived
+
+An **invoice has no status, paid amount, balance or total of its own**. They are derived, by one set of selectors (`src/data/financials.ts`) that every screen and the server use:
+
+- total = the sum of the invoice's line totals; received = the sum of its *recorded* payments; **paid = carried-forward money + received**; balance = max(0, total − paid); status = Paid when the balance is $0, Partially paid when something has been paid, otherwise Unpaid.
+- A **quote's** total is its lines; its status (draft, sent, approved, declined, expired) is stored with the **date each step happened on** (`created_on`, `sent_on`, `approved_on`, …), and its activity list is read off those dates. There is no second log to keep in step.
+- The Payments totals (payments recorded, amount received, outstanding invoices, outstanding balance) and the Overview's money are the same selectors over the same rows. **Voided payments are excluded** from every count and total; they stay in history, visibly voided.
+
+Because nothing derived is stored, a screen cannot disagree with the payments behind it and the totals cannot drift. A wrong balance is a release blocker, so PostgreSQL also holds the one rule that matters most (below).
+
+### Payments: recorded once, never edited, voided never deleted
+
+`payments` has the invoice, the customer, the amount, the method (the five that existed: check, card, cash, bank transfer, other), the day the money was received, an optional check number and note, who recorded it, and, once voided, when, why (a reason from a fixed list), an optional note and by whom.
+
+- **Partial payments** are simply several payments against one invoice. The status moves Unpaid → Partially paid → Paid by derivation; nothing is "updated".
+- **A payment is never edited.** The runtime role cannot change its invoice, customer, amount, method, date, number or organization (column-level grants). The correction for a mistake is a **void**: the payment turns `voided` with its reason, time and person, stays in history, stops counting, and reopens the invoice's balance. A voided payment is final (`payments_guard_update`: recorded → voided only, once). It is never deleted; no table here has a DELETE grant.
+- **Overpayment is impossible**, in three places: the screen (the amount range), the server (it locks the invoice, recomputes the balance from the rows and refuses an amount that is zero, negative, above the balance, or for an invoice with nothing owed), and the database (`payments_guard_insert`, below). A payment of exactly the balance is accepted; a cent more is not.
+- **The customer on a payment is its invoice's**, set by the database from the invoice and held to it by a composite foreign key, so a client cannot name a different one (or another business's).
+- **Atomicity and concurrency.** Recording takes an advisory lock on the invoice (`pg_advisory_xact_lock(hashtextextended('invoice-payments:' || invoice_id, 0))`), recomputes the balance, takes the next number and inserts: one transaction. The database trigger takes the **same** lock and re-checks the balance, so even a request that skipped the application cannot overspend: two payments racing for one balance are serialized, the second sees the first, and the later one is refused (a test races five $100 payments against a $300 invoice in raw SQL and six through the application: exactly three are recorded, with consecutive numbers, and a refused one gives its number back). `FOR UPDATE` on the invoice is not used: invoices have no UPDATE privilege at all. A void takes the same lock, so a void and a new payment racing on one invoice can never leave it over-paid, and three voids of one payment at once void it once.
+
+### Invoices and Quotes
+
+- An **invoice** is created **from an approved quote** (the flow that existed); it copies the quote's customer, property, Service, job, booking and lines, takes the next `INV-` number and the business's today, and is unpaid. It is created with its lines in one transaction (RLS lets lines join a document **only** in the transaction that created it, so a quote or an invoice can never gain or lose a line later and its total is its lines). `UNIQUE (organization_id, quote_id)` makes it one invoice per quote even under a race, and an invoice never changes afterwards (it has no UPDATE grant). Creating an invoice records no payment and does not change the quote.
+- A **quote** is created as a draft with its lines and moves forward only: draft → sent → approved | declined | expired; the last three are final (`quotes_guard_transition`, repeated by the pure rules in `financial-rules.ts`). Approving a quote does **not** create an invoice. The server has `createQuoteAction` and `updateQuoteStatusAction` with all their rules and numbering, but **no screen calls them**: there is no new Quote wizard in this phase (it was not asked for), so the Apex quotes are seeded and move only through the database rules.
+- **Jobs.** Completing a job creates no quote, invoice or payment (a test counts the three before and after). A quote and an invoice may *reference* the job and booking they came from (composite keys); nothing creates a document from a job by itself.
+
+### Numbers are the business's own
+
+"QT-884", "INV-1044" and "PAY-1008" are an integer `number` unique **within the organization** for each table (`UNIQUE (organization_id, number)`), allocated by the same `app_next_number(kind)` as bookings and jobs (§24), never `MAX(number) + 1`: a row lock on the counter serializes concurrent requests (twelve invoice and twelve payment numbers requested at once in one business come back as twelve distinct consecutive numbers each, while another business takes its own), a rolled-back transaction gives its number back, a new business starts every kind at 1001, and a seeded one starts above its largest seeded number (Apex: QT-894, INV-1052, PAY-1009). The application also checks the number it was given is free (a counter that fell behind its rows cannot repeat one). Two businesses may both have PAY-1001, and do: Apex's is a voided payment, Northstar's a recorded one.
+A duplicate number inside a business is a release blocker; a test asserts none exists and the database refuses one.
+
+### Dates and times
+
+A document's dates (created, sent, approved, issued, the day a payment was received) are the business's **calendar dates** (`date` columns) and are never converted. The due date is **generated by PostgreSQL** from the issue date and the terms (due on receipt, net 7/15/30), so it cannot disagree with them. Only the system's own events (a payment recorded, a payment voided) are instants (`timestamptz`), turned back into the business's local date on the server (§24, "Dates, times and time zones"); the clock the server uses for "today" is the business's (the sample business's is October 25, 2024).
+
+### The canonical Apex records, and the money that predates them
+
+Apex's baseline is **seven recorded payments, $2,130.00 received, two outstanding invoices, $680.00 outstanding**; voided payments are excluded. The seed (`scripts/db/seed-data/financials.ts`) writes four quotes, nine invoices (INV-1043 … INV-1051) and eight payments through the same functions the application uses, with deterministic ids:
+
+- **INV-1050** (Arthur Pendleton) is $500.00 with $200.00 already paid and a $300.00 balance. No payment record backs that $200, and the approved received total is exactly the seven recorded payments, so adding a $200 payment would make the baseline 8 payments and $2,330. The $200 is therefore carried **on the invoice** (`previously_paid_cents = 20000`, money received before payment records were kept): it counts toward the balance and is shown as "Previously paid", but it is not a payment and appears in no payments list or total. Only an `imported` invoice can carry it; the runtime role can create neither (RLS and a CHECK).
+- **INV-1051** (Maya Lin) is $380.00, unpaid. **INV-1044** (Sarah Mitchell, $285.00) is fully paid by PAY-1008, has a $0 balance, is **not** linked to QT-884 (the source contradicted itself and the link was not restored), and is never offered for payment. **PAY-1001** is the historical payment recorded by mistake and voided: visible, excluded from every count and total. QT-884 is approved with no invoice.
+- Recording $300 on INV-1050 makes **PAY-1009**: 8 payments, $2,430.00, one outstanding invoice, $380.00. After the payment, INV-1050 is Paid, INV-1051 Unpaid, and all of it is still true after a reload and in a new session.
+- Northstar has its own small set (two quotes, two invoices with a partial payment and a voided one, numbered 1001 and 1002) and a brand-new business has none: Payments and Quotes & Invoices show real empty states with $0.00 totals, not "isn't available".
+
+### Reporting totals that are baselines, not counts
+
+The Overview's **Total Invoiced ($6,240)** and the Analytics quote and invoice-count aggregates describe more invoicing history than the nine stored invoices, exactly as Bookings 24 and Completed Jobs 18 describe more than the stored bookings (§24). They are **not backed by invented rows**. Total Invoiced is the $6,240 baseline plus the invoices made *since* (those not `imported`), so a new invoice moves it ($6,525 after INV-1052) and the seeded ones, already inside the baseline, do not; payments recorded, amount received and the outstanding figures are derived directly from the stored rows. Analytics is **not** migrated in this phase; it reads the same selectors for its money and keeps its own baselines for the rest.
+
+### Authorization and tenant isolation
+
+`financials:manage` (`src/lib/policy.ts`) is owner and admin; a member reads and changes nothing. In `src/server/actions/financials.ts` every action hands everything it does to one helper, `mutate()`, whose first step is `authorize("financials:manage")`; nothing is read from the arguments, parsed or looked up before it. The pipeline is the one of §13: **authenticated user → verified active organization (never taken from the request) → active membership → capability → validation → tenant transaction (`withTenant`, which sets the context that RLS reads) → validated references → locked rows → write → safe error.** No action takes an organization id and none of the arguments can name one: a request that does
+is ignored, and a test replays a captured request with another business's id in it to show the payment lands in the *caller's* workspace only. Every reference a request names (an invoice, a payment, a quote, a customer, a Service, a job) is resolved **inside the transaction, within the verified organization**: one that belongs to another business is indistinguishable from one that never existed. A refused request rolls the whole change back; a database error is never shown (the detail is logged on the server).
+PostgreSQL enforces the same: members of the **active** organization read; owner or admin insert and update only what the grants allow; composite `(organization_id, id)` foreign keys make a cross-business reference **impossible** rather than checked (an Apex quote cannot name a Northstar customer, Service, job or booking; an Apex invoice cannot name a Northstar customer, job, Service or quote; a line cannot name another business's Service; an Apex payment cannot name a Northstar invoice or team member). **Cross-tenant financial access is a release blocker** and is tested at the database, through replayed requests, and in the pages.
+
+### Where the data meets the screens
+
+The server loads the active business's financials with the rest of its core data (`getCoreSnapshot`) and `FinancialProvider` holds them for the whole workspace, so Payments, Quotes & Invoices, the customer pages and the Overview agree. Each change goes to the server, which answers with the financials **as stored**; only then does the working copy change, so a screen is never ahead of the database, and a refusal (an overpayment, a payment dated in the future, an already-voided payment, an already-invoiced quote) is shown in the dialog. The customer page lists that customer's quotes, invoices (with their balance) and payments, voided ones marked. The canonical Apex fixtures are not part of the application: nothing under `src/` imports the seed, and a test searches the built JavaScript for the seed's names and descriptions.
+
+### Not in this phase
+
+A payment processor, bank or accounting connection, Climvia's own billing, a Quote builder, invoice editing, refunds and credit notes, tax, PDFs and email, Maintenance Plans, Reviews records, Marketing, the Analytics aggregate facts, the Website model and Marketplace configuration. No Docker image was built or run for this phase: the Dockerfile and compose file are unchanged and compatible with the new migrations, and **Docker verification is required before AWS deployment** (§17).

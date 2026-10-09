@@ -12,6 +12,7 @@
  */
 import {
   BOOKING_BREAKDOWN,
+  CANONICAL_INVOICE_COUNTS,
   DEFAULT_RANGE_ID,
   INVOICE_BASELINE_COUNTS,
   JOB_BREAKDOWN,
@@ -23,7 +24,6 @@ import {
   type RangeId,
 } from "@/data/analytics";
 import {
-  FINANCIALS,
   getInvoiceStatus,
   getOutstandingBalance,
   getPaymentsReceivedTotal,
@@ -65,8 +65,6 @@ function tallyInvoices(data: FinancialData): Record<InvoiceStatus, number> {
   for (const invoice of data.invoices) counts[getInvoiceStatus(invoice, data)] += 1;
   return counts;
 }
-
-const CANONICAL_INVOICE_COUNTS = tallyInvoices(FINANCIALS);
 
 /**
  * The approved status counts, moved by what has happened to the invoices since the baseline: an invoice created in the

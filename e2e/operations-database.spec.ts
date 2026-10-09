@@ -201,11 +201,18 @@ test.describe("what the seed holds", () => {
       `select o.slug, s.kind, s.next_value from organization_sequences s join organizations o on o.id = s.organization_id
         where o.slug in ('apex-climate-heating-air', 'northstar-heating-cooling') order by o.slug, s.kind`,
     );
+    // The operations' counters (booking, job) and, since Phase 12, the financial ones (quote, invoice, payment): each continues after its seeded records.
     expect(rows).toEqual([
       { slug: "apex-climate-heating-air", kind: "booking", next_value: 1043 },
+      { slug: "apex-climate-heating-air", kind: "invoice", next_value: 1052 },
       { slug: "apex-climate-heating-air", kind: "job", next_value: 205 },
+      { slug: "apex-climate-heating-air", kind: "payment", next_value: 1009 },
+      { slug: "apex-climate-heating-air", kind: "quote", next_value: 894 },
       { slug: "northstar-heating-cooling", kind: "booking", next_value: 1003 },
+      { slug: "northstar-heating-cooling", kind: "invoice", next_value: 1003 },
       { slug: "northstar-heating-cooling", kind: "job", next_value: 1002 },
+      { slug: "northstar-heating-cooling", kind: "payment", next_value: 1003 },
+      { slug: "northstar-heating-cooling", kind: "quote", next_value: 1003 },
     ]);
   });
 });
@@ -277,7 +284,7 @@ test.describe("reading (SELECT)", () => {
       sequences: await count(client, "organization_sequences"),
       foreign: (await client.query("select 1 from bookings where organization_id = $1", [northstar])).rowCount,
     }));
-    expect(result.value).toEqual({ bookings: 13, jobs: 11, files: 4, blocks: 2, blockMembers: 4, sequences: 2, foreign: 0 });
+    expect(result.value).toEqual({ bookings: 13, jobs: 11, files: 4, blocks: 2, blockMembers: 4, sequences: 5, foreign: 0 });
   });
 
   test("the Northstar owner sees Northstar's operations and none of Apex's", async () => {
@@ -565,7 +572,7 @@ test.describe("numbering", () => {
     expect(member.error).toMatch(/Not allowed/);
     const nobody = await as(null, null, (client) => client.query("select app_next_number('booking')"));
     expect(nobody.error).toMatch(/Not allowed/);
-    const madeUp = await as(user.alex, apex, (client) => client.query("select app_next_number('invoice')"));
+    const madeUp = await as(user.alex, apex, (client) => client.query("select app_next_number('receipt')"));
     expect(madeUp.error).toMatch(/organization_sequences_kind/);
   });
 

@@ -18,7 +18,6 @@ import {
 } from "../src/data/maintenance-plans";
 import type { Booking } from "../src/data/operations";
 import {
-  FINANCIALS,
   getInvoiceById,
   getOutstandingBalance,
   getPaymentsReceivedTotal,
@@ -48,7 +47,7 @@ import {
   savePage,
   unpublish,
 } from "../src/lib/website-state";
-import { BOOK, BOOKINGS, CUSTOMERS, JOBS, OPERATIONS, PROPERTIES, SERVICES } from "./apex-data";
+import { BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, JOBS, OPERATIONS, PROPERTIES, SERVICES } from "./apex-data";
 import { cancelled, withBooking } from "./operations-edits";
 
 // Pure data/selector/state tests: no browser needed.
@@ -220,14 +219,14 @@ test.describe("creating a plan and scheduling an included visit", () => {
 
   test("scheduling a visit leaves quotes, invoices, payments and the Overview financial baseline untouched", () => {
     scheduleVisit2();
-    expect(getRecordedPaymentsCount()).toBe(7);
-    expect(getPaymentsReceivedTotal()).toBe(2130);
-    expect(getOutstandingBalance()).toBe(680);
+    expect(getRecordedPaymentsCount(FINANCIALS)).toBe(7);
+    expect(getPaymentsReceivedTotal(FINANCIALS)).toBe(2130);
+    expect(getOutstandingBalance(FINANCIALS)).toBe(680);
     expect(overviewMetrics.totalInvoiced).toBe(6240);
     expect(FINANCIALS.payments.map((payment) => payment.id)).not.toContain("PAY-1009");
     // Locked Phase 4 decisions.
-    expect(getInvoiceById("INV-1044")?.quoteId).toBeUndefined();
-    expect(getInvoiceById("INV-1050")?.previouslyPaid).toBe(200);
+    expect(getInvoiceById("INV-1044", FINANCIALS)?.quoteId).toBeUndefined();
+    expect(getInvoiceById("INV-1050", FINANCIALS)?.previouslyPaid).toBe(200);
   });
 });
 

@@ -8,7 +8,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "playwright/test";
 import { buildAnalytics } from "../src/lib/analytics-state";
-import { recordPayment } from "../src/lib/financial-state";
+import { paymentAmountError } from "../src/lib/financial-rules";
 import { getCustomerById, getPropertiesForCustomer, getPropertyById } from "../src/data/customers";
 import {
   BOOKING_BREAKDOWN,
@@ -18,8 +18,6 @@ import {
   WEEKLY_ACTIVITY,
 } from "../src/data/analytics";
 import {
-  FINANCIALS,
-  INVOICES,
   getInvoiceBalance,
   getInvoiceById,
   getInvoiceStatus,
@@ -40,7 +38,8 @@ import { initialSettings } from "../src/data/settings";
 import { getTeamMemberById } from "../src/data/team";
 import { WEBSITE_PAGES, defaultSiteContent, getShownServices } from "../src/data/website";
 import { RESERVED_BOOKING_NUMBERS } from "../src/lib/operations-rules";
-import { BOOK, BOOKINGS, CUSTOMERS, JOBS, OPERATIONS, ROLES, SCHEDULE_BLOCKS, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
+import { BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, INVOICES, JOBS, OPERATIONS, ROLES, SCHEDULE_BLOCKS, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
+import { withPayment } from "./financial-edits";
 
 const SIX_SERVICES = [
   "AC Repair & Diagnostics",
@@ -192,33 +191,35 @@ test.describe("Job #JB-204 and Sarah's record", () => {
 
 test.describe("money", () => {
   test("the baseline: 7 payments recorded, $2,130 received, 2 outstanding invoices, $680 outstanding", () => {
-    expect(getRecordedPaymentsCount()).toBe(7);
-    expect(getPaymentsReceivedTotal()).toBe(2130);
-    expect(getOutstandingInvoices()).toHaveLength(2);
-    expect(getOutstandingBalance()).toBe(680);
-    expect(getTotalInvoiced()).toBe(6240);
+    expect(getRecordedPaymentsCount(FINANCIALS)).toBe(7);
+    expect(getPaymentsReceivedTotal(FINANCIALS)).toBe(2130);
+    expect(getOutstandingInvoices(FINANCIALS)).toHaveLength(2);
+    expect(getOutstandingBalance(FINANCIALS)).toBe(680);
+    expect(getTotalInvoiced(FINANCIALS)).toBe(6240);
     expect(overviewMetrics).toMatchObject({ totalInvoiced: 6240, paymentsReceived: 2130, recordedPayments: 7 });
   });
 
   test("#INV-1044 is paid and cannot take another payment; #INV-1050 owes $300", () => {
-    const paid = getInvoiceById("INV-1044")!;
-    expect(getInvoiceStatus(paid)).toBe("paid");
-    expect(getInvoiceBalance(paid)).toBe(0);
-    expect(recordPayment(FINANCIALS, { invoiceId: "INV-1044", amount: 1, method: "cash", date: PROTOTYPE_TODAY }).payment).toBeUndefined();
-    expect(getInvoiceBalance(getInvoiceById("INV-1050")!)).toBe(300);
+    const paid = getInvoiceById("INV-1044", FINANCIALS)!;
+    expect(getInvoiceStatus(paid, FINANCIALS)).toBe("paid");
+    expect(getInvoiceBalance(paid, FINANCIALS)).toBe(0);
+    // The rule the server applies before it records anything: nothing can be recorded against a balance of $0.
+    expect(paymentAmountError(100, 0)).toMatch(/no balance due/);
+    expect(getInvoiceBalance(getInvoiceById("INV-1050", FINANCIALS)!, FINANCIALS)).toBe(300);
     expect(INVOICES.length).toBeGreaterThan(2);
   });
 
-  test("recording $300 on #INV-1050 makes #PAY-1009: 8 payments, $2,430, 1 outstanding invoice, $380", () => {
-    const { data, payment } = recordPayment(FINANCIALS, { invoiceId: "INV-1050", amount: 300, method: "cash", date: PROTOTYPE_TODAY });
-    expect(payment?.id).toBe("PAY-1009");
+  test("with $300 recorded on #INV-1050 the selectors answer: 8 payments, $2,430, 1 outstanding invoice, $380", () => {
+    // The recording itself is the server's (financials-flows.spec.ts does it through the screen); this is what the totals do with it.
+    const { data, payment } = withPayment(FINANCIALS, "INV-1050", 300, { method: "cash", date: PROTOTYPE_TODAY });
+    expect(payment.id).toBe("PAY-1009");
     expect(getRecordedPaymentsCount(data)).toBe(8);
     expect(getPaymentsReceivedTotal(data)).toBe(2430);
     expect(getOutstandingInvoices(data)).toHaveLength(1);
     expect(getOutstandingBalance(data)).toBe(380);
     expect(getInvoiceStatus(getInvoiceById("INV-1050", data)!, data)).toBe("paid");
     // The canonical records themselves are untouched.
-    expect(getRecordedPaymentsCount()).toBe(7);
+    expect(getRecordedPaymentsCount(FINANCIALS)).toBe(7);
   });
 });
 
@@ -244,9 +245,9 @@ test.describe("Growth and Insights baselines", () => {
     expect(model.jobs.completed).toBe(18);
     expect(QUOTE_BASELINE.totalValue).toBe(4820);
     // The money and the plans are the shared selectors' answers, not a second copy.
-    expect(model.payments.recorded).toBe(getRecordedPaymentsCount());
-    expect(model.payments.received).toBe(getPaymentsReceivedTotal());
-    expect(model.invoices.outstanding).toBe(getOutstandingBalance());
+    expect(model.payments.recorded).toBe(getRecordedPaymentsCount(FINANCIALS));
+    expect(model.payments.received).toBe(getPaymentsReceivedTotal(FINANCIALS));
+    expect(model.invoices.outstanding).toBe(getOutstandingBalance(FINANCIALS));
     expect(model.plans).toEqual(getPlanMetrics(PLANS_DATA, OPERATIONS));
     expect(model.plans.active).toBe(PLAN_BASELINE.active);
   });

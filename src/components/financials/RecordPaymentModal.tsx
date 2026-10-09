@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CircleCheck } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { KeyValueList } from "@/components/ui/KeyValueList";
@@ -12,6 +13,7 @@ import { invoiceHref, paymentHref } from "@/config/routes";
 import {
   PAYMENT_METHODS,
   PAYMENT_METHOD_LABEL,
+  getBalanceAfter,
   getInvoiceBalance,
   getInvoiceById,
   getInvoicePaid,
@@ -19,18 +21,18 @@ import {
   getInvoiceTotal,
   getOutstandingInvoices,
   getRelatedWork,
-  roundMoney,
   type Invoice,
   type Payment,
   type PaymentMethod,
 } from "@/data/financials";
-import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import { getPartyName } from "@/data/operations";
 import { formatDate } from "@/lib/format";
+import { amountToCents, fromCents, toCents } from "@/lib/money";
 import { useFinancials } from "./FinancialProvider";
 import { InvoiceStatusBadge } from "./StatusBadges";
 import { usd } from "./shared";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useClock } from "@/components/workspace/WorkspaceProvider";
 
 type RecordPaymentModalProps = {
   /** Skip the invoice step when the flow starts from one invoice. */
@@ -42,11 +44,13 @@ type RecordPaymentModalProps = {
  * The one Record payment flow: Payments, the Outstanding invoices tab, an invoice page and the Overview quick
  * action all open it. Step 1 picks an invoice that still has a balance (a fully paid invoice never appears),
  * step 2 takes the amount, method and date, and the confirmation names the new payment. Nothing is sent to a
- * payment service: the payment is a record in this session's data.
+ * payment service: the payment is a record of money the business received, stored by the server, which checks the amount against
+ * the invoice's balance again.
  */
 export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentModalProps) {
   const dir = useDirectory();
   const { data, recordPayment } = useFinancials();
+  const { today } = useClock();
   const [stage, setStage] = useState<"select" | "details" | "done">(initialInvoiceId ? "details" : "select");
   const [invoiceId, setInvoiceId] = useState<string | undefined>(initialInvoiceId);
   const [selectError, setSelectError] = useState(false);
@@ -56,9 +60,11 @@ export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentM
   const [partialAmount, setPartialAmount] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("check");
   const [checkNumber, setCheckNumber] = useState("");
-  const [date, setDate] = useState(PROTOTYPE_TODAY);
+  const [date, setDate] = useState(today);
   const [note, setNote] = useState("");
   const [showErrors, setShowErrors] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
 
   const headingRef = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
@@ -76,14 +82,15 @@ export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentM
   const payable = invoice && getInvoiceBalance(invoice, data) > 0 ? invoice : undefined;
 
   const balance = payable ? getInvoiceBalance(payable, data) : 0;
-  const parsed = Number(partialAmount);
-  const amount = partial ? (Number.isFinite(parsed) ? roundMoney(parsed) : 0) : balance;
+  // What was typed is read as exact cents, never as a float.
+  const typedCents = partial ? amountToCents(partialAmount) : undefined;
+  const amount = partial ? (typedCents === undefined ? 0 : fromCents(typedCents)) : balance;
   const amountError =
-    partial && (!partialAmount.trim() || !(amount > 0) || amount > balance)
+    partial && (!partialAmount.trim() || typedCents === undefined || !(typedCents > 0) || typedCents > toCents(balance))
       ? `Enter an amount between ${usd(0.01)} and ${usd(balance)}.`
       : undefined;
-  const dateError = !date ? "Enter the date the payment was received." : undefined;
-  const afterBalance = roundMoney(Math.max(0, balance - (amountError ? 0 : amount)));
+  const dateError = !date ? "Enter the date the payment was received." : date > today ? "The payment date can't be in the future." : undefined;
+  const afterBalance = payable ? getBalanceAfter(payable, data, amountError ? 0 : amount) : 0;
 
   function choose(id: string) {
     setInvoiceId(id);
@@ -92,11 +99,15 @@ export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentM
     setPartialAmount("");
   }
 
-  function submit() {
+  async function submit() {
+    if (saving) return;
     if (!payable || amountError || dateError) return setShowErrors(true);
-    const payment = recordPayment({ invoiceId: payable.id, amount, method, date, checkNumber, note });
-    if (!payment) return setShowErrors(true);
-    setRecorded(payment);
+    setSaving(true);
+    setProblem(undefined);
+    const result = await recordPayment({ invoiceId: payable.id, amount, method, date, checkNumber, note });
+    setSaving(false);
+    if (!result.ok) return setProblem(result.error);
+    setRecorded(result.data.payment);
     setStage("done");
   }
 
@@ -230,8 +241,8 @@ export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentM
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={!payable}>
-            Record payment
+          <Button onClick={submit} disabled={!payable || saving}>
+            {saving ? "Recording…" : "Record payment"}
           </Button>
         </>
       }
@@ -301,6 +312,7 @@ export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentM
               label="Payment date"
               type="date"
               required
+              max={today}
               value={date}
               hint="The date the business received the payment."
               error={showErrors ? dateError : undefined}
@@ -330,6 +342,7 @@ export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentM
               ]}
             />
             <p className="text-xs text-ink-muted">This payment will be recorded separately and linked to Invoice #{payable.id}.</p>
+            {problem && <FormAlert>{problem}</FormAlert>}
           </aside>
         </div>
       )}

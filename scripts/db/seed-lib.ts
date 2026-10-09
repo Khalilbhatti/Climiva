@@ -15,9 +15,10 @@
  *   casey.nguyen@climvia.test    admin in BOTH                                       -> Apex + Northstar (User C)
  *
  * Each business also gets its core data: customers with their properties and equipment, Services, the team with its roles,
- * and its operations (bookings, jobs, blocked time). Apex has the full approved set (scripts/db/seed-data); Northstar has a few
- * clearly different records (two bookings and one job of its own). The records are written through the SAME functions the
- * application uses (src/db/core-queries.ts, src/db/ops-queries.ts), with stable ids.
+ * its operations (bookings, jobs, blocked time) and its financials (quotes, invoices, payments). Apex has the full approved set
+ * (scripts/db/seed-data); Northstar has a few clearly different records (two bookings, one job, two quotes, two invoices and two
+ * payments of its own). The records are written through the SAME functions the application uses (src/db/core-queries.ts,
+ * src/db/ops-queries.ts, src/db/fin-queries.ts), with stable ids.
  *
  * Every function is idempotent: running the seed twice changes nothing the second time.
  */
@@ -33,18 +34,22 @@ import {
 } from "../../src/db/settings-mappers";
 import * as schema from "../../src/db/schema";
 import type { CustomerBook } from "../../src/data/customers";
+import type { FinancialData } from "../../src/data/financials";
 import type { OperationsData } from "../../src/data/operations";
 import type { Service } from "../../src/data/services";
 import { EMPTY_TEAM, type TeamData } from "../../src/data/team";
 import { clearCoreData, insertCustomerBook, insertServices, persistTeamData } from "../../src/db/core-queries";
+import { clearFinancials, insertFinancials, loadFinRefs } from "../../src/db/fin-queries";
 import { clearOperations, insertOperations, loadRefs } from "../../src/db/ops-queries";
 import { createAuth, type Auth } from "../../src/lib/auth";
 import { adminDb, adminUrl, appUrl, requireEnv } from "./lib";
 import { CUSTOMERS, EQUIPMENT, PROPERTIES } from "./seed-data/customers";
+import { FINANCIALS } from "./seed-data/financials";
 import { OPERATIONS } from "./seed-data/operations";
 import {
   NORTHSTAR_CUSTOMERS,
   NORTHSTAR_EQUIPMENT,
+  NORTHSTAR_FINANCIALS,
   NORTHSTAR_OPERATIONS,
   NORTHSTAR_PROPERTIES,
   NORTHSTAR_ROLES,
@@ -129,6 +134,8 @@ export type CoreDataset = {
   team: TeamData;
   /** Bookings, jobs and blocked time. They point at the customers, Services and team above by their public references. */
   operations: OperationsData;
+  /** Quotes, invoices and payments. They point at the customers, Services, jobs, bookings and team above by their public references. */
+  financials: FinancialData;
   /** Team members (by slug) who have a Climvia login in the seed, by seed user key. */
   logins: Readonly<Record<string, keyof typeof SEED_USERS>>;
 };
@@ -139,6 +146,7 @@ export const APEX_CORE: CoreDataset = {
   services: SERVICES,
   team: { members: TEAM, roles: ROLES },
   operations: OPERATIONS,
+  financials: FINANCIALS,
   logins: { "alex-morgan": "alex" },
 };
 
@@ -147,6 +155,7 @@ export const NORTHSTAR_CORE: CoreDataset = {
   services: NORTHSTAR_SERVICES,
   team: { members: NORTHSTAR_TEAM, roles: NORTHSTAR_ROLES },
   operations: NORTHSTAR_OPERATIONS,
+  financials: NORTHSTAR_FINANCIALS,
   logins: { "taylor-brooks": "taylor" },
 };
 
@@ -229,7 +238,8 @@ type AdminTx = Parameters<Parameters<AdminDb["transaction"]>[0]>[0];
 
 /**
  * Write a business's core records inside a transaction. `userIds` links team members (by slug) to logins. The operations are
- * written last: they point at the customers, Services and team members just written, and their times are read in `timeZone`.
+ * written next (they point at the customers, Services and team members just written, and their times are read in `timeZone`) and
+ * the financials last (they point at the jobs and bookings as well).
  */
 export async function writeCoreData(
   tx: AdminTx,
@@ -244,6 +254,7 @@ export async function writeCoreData(
   await insertCustomerBook(db, organizationId, core.book, { stableIds: true });
   await persistTeamData(db, organizationId, EMPTY_TEAM, core.team, { stableIds: true, userIds });
   await insertOperations(db, organizationId, timeZone, core.operations, await loadRefs(db, organizationId), { stableIds: true });
+  await insertFinancials(db, organizationId, timeZone, core.financials, await loadFinRefs(db, organizationId), { stableIds: true });
 }
 
 /** Give a business its core records unless it already has them. Returns true when it wrote them. */
@@ -346,7 +357,10 @@ export async function coreFingerprint(db: AdminDb, organizationId: string): Prom
       (select count(*) || ':' || coalesce(max(updated_at)::text, '') from jobs where organization_id = ${organizationId}),
       (select count(*) || ':' || coalesce(string_agg(ref || visibility, ',' order by ref), '') from job_files where organization_id = ${organizationId}),
       (select count(*) from schedule_blocks where organization_id = ${organizationId}),
-      (select coalesce(string_agg(kind || next_value, ',' order by kind), '') from organization_sequences where organization_id = ${organizationId})
+      (select coalesce(string_agg(kind || next_value, ',' order by kind), '') from organization_sequences where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') from quotes where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') from invoices where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') || ':' || count(*) filter (where status = 'voided') from payments where organization_id = ${organizationId})
     ) as fingerprint`);
   return result.rows[0].fingerprint;
 }
@@ -390,7 +404,8 @@ export async function resetTestTenant(db: AdminDb, tenant: { userId: string; org
   const seeded = seededFingerprints.get(tenant.organizationId);
   if (seeded === undefined || seeded !== (await coreFingerprint(db, tenant.organizationId))) {
     await db.transaction(async (tx) => {
-      // Bookings and jobs point at customers, Services and team members, so they go first.
+      // Documents point at jobs and bookings, and those at customers, Services and team members, so they go first.
+      await clearFinancials(tx as never, tenant.organizationId);
       await clearOperations(tx as never, tenant.organizationId);
       await clearCoreData(tx as never, tenant.organizationId);
       await writeCoreData(tx, tenant.organizationId, APEX.timezone, APEX_CORE, { "alex-morgan": tenant.userId });

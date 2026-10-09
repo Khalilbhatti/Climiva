@@ -26,6 +26,7 @@ import { useFinancials } from "./FinancialProvider";
 import { InvoiceStatusBadge, QuoteStatusBadge } from "./StatusBadges";
 import { CustomerCard, PartyName, RelatedRecords, usd } from "./shared";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 
 export function QuoteDetail({ quoteId }: { quoteId: string }) {
   const { data } = useFinancials();
@@ -37,7 +38,7 @@ export function QuoteDetail({ quoteId }: { quoteId: string }) {
         as="h1"
         icon={SearchX}
         title="Quote not found"
-        description="This quote isn't in the list."
+        description="This quote isn't in this workspace. It may have been mistyped, or it belongs to another business."
         action={<ButtonLink href="/quotes-invoices">Back to Quotes & Invoices</ButtonLink>}
       />
     );
@@ -48,10 +49,11 @@ export function QuoteDetail({ quoteId }: { quoteId: string }) {
 function QuotePage({ quote }: { quote: Quote }) {
   const dir = useDirectory();
   const { data } = useFinancials();
+  const canManage = useCan("financials:manage");
   const [creating, setCreating] = useState(false);
 
   const invoices = getInvoicesForQuote(quote.id, data);
-  const canInvoice = quote.status === "approved" && invoices.length === 0;
+  const canInvoice = quote.status === "approved" && invoices.length === 0 && canManage;
   const total = getQuoteTotal(quote);
 
   return (

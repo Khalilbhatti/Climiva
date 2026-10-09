@@ -1,18 +1,19 @@
 import type { Metadata } from "next";
 import { PaymentDetail } from "@/components/financials/PaymentDetail";
-import { fixtureGate, hasSampleDataAccess } from "@/server/fixture-gate";
+import { getPaymentById } from "@/data/financials";
+import { getCoreSnapshot } from "@/server/core-data";
+import { requireWorkspaceContext } from "@/server/workspace";
 
-// The fixture payments are prerendered. A payment recorded during a demo session (PAY-1009…) is rendered on
-// demand and resolved against the in-memory financial data on the client.
+// A payment belongs to one business. The title names a payment only when it exists in the ACTIVE business; another business's
+// number and a number that never existed both read as an unknown payment.
 export async function generateMetadata({ params }: PageProps<"/payments/[paymentId]">): Promise<Metadata> {
-  if (!(await hasSampleDataAccess())) return { title: "Not available" };
   const { paymentId } = await params;
-  return { title: `Payment #${paymentId}` };
+  const core = await getCoreSnapshot();
+  return { title: core && getPaymentById(paymentId, core.financials) ? `Payment #${paymentId}` : "Payment" };
 }
 
 export default async function PaymentPage({ params }: PageProps<"/payments/[paymentId]">) {
-  const gate = await fixtureGate("Payments");
-  if (gate) return gate;
+  await requireWorkspaceContext();
   const { paymentId } = await params;
   return <PaymentDetail paymentId={paymentId} />;
 }

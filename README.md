@@ -162,7 +162,7 @@ expiry, business set-up, workspace switching, tenant isolation (through the brow
 the restricted runtime role), Settings persistence, and source-level checks of the server boundaries. Each worker signs
 in as the owner of its own copy of the Apex workspace, restored before every test.
 
-At the last run all 2118 tests passed (58 spec files, about nine minutes on six workers): the earlier front-end and SaaS tests, none skipped and adapted only where Settings, customers, Services, the team and now bookings and jobs are stored or every page needs a sign-in, plus the operations specs (SQL as the restricted role, bookings, jobs, the schedule, the cross-module checks and the business-time conversions).
+At the last run all 2247 tests passed (63 spec files, about eleven minutes on six workers): the earlier front-end and SaaS tests, none skipped and adapted only where Settings, customers, Services, the team, bookings, jobs and now quotes, invoices and payments are stored or every page needs a sign-in, plus the operations specs (SQL as the restricted role, bookings, jobs, the schedule, the cross-module checks and the business-time conversions) and the financial specs (money in cents, the payment and invoice rules, SQL as the restricted role with the concurrency tests, the seed round trip, and the record-payment, void and create-invoice flows through the real application).
 See [docs/production-handoff.md](docs/production-handoff.md#testing-status) for what each group covers.
 
 ## Deploying

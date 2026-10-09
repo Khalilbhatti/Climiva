@@ -18,6 +18,7 @@ import {
   getInvoiceById,
   getInvoiceDue,
   getInvoicePaid,
+  getInvoiceRecorded,
   getInvoiceStatus,
   getInvoiceTotal,
   getLineAmount,
@@ -32,6 +33,7 @@ import { RecordPaymentModal } from "./RecordPaymentModal";
 import { InvoiceStatusBadge, PaymentStatusBadge } from "./StatusBadges";
 import { CustomerCard, PartyName, RelatedRecords, usd } from "./shared";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 
 export function InvoiceDetail({ invoiceId }: { invoiceId: string }) {
   const { data } = useFinancials();
@@ -43,7 +45,7 @@ export function InvoiceDetail({ invoiceId }: { invoiceId: string }) {
         as="h1"
         icon={SearchX}
         title="Invoice not found"
-        description="This invoice isn't in the list. Invoices created in this session are cleared when the page reloads."
+        description="This invoice isn't in this workspace. It may have been mistyped, or it belongs to another business."
         action={<ButtonLink href="/quotes-invoices?tab=invoices">Back to Quotes & Invoices</ButtonLink>}
       />
     );
@@ -55,13 +57,14 @@ function InvoicePage({ invoice }: { invoice: Invoice }) {
   const dir = useDirectory();
   const business = useBusiness();
   const { data } = useFinancials();
+  const canManage = useCan("financials:manage");
   const [recording, setRecording] = useState(false);
 
   const total = getInvoiceTotal(invoice);
   const balance = getInvoiceBalance(invoice, data);
   const status = getInvoiceStatus(invoice, data);
   const payments = getPaymentsForInvoice(invoice.id, data);
-  const activePaid = payments.filter((payment) => payment.status === "recorded").reduce((sum, payment) => sum + payment.amount, 0);
+  const activePaid = getInvoiceRecorded(invoice, data);
   const lastVoided = payments.find((payment) => payment.status === "voided");
   const reopened = balance > 0 && lastVoided !== undefined;
   const due = getInvoiceDue(invoice);
@@ -89,7 +92,7 @@ function InvoicePage({ invoice }: { invoice: Invoice }) {
             <PartyName record={invoice} /> · {work}
           </p>
         </div>
-        {balance > 0 && (
+        {balance > 0 && canManage && (
           <Button onClick={() => setRecording(true)}>
             <Wallet aria-hidden className="size-4" />
             Record payment
@@ -255,7 +258,7 @@ function InvoicePage({ invoice }: { invoice: Invoice }) {
                 { label: "Balance due", value: <strong>{usd(balance)}</strong> },
               ]}
             />
-            {balance > 0 && (
+            {balance > 0 && canManage && (
               <Button className="mt-4 w-full" onClick={() => setRecording(true)}>
                 Record payment
               </Button>

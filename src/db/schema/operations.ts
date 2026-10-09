@@ -34,7 +34,7 @@ export const FILE_CATEGORY_VALUES = ["Before work", "Diagnostic / Meter", "Equip
 const list = (values: readonly string[]) => sql.raw(values.map((value) => `'${value}'`).join(", "));
 
 /**
- * One counter per organization and kind ("booking", "job"). Read-only for the runtime role: a number is taken through
+ * One counter per organization and kind ("booking", "job", "quote", "invoice", "payment"). Read-only for the runtime role: a number is taken through
  * app_next_number(), which locks the row, so two requests can never be given the same one and one business can never
  * move another's counter.
  */
@@ -51,7 +51,7 @@ export const organizationSequences = pgTable(
   },
   (table) => [
     primaryKey({ name: "organization_sequences_pk", columns: [table.organizationId, table.kind] }),
-    check("organization_sequences_kind", sql`${table.kind} in ('booking', 'job')`),
+    check("organization_sequences_kind", sql`${table.kind} in ('booking', 'job', 'quote', 'invoice', 'payment')`),
     check("organization_sequences_positive", sql`${table.nextValue} >= 1`),
   ],
 ).enableRLS();

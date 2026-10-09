@@ -27,6 +27,7 @@ import { PaymentStatusBadge } from "./StatusBadges";
 import { CustomerCard, PartyName, RelatedRecords, usd } from "./shared";
 import { VoidPaymentModal } from "./VoidPaymentModal";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 
 export function PaymentDetail({ paymentId }: { paymentId: string }) {
   const { data } = useFinancials();
@@ -39,7 +40,7 @@ export function PaymentDetail({ paymentId }: { paymentId: string }) {
         as="h1"
         icon={SearchX}
         title="Payment not found"
-        description="This payment isn't in the list. Payments recorded in this session are cleared when the page reloads."
+        description="This payment isn't in this workspace. It may have been mistyped, or it belongs to another business."
         action={<ButtonLink href="/payments">Back to Payments</ButtonLink>}
       />
     );
@@ -51,6 +52,7 @@ function PaymentPage({ payment, invoice }: { payment: Payment; invoice: Invoice 
   const dir = useDirectory();
   const business = useBusiness();
   const { data } = useFinancials();
+  const canManage = useCan("financials:manage");
   const [voiding, setVoiding] = useState(false);
 
   const voided = payment.status === "voided";
@@ -76,7 +78,7 @@ function PaymentPage({ payment, invoice }: { payment: Payment; invoice: Invoice 
           <ButtonLink href={invoiceHref(invoice.id)} variant="secondary">
             View invoice
           </ButtonLink>
-          {!voided && (
+          {!voided && canManage && (
             <Button variant="destructive" onClick={() => setVoiding(true)}>
               <Ban aria-hidden className="size-4" />
               Void payment

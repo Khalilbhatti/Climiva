@@ -3,6 +3,7 @@ import { cache } from "react";
 import type { Customer, CustomerBook, Equipment, Property } from "@/data/customers";
 import type { CoreSnapshot } from "@/data/directory";
 import { loadCustomerBook, loadCustomerDetail, loadServices, loadTeamData } from "@/db/core-queries";
+import { loadFinancials } from "@/db/fin-queries";
 import { loadOperations } from "@/db/ops-queries";
 import { withTenant } from "@/db/tenant";
 import { requireWorkspaceContext, resolveWorkspace } from "./workspace";
@@ -19,8 +20,8 @@ import { requireWorkspaceContext, resolveWorkspace } from "./workspace";
  */
 
 /**
- * What the browser's providers hold for the active workspace: its Services, Team, customer book and operations (Bookings,
- * Jobs and blocked time, from which the Schedule is derived). The modules show names and addresses from the book, so it goes
+ * What the browser's providers hold for the active workspace: its Services, Team, customer book, operations (Bookings,
+ * Jobs and blocked time, from which the Schedule is derived) and financials (Quotes, Invoices and Payments). The modules show names and addresses from the book, so it goes
  * with them. All of it is the ACTIVE organization's, read inside one tenant transaction; none of it is compiled into the
  * client bundle. At this scale the lists are sent whole; windowing them by date is the next step (docs/saas-architecture.md).
  * Null when nobody is signed in to a workspace.
@@ -34,7 +35,8 @@ export const getCoreSnapshot = cache(async (): Promise<CoreSnapshot | null> => {
     const team = await loadTeamData(tx, organizationId);
     const book = await loadCustomerBook(tx, organizationId);
     const operations = await loadOperations(tx, organizationId, organization.timezone);
-    return { services, team, book, operations };
+    const financials = await loadFinancials(tx, organizationId, organization.timezone);
+    return { services, team, book, operations, financials };
   });
 });
 

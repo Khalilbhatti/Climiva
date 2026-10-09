@@ -14,10 +14,13 @@ import {
   getEquipmentForCustomer,
   getPropertiesForCustomer,
 } from "@/data/customers";
+import { fixtureGate } from "@/server/fixture-gate";
 
 const linkClasses = "inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline";
 
 export default async function CustomerOverviewPage({ params }: PageProps<"/customers/[customerId]">) {
+  const gate = await fixtureGate("Customers");
+  if (gate) return gate;
   const { customerId } = await params;
   const customer = getCustomerById(customerId);
   if (!customer) notFound();

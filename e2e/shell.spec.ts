@@ -36,8 +36,8 @@ test.describe("Global shell", () => {
     const header = page.locator("header");
 
     await expect(header.getByText("Pro", { exact: true })).toHaveCount(0);
-    await expect(header.getByRole("link", { name: new RegExp(business.name) })).toBeVisible();
-    await expect(header.getByRole("link", { name: new RegExp(currentUser.name) })).toContainText(currentUser.role);
+    await expect(header.getByRole("button", { name: new RegExp(business.name) })).toBeVisible();
+    await expect(header.getByRole("button", { name: new RegExp(currentUser.name) })).toContainText(currentUser.role);
     await expect(header.getByPlaceholder("Search customers, jobs, bookings, schedule...")).toBeVisible();
 
     const bell = header.getByRole("button", { name: "Notifications" });

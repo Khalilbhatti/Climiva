@@ -6,7 +6,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Browser, BrowserContext } from "playwright/test";
-import { expect, test } from "playwright/test";
+import { expect, test } from "./fixtures";
 
 const PAGES = [
   "/",
@@ -58,27 +58,29 @@ async function capture(context: BrowserContext, baseURL: string) {
   return { text, problems };
 }
 
-async function baseline(browser: Browser, baseURL: string) {
-  const context = await browser.newContext({ timezoneId: "America/Chicago", locale: "en-US", viewport: { width: 1440, height: 900 } });
+type SignedIn = NonNullable<Parameters<Browser["newContext"]>[0]>["storageState"];
+
+async function baseline(browser: Browser, baseURL: string, storageState: SignedIn) {
+  const context = await browser.newContext({ storageState, timezoneId: "America/Chicago", locale: "en-US", viewport: { width: 1440, height: 900 } });
   const result = await capture(context, baseURL);
   await context.close();
   return result;
 }
 
 test.describe("the same pages read the same in any browser", () => {
-  test("the baseline itself is clean and has real content", async ({ browser, baseURL }) => {
+  test("the baseline itself is clean and has real content", async ({ browser, baseURL, storageState }) => {
     test.setTimeout(180_000);
-    const { text, problems } = await baseline(browser, baseURL!);
+    const { text, problems } = await baseline(browser, baseURL!, storageState);
     expect(problems).toEqual([]);
     for (const url of PAGES) expect(text[url].length, url).toBeGreaterThan(200);
     expect(text["/payments"]).toContain("Oct 28, 2024");
   });
 
   for (const { timezoneId, locale } of BROWSERS) {
-    test(`${timezoneId} / ${locale}: identical text, no console problems`, async ({ browser, baseURL }) => {
+    test(`${timezoneId} / ${locale}: identical text, no console problems`, async ({ browser, baseURL, storageState }) => {
       test.setTimeout(240_000);
-      const expected = await baseline(browser, baseURL!);
-      const context = await browser.newContext({ timezoneId, locale, viewport: { width: 1440, height: 900 } });
+      const expected = await baseline(browser, baseURL!, storageState);
+      const context = await browser.newContext({ storageState, timezoneId, locale, viewport: { width: 1440, height: 900 } });
       const actual = await capture(context, baseURL!);
       await context.close();
       expect(actual.problems).toEqual([]);
@@ -86,11 +88,11 @@ test.describe("the same pages read the same in any browser", () => {
     });
   }
 
-  test("the system clock is irrelevant: a browser set to 2031 and one set to 1999 show the same pages", async ({ browser, baseURL }) => {
+  test("the system clock is irrelevant: a browser set to 2031 and one set to 1999 show the same pages", async ({ browser, baseURL, storageState }) => {
     test.setTimeout(240_000);
-    const expected = await baseline(browser, baseURL!);
+    const expected = await baseline(browser, baseURL!, storageState);
     for (const time of ["2031-03-09T03:30:00Z", "1999-12-31T23:59:59Z"]) {
-      const context = await browser.newContext({ timezoneId: "America/Chicago", locale: "en-US", viewport: { width: 1440, height: 900 } });
+      const context = await browser.newContext({ storageState, timezoneId: "America/Chicago", locale: "en-US", viewport: { width: 1440, height: 900 } });
       await context.clock.install({ time: new Date(time) });
       const actual = await capture(context, baseURL!);
       await context.close();

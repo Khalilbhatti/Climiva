@@ -58,8 +58,12 @@ function expand(pattern: string): string[] {
   return values.flatMap((value) => expand(pattern.replace(match[0], value)));
 }
 
+/** The Log in, Sign up and set-up pages are covered by auth.spec.ts and onboarding.spec.ts: they have no workspace shell to hold to this standard. */
+export const AUTH_PAGES = ["/login", "/signup", "/onboarding"];
+
 export function pagePatterns(): { pattern: string; shell: boolean }[] {
   return pageFiles(APP_DIR)
+    .filter((file) => !relative(APP_DIR, file).split(sep).includes("(auth)"))
     .map((file) => {
       const parts = relative(APP_DIR, file).split(sep).slice(0, -1);
       const shell = !parts.includes("(site)");

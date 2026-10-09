@@ -213,6 +213,7 @@ test.describe("the sidebar is exactly the approved navigation", () => {
     await primaryNav(page).getByRole("link", { name: "Settings" }).click();
     await page.getByLabel("City", { exact: false }).first().fill("Round Rock");
     await page.getByRole("button", { name: "Save changes", exact: true }).click();
+    await expect(page.getByRole("status")).toContainText("Business information saved.");
     expect(await readSidebar(page)).toEqual(before);
     await expect(primaryNav(page).locator("a[aria-current='page']")).toHaveAttribute("href", "/settings");
 

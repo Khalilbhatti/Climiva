@@ -5,6 +5,7 @@ import { fieldClasses } from "@/components/ui/Input";
 import { OptionCard, OptionGroup } from "@/components/ui/OptionCard";
 import { Select } from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
+import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { DATE_FORMATS, TIME_FORMATS, TIME_ZONES, dateFormatExample, getTimeZone, type Preferences, type TimeZoneId } from "@/data/settings";
 import { formatClockParts, type DateFormatId, type TimeFormatId } from "@/lib/display-preferences";
 import { cn } from "@/lib/cn";
@@ -22,12 +23,18 @@ const samePreferences = (a: Preferences, b: Preferences) =>
 export function PreferencesForm() {
   const { settings, savePreferences } = useSettings();
   const { toast } = useToast();
+  const { canEditSettings } = useWorkspace();
   const saved = settings.preferences;
-  const { draft, setDraft, dirty, guard, discard } = useSettingsDraft<Preferences>(saved, samePreferences, "workspace preferences");
+  const { draft, setDraft, dirty, problem, setProblem, guard, discard } = useSettingsDraft<Preferences>(saved, samePreferences, "workspace preferences");
 
-  function save() {
-    savePreferences(draft);
-    toast("Workspace preferences saved for this session. Reloading restores the standard preferences.");
+  async function save() {
+    setProblem(undefined);
+    const result = await savePreferences(draft);
+    if (!result.ok) {
+      setProblem(result.error);
+      return true;
+    }
+    toast("Workspace preferences saved.");
     return true;
   }
 
@@ -39,6 +46,8 @@ export function PreferencesForm() {
       dirty={dirty}
       saveLabel="Save preferences"
       onSave={save}
+      problem={problem}
+      readOnly={!canEditSettings}
       onDiscard={() => discard()}
       guard={guard}
     >

@@ -87,7 +87,8 @@ test.describe("Schedule", () => {
     await event.focus();
     await page.keyboard.press("Enter");
 
-    await expect(page).toHaveURL(/event=JB-204/);
+    // The selected event lives in the address, and the page is rendered on the server per request now, so changing the address is a round trip.
+    await expect(page).toHaveURL(/event=JB-204/, { timeout: 15_000 });
     const panel = details(page);
     await expect(panel).toContainText("Booking #BK-1042");
     await expect(panel).toContainText("Sarah Mitchell");
@@ -235,8 +236,8 @@ test.describe("Schedule navigation and views", () => {
 
 test.describe("deterministic dates", () => {
   for (const timezoneId of ["Pacific/Auckland", "America/Los_Angeles", "Asia/Kolkata", "America/Chicago"]) {
-    test(`renders the same days and times when the browser timezone is ${timezoneId}`, async ({ browser, baseURL }) => {
-      const context = await browser.newContext({ baseURL, timezoneId, viewport: { width: 1440, height: 900 } });
+    test(`renders the same days and times when the browser timezone is ${timezoneId}`, async ({ browser, baseURL, storageState }) => {
+      const context = await browser.newContext({ baseURL, timezoneId, storageState, viewport: { width: 1440, height: 900 } });
       const page = await context.newPage();
       try {
         await page.goto("/schedule");

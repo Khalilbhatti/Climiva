@@ -2,16 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { NAV_GROUPS, NAV_UTILITY, isRouteActive, type NavItem } from "@/config/navigation";
 import { cn } from "@/lib/cn";
 
 function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
   const active = isRouteActive(item.href, pathname);
+  // The count pills come from the sample dataset, so only the sample business shows them.
+  const { hasSampleData } = useWorkspace();
   const Icon = item.icon;
 
   return (
     <Link
       href={item.href}
+      // Every module is a per-workspace page rendered on request, so a prefetch is a database round trip per link per
+      // page view that the next click cannot reuse. Navigation fetches the page when it is chosen.
+      prefetch={false}
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex w-full items-center justify-between rounded-btn px-3 py-3 text-sm transition-colors",
@@ -24,7 +30,7 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
         <Icon aria-hidden className={cn("size-[18px]", active ? "text-white" : "text-ink-muted")} />
         {item.label}
       </span>
-      {item.badge !== undefined && (
+      {hasSampleData && item.badge !== undefined && (
         <span
           className={cn(
             "rounded px-1.5 py-0.5 font-mono text-xs font-medium",

@@ -3,7 +3,13 @@
 Where the Climvia Business Workspace stands at the end of the build: what is finished, how it is built, what it deliberately does not do,
 how it was verified, how to run and deploy it, and where a backend would attach. Written for the next developer, not for end users.
 
-**One sentence:** a complete, navigable front end over sample data that lives in the browser for the length of a visit, with no backend of any kind.
+**One sentence:** a complete, navigable front end over sample data, now inside a multi-tenant SaaS foundation (sign-in, businesses, roles, PostgreSQL, Row Level Security) that stores
+only Business information, Business hours, Workspace preferences and each person's profile name.
+
+> **Phase 9 update.** Everything below describes the front end and still holds, with these changes. Read [saas-architecture.md](saas-architecture.md) for the model.
+> The sample data belongs to **one** business (Apex); any other business sees its modules as "not available yet". Settings (Business information, hours, preferences, profile name)
+> is stored in PostgreSQL per business instead of lost on reload. Everything needs a signed-in person with a verified workspace. Wherever this document says "no backend", "nobody signs in"
+> or "gone on reload", read the SaaS foundation as the exception for those four Settings sections and for accounts.
 
 ## Contents
 
@@ -109,9 +115,11 @@ One set of records, read everywhere; nothing is typed twice. The facts every mod
 
 ## Session state and its limits
 
-- Every change is held in React state by the providers, survives moving between modules (including to the public previews), and is **gone on reload**. The sample
-  records themselves are never mutated.
-- Nothing is saved to `localStorage`, cookies, or anywhere else. A second tab or visitor starts from the sample data.
+- Every change to the sample modules is held in React state by the providers, survives moving between modules (including to the public previews), and is **gone on reload**.
+  The sample records themselves are never mutated. **Exception (Phase 9):** Business information, Business hours, Workspace preferences and the profile name are stored in
+  PostgreSQL for the active business and are read back from there on every page load. Branding (logo, accent) and a chosen photo are still session-only.
+- Nothing is saved to `localStorage`. Two cookies exist: the Better Auth session cookie and the `climvia_org` active-workspace preference (both `httpOnly`). A second tab starts from the
+  stored settings and the sample data; a different business never sees the sample data.
 - Following an in-app link away from a form with unsaved changes asks "Discard unsaved changes?". Reloading or closing the tab is left to the browser, and loses the changes either way.
 - Created records take the next free number in the session (a booking, job, payment, invoice or plan), with #BK-1048 held back for Sarah's visit.
 - The date and time style, the accent colour and the logo apply to everything read after they are saved; server-rendered text is limited to what does not depend on them.
@@ -120,8 +128,10 @@ One set of records, read everywhere; nothing is typed twice. The facts every mod
 
 None of this is missing by accident; each has no approved screen or needs infrastructure the project does not have.
 
-- **Backend, database, API.** No server code at all: no route handlers, middleware or server actions.
-- **Authentication and authorization.** Nobody signs in. Roles and permissions on the Team module are configuration that nothing enforces.
+- **A backend for the sample modules.** Since Phase 9 there is server code (Better Auth's route handler, a proxy, Server Actions) and a PostgreSQL database, but only accounts,
+  businesses, memberships, the four Settings sections and `sites` use it. Bookings, Jobs, Customers, Services, Team, financials, Website, Marketplace, Reviews, Marketing and
+  Analytics are still sample data.
+- **Authorization inside a business beyond owner / admin / member.** The Team module's roles and permission matrix are configuration that nothing enforces. SaaS roles are separate (see saas-architecture.md).
 - **Payments.** Record payment writes a record. No card, bank or processor is involved, and nothing is collected on the booking pages ("No payment is collected online").
 - **Email and SMS.** Review requests and campaigns are recorded as sent or scheduled; nothing is delivered.
 - **Domains.** Connecting, verifying and removing a domain is a simulation of the screens; no DNS is touched.
@@ -138,9 +148,9 @@ Final verification, run on the finished source:
 | --- | --- |
 | `npm run typecheck` | clean |
 | `npm run lint` (zero warnings allowed) | clean |
-| `npm run build` | succeeds with no warnings; every route prerendered |
-| `npm run test:e2e` (production build, Chromium) | **1725 passed, 0 failed, 0 flaky, 0 skipped**, 37 spec files, about 6 minutes on six workers |
-| Repeats for flakiness | session flows, navigation, search, payments and financial transitions, quotes and invoices, Settings and the unsaved-changes guard, Website, Marketplace, Marketing, plans, jobs, reviews, bookings and schedule ×3 (1101 runs); responsive shell, dates and time zones, accessibility, route crawl and invariants ×2 (1128 runs). No failure in any |
+| `npm run build` | succeeds with no warnings; every page is rendered on request (`ƒ`), none is prerendered |
+| `npm run test:e2e` (production build, own `climvia_test` database, Chromium) | **1902 passed, 0 failed, 0 flaky, 0 skipped**, 45 spec files, about 7 minutes on six workers (Phase 9: the 1725 earlier tests all kept, plus 177 for the SaaS foundation) |
+| Repeats for flakiness | session flows, navigation, search, payments and financial transitions, quotes and invoices, Settings and the unsaved-changes guard, Website, Marketplace, Marketing, plans, jobs, reviews, bookings and schedule ×3 (1101 runs); responsive shell, dates and time zones, accessibility, route crawl and invariants ×2 (1128 runs). No failure in any. Phase 9: the SaaS specs, Settings, shell, session flows, navigation, Schedule, dates and search ×3 (927 runs), no failure. One existing test (Schedule: opening an event by keyboard) failed about once in thirty when run in parallel hundreds of times, because the address now changes only after a server round trip; it waits for that explicitly |
 
 Every test runs behind a guard (`e2e/fixtures.ts`) that fails it on any console error, console warning (hydration mismatches included) or uncaught page error.
 
@@ -179,8 +189,10 @@ npx playwright install chromium   # once, if the browser is not installed
 npm run test:e2e       # builds, serves on 3460, runs the suite, stops the server
 ```
 
-Deploying to Vercel needs no configuration: import the repository, keep the Next.js preset, and deploy. There are no environment variables, secrets or build-time
-services. What is deployed is a demonstration of the workspace; it stores nothing and every visitor sees the same sample data.
+The app now needs PostgreSQL and environment variables (database URLs, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`); see `.env.example`, the README and
+[saas-architecture.md](saas-architecture.md#16-deployment-and-the-future-aws-topology), which also covers the `Dockerfile` and the single-EC2 plan. Local setup: `docker compose up -d postgres`,
+`npm run db:migrate`, `npm run db:seed`, `npm run dev`. `npm run test:e2e` prepares its own `climvia_test` database first. The statement that follows from earlier phases, "deploys to Vercel with no
+configuration", no longer applies.
 
 Operational notes:
 
@@ -197,13 +209,14 @@ Operational notes:
    Team's own record. Role and permissions always come from Team.
 4. **Authored copy keeps its own words.** Website page text, message templates (the default review request, campaign messages) and the sent quote and invoice messages mention
    "Apex Climate Heating & Air" literally and are not rewritten when the business is renamed. Header, footer, contact card, hours and listing are live.
-5. **Session changes reset on reload**, including Settings, because nothing is stored.
+5. **Session changes to the sample modules reset on reload.** Settings (Business information, hours, preferences, profile name) no longer does; Branding still does.
 6. **Dates in server-rendered text** cannot see the saved date style; the two places that render dates on the server use `DisplayDate`. A new server-rendered date must do the same.
 7. **Fixed booking windows.** Arrival windows, instant start times and consultation slots are fixed; Settings only decides which of them fit inside the saved hours.
 8. **The workspace is built for tablet width and up.** It is verified from 768 to 1440 px; below that the sidebar is not collapsed. The customer-facing previews are verified down to 390 px.
 9. **The footer year** on the public previews is fixed approved text ("© 2025"), not the clock.
 10. **One browser engine tested.** The suite runs in Chromium; Firefox and Safari have not been exercised.
-11. **No custom error screen.** An unexpected runtime error would show the framework's default error page; there is no code path known to cause one, and every unknown address is handled.
+11. **Error screens.** A workspace that cannot be loaded (for example the database is down) shows a plain "couldn't load" screen with Try again (`src/app/(workspace)/error.tsx`, `global-error.tsx`);
+    it never falls back to sample data. Every unknown address is handled.
 12. **One currency.** USD, read-only. The time zone setting only relabels times; stored times are never converted.
 
 ## Where a backend would attach
@@ -216,9 +229,9 @@ The code is arranged so these are the only places that change:
 | Changing records | `src/lib/*-state.ts` pure functions: `(data, input) → next data` | Each is one API mutation; the provider keeps calling it optimistically or replaces it with a server call |
 | Holding state | `components/*/…Provider.tsx` (React state, ref for synchronous reads) | Swap for a data-fetching cache; the `use…()` hooks are the only interface components use |
 | Identifiers | `nextId` and `RESERVED_BOOKING_NUMBERS` in `lib/operations-state.ts` | Server-assigned ids; the reserved number becomes a server rule |
-| Business facts | `SettingsProvider` over `initialSettings` | The tenant's settings record; Settings stays the single owner |
+| Business facts | **Done in Phase 9:** `SettingsProvider` is fed by PostgreSQL through `resolveWorkspace()` and saves through Server Actions | Settings stays the single owner |
 | The clock | `PROTOTYPE_TODAY` / `PROTOTYPE_NOW` | A business-time-zone "now"; formatters already take business-local strings |
-| Sign-in and roles | `data/team.ts` roles and permissions; `currentUser` | Real identity; permissions become enforced instead of displayed |
+| Sign-in and roles | **Done in Phase 9:** Better Auth + `organization_memberships` (owner / admin / member) | The Team module's own permissions still become enforced when Team moves to the database |
 | Public pages | `src/app/(site)`: the Website and Marketplace renderers read the same providers | Render per tenant from stored content; the renderers take content as props |
 | Sending and billing | Record-only actions in `reviews-state`, `marketing-state`, `financial-state` | Server-side delivery and a payment processor behind the same actions |
 | Files | Name and size in `operations-state.addJobFiles` | Upload to storage and keep the reference |

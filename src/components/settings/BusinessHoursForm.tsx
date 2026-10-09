@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { fieldClasses } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
 import { useToast } from "@/components/ui/Toast";
+import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import {
   DEFAULT_OPEN_HOURS,
   HOUR_OPTIONS,
@@ -27,8 +28,9 @@ import { useSettings } from "./SettingsProvider";
 export function BusinessHoursForm() {
   const { settings, saveHours } = useSettings();
   const { toast } = useToast();
+  const { canEditSettings } = useWorkspace();
   const saved = settings.hours;
-  const { draft, setDraft, dirty, showErrors, setShowErrors, guard, discard } = useSettingsDraft<WeeklyHours>(saved, isSameHours, "business hours");
+  const { draft, setDraft, dirty, showErrors, setShowErrors, problem, setProblem, guard, discard } = useSettingsDraft<WeeklyHours>(saved, isSameHours, "business hours");
   // The hours a day had before it was switched off, so switching it back on does not lose them.
   const [remembered, setRemembered] = useState<Record<number, DayHours>>({});
 
@@ -48,14 +50,19 @@ export function BusinessHoursForm() {
     }
   }
 
-  function save() {
+  async function save() {
+    setProblem(undefined);
     if (Object.keys(errors).length > 0) {
       setShowErrors(true);
       return false;
     }
-    saveHours(draft);
+    const result = await saveHours(draft);
+    if (!result.ok) {
+      setProblem(result.error);
+      return true;
+    }
     setShowErrors(false);
-    toast("Business hours saved for this session. Reloading restores the standard hours.");
+    toast("Business hours saved.");
     return true;
   }
 
@@ -67,6 +74,8 @@ export function BusinessHoursForm() {
       dirty={dirty}
       saveLabel="Save hours"
       onSave={save}
+      problem={problem}
+      readOnly={!canEditSettings}
       onDiscard={() => discard(() => setRemembered({}))}
       guard={guard}
       aside={

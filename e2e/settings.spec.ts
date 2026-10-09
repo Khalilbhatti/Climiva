@@ -18,11 +18,16 @@ async function go(page: Page, href: string) {
   await expect(page).toHaveURL(new RegExp(`${href.split("?")[0]}`));
 }
 
+/** Click a Save button that is expected to be accepted, and wait for the server to take it (the form is clean again once it has). */
+async function saveAndWait(page: Page, label: string) {
+  await saveButton(page, label).click();
+  await expect(unsaved(page)).toHaveCount(0);
+}
+
 async function saveBusinessName(page: Page, name: string) {
   await page.goto("/settings");
   await page.getByLabel("Business name").fill(name);
-  await saveButton(page, "Save changes").click();
-  await expect(unsaved(page)).toHaveCount(0);
+  await saveAndWait(page, "Save changes");
 }
 
 test.describe("Settings: structure", () => {
@@ -46,10 +51,12 @@ test.describe("Settings: structure", () => {
     }
   });
 
-  test("the top bar's workspace switcher and user lead to Settings", async ({ page }) => {
+  test("the top bar's workspace switcher and user menus lead to Settings", async ({ page }) => {
     await page.goto("/");
-    await expect(topBar(page).getByRole("link", { name: /Apex Climate Heating & Air/ })).toHaveAttribute("href", "/settings");
-    await expect(topBar(page).getByRole("link", { name: /Alex Morgan/ })).toHaveAttribute("href", "/settings");
+    await topBar(page).getByRole("button", { name: /Apex Climate Heating & Air/ }).click();
+    await expect(page.getByRole("region", { name: "Workspaces" }).getByRole("link", { name: "Business settings" })).toHaveAttribute("href", "/settings");
+    await topBar(page).getByRole("button", { name: /Alex Morgan/ }).click();
+    await expect(page.getByRole("region", { name: "Account" }).getByRole("link", { name: "My profile" })).toHaveAttribute("href", "/settings/profile");
   });
 
   test("Help is a finished page that points at Settings among the other areas", async ({ page }) => {
@@ -135,9 +142,9 @@ test.describe("Business information", () => {
     await page.getByLabel("Street address").fill("9000 Research Blvd");
     await field(page, "City").fill("Round Rock");
     await page.getByLabel("ZIP code").fill("78664");
-    await saveButton(page, "Save changes").click();
+    await saveAndWait(page, "Save changes");
 
-    await expect(toast(page)).toContainText("Business information saved for this session. Reloading restores the standard record.");
+    await expect(toast(page)).toContainText("Business information saved.");
     await expect(unsaved(page)).toHaveCount(0);
     await expect(page.getByLabel("Business name")).toHaveValue("Apex Climate Heating & Air LLC");
     await expect(field(page, "Phone")).toHaveValue("(512) 555-0142");
@@ -148,17 +155,17 @@ test.describe("Business information", () => {
     await expect(details).toContainText("9000 Research Blvd, Round Rock, TX 78664");
   });
 
-  test("a reload restores the canonical record", async ({ page }) => {
+  test("a reload keeps what was saved: it is stored, not held in the browser", async ({ page }) => {
     await saveBusinessName(page, "Changed Name Co");
     await page.reload();
-    await expect(page.getByLabel("Business name")).toHaveValue("Apex Climate Heating & Air");
+    await expect(page.getByLabel("Business name")).toHaveValue("Changed Name Co");
   });
 });
 
 test.describe("Business information reaches the rest of the workspace", () => {
   test("the top bar, Overview, Bookings link and detail pages use the saved name", async ({ page }) => {
     await saveBusinessName(page, "Summit HVAC Services");
-    await expect(topBar(page).getByRole("link", { name: /Summit HVAC Services/ })).toBeVisible();
+    await expect(topBar(page).getByRole("button", { name: /Summit HVAC Services/ })).toBeVisible();
 
     await primaryNav(page).getByRole("link", { name: "Overview" }).click();
     await expect(page.getByText("Operational activity, scheduled appointments, and pending records for Summit HVAC Services.")).toBeVisible();
@@ -179,7 +186,7 @@ test.describe("Business information reaches the rest of the workspace", () => {
     await field(page, "Email").fill("office@summit.test");
     await page.getByLabel("Street address").fill("1 Congress Ave");
     await page.getByLabel("ZIP code").fill("78701");
-    await saveButton(page, "Save changes").click();
+    await saveAndWait(page, "Save changes");
     await primaryNav(page).getByRole("link", { name: "Overview" }).click();
     const card = page.getByRole("region", { name: "Business information" });
     await expect(card).toContainText("(737) 555-0100");
@@ -194,7 +201,7 @@ test.describe("Business information reaches the rest of the workspace", () => {
     await page.goto("/settings");
     await page.getByLabel("Business name").fill("Summit HVAC Services");
     await field(page, "Phone").fill("(737) 555-0100");
-    await saveButton(page, "Save changes").click();
+    await saveAndWait(page, "Save changes");
 
     await go(page, "/website/pages");
     await expect(page.locator("main")).toContainText("Summit HVAC Services");
@@ -220,7 +227,7 @@ test.describe("Business information reaches the rest of the workspace", () => {
   test("the Marketplace editor's contact choices show the saved values, and Edit business information goes to Settings", async ({ page }) => {
     await page.goto("/settings");
     await field(page, "Email").fill("office@summit.test");
-    await saveButton(page, "Save changes").click();
+    await saveAndWait(page, "Save changes");
     await go(page, "/marketplace/edit");
     await expect(page.locator("main")).toContainText("office@summit.test");
     await expect(page.getByRole("link", { name: "Edit business information" }).first()).toHaveAttribute("href", "/settings");
@@ -291,8 +298,8 @@ test.describe("Business hours", () => {
     await expect(toast(page)).not.toContainText("saved");
     await page.getByLabel("Tuesday closing time").selectOption("17:00");
     await expect(page.getByText("Closing time must be after opening time.")).toHaveCount(0);
-    await saveButton(page, "Save hours").click();
-    await expect(toast(page)).toContainText("Business hours saved for this session.");
+    await saveAndWait(page, "Save hours");
+    await expect(toast(page)).toContainText("Business hours saved.");
   });
 
   test("has no shifts, on-call or holiday controls", async ({ page }) => {
@@ -309,7 +316,7 @@ test.describe("Business hours reach the rest of the workspace", () => {
     await page.getByLabel("Monday closing time").selectOption("17:00");
     await page.getByRole("button", { name: "Copy Monday to weekdays" }).click();
     await page.getByRole("switch", { name: "Saturday open" }).click();
-    await saveButton(page, "Save hours").click();
+    await saveAndWait(page, "Save hours");
     await expect(toast(page)).toContainText("Business hours saved");
 
     await primaryNav(page).getByRole("link", { name: "Overview" }).click();
@@ -336,7 +343,7 @@ test.describe("Business hours reach the rest of the workspace", () => {
     await page.goto("/settings/hours");
     await page.getByRole("switch", { name: "Sunday open" }).click();
     await page.getByRole("switch", { name: "Saturday open" }).click();
-    await saveButton(page, "Save hours").click();
+    await saveAndWait(page, "Save hours");
     await go(page, "/schedule");
     const week = page.getByRole("list", { name: "Week schedule" });
     // Sunday is open now, so it is no longer labelled Closed.
@@ -351,7 +358,7 @@ test.describe("Business hours reach the rest of the workspace", () => {
     await page.goto("/settings/hours");
     await page.getByRole("switch", { name: "Saturday open" }).click();
     await page.getByRole("switch", { name: "Sunday open" }).click();
-    await saveButton(page, "Save hours").click();
+    await saveAndWait(page, "Save hours");
 
     await go(page, "/website/preview/booking/annual-cooling-tune-up");
     await page.getByLabel("Date", { exact: true }).fill("2024-10-26");
@@ -512,8 +519,8 @@ test.describe("Workspace preferences", () => {
   test("a saved date style is used by every module's dates", async ({ page }) => {
     await page.goto("/settings/preferences");
     await page.getByLabel("Date format").selectOption("dmy-numeric");
-    await saveButton(page, "Save preferences").click();
-    await expect(toast(page)).toContainText("Workspace preferences saved for this session.");
+    await saveAndWait(page, "Save preferences");
+    await expect(toast(page)).toContainText("Workspace preferences saved.");
 
     await go(page, "/payments");
     await expect(page.getByRole("table", { name: "Payments" }).locator("tbody tr").filter({ hasText: "PAY-1008" })).toContainText("28/10/2024");
@@ -530,7 +537,7 @@ test.describe("Workspace preferences", () => {
     for (const [id, text] of Object.entries(expected)) {
       await page.goto("/settings/preferences");
       await page.getByLabel("Date format").selectOption(id);
-      if (id !== "mdy-short") await saveButton(page, "Save preferences").click();
+      if (id !== "mdy-short") await saveAndWait(page, "Save preferences");
       await go(page, "/payments");
       await expect(page.getByRole("table", { name: "Payments" }).locator("tbody tr").filter({ hasText: "PAY-1008" }), id).toContainText(text);
     }
@@ -539,7 +546,7 @@ test.describe("Workspace preferences", () => {
   test("24-hour time is used for times everywhere, including the hours editor", async ({ page }) => {
     await page.goto("/settings/preferences");
     await page.getByRole("radio", { name: /^24-hour/ }).check();
-    await saveButton(page, "Save preferences").click();
+    await saveAndWait(page, "Save preferences");
 
     await go(page, "/schedule");
     await expect(page.locator("#event-JB-204")).toContainText("10:00 – 12:00");
@@ -560,7 +567,7 @@ test.describe("Workspace preferences", () => {
     await go(page, "/settings/preferences");
     await page.getByLabel("Time zone").selectOption("America/New_York");
     await expect(page.getByText("Shown as Eastern Time (ET).")).toBeVisible();
-    await saveButton(page, "Save preferences").click();
+    await saveAndWait(page, "Save preferences");
 
     await go(page, "/schedule");
     await expect(page.getByText("Eastern Time (ET)")).toBeVisible();
@@ -574,15 +581,17 @@ test.describe("Workspace preferences", () => {
     await expect(page.locator("main")).toContainText("Eastern Time (ET), your business local time");
   });
 
-  test("the same preferences read the same in any browser timezone", async ({ browser, baseURL }) => {
+  test("the same preferences read the same in any browser timezone", async ({ browser, baseURL, storageState }) => {
+    test.setTimeout(90_000);
     for (const timezoneId of ["Pacific/Auckland", "America/Los_Angeles", "America/Chicago"]) {
-      const context = await browser.newContext({ baseURL, timezoneId });
+      const context = await browser.newContext({ baseURL, timezoneId, storageState });
       const page = await context.newPage();
       try {
         await page.goto("/settings/preferences");
         await page.getByLabel("Date format").selectOption("ymd-iso");
         await page.getByRole("radio", { name: /^24-hour/ }).check();
-        await saveButton(page, "Save preferences").click();
+        // The first browser saves these preferences; they are stored, so the next two open on them already.
+        if (await saveButton(page, "Save preferences").isEnabled()) await saveAndWait(page, "Save preferences");
         await go(page, "/schedule");
         await expect(page.locator("#event-JB-204")).toContainText("10:00 – 12:00");
         await expect(page.getByRole("list", { name: "Week schedule" }).getByRole("listitem", { name: "Fri, 10-25" })).toBeVisible();
@@ -594,12 +603,12 @@ test.describe("Workspace preferences", () => {
     }
   });
 
-  test("a reload restores the standard style", async ({ page }) => {
+  test("a reload keeps the saved style: it is stored, not held in the browser", async ({ page }) => {
     await page.goto("/settings/preferences");
     await page.getByLabel("Date format").selectOption("ymd-iso");
-    await saveButton(page, "Save preferences").click();
+    await saveAndWait(page, "Save preferences");
     await page.goto("/payments");
-    await expect(page.getByRole("table", { name: "Payments" }).locator("tbody tr").filter({ hasText: "PAY-1008" })).toContainText("Oct 28, 2024");
+    await expect(page.getByRole("table", { name: "Payments" }).locator("tbody tr").filter({ hasText: "PAY-1008" })).toContainText("2024-10-28");
   });
 });
 
@@ -630,10 +639,10 @@ test.describe("My profile", () => {
     await page.goto("/settings/profile");
     await page.getByLabel("Full name").fill("Alex Quinn Morgan");
     await expect(unsaved(page)).toContainText("You have unsaved changes to your profile.");
-    await saveButton(page, "Save profile").click();
+    await saveAndWait(page, "Save profile");
     await expect(toast(page)).toContainText("Profile updated.");
     await expect(unsaved(page)).toHaveCount(0);
-    await expect(topBar(page).getByRole("link", { name: /Alex Quinn Morgan/ })).toContainText("Operations Lead");
+    await expect(topBar(page).getByRole("button", { name: /Alex Quinn Morgan/ })).toContainText("Operations Lead");
     await expect(topBar(page)).toContainText("AQ");
 
     await go(page, "/reviews");
@@ -658,10 +667,10 @@ test.describe("My profile", () => {
     await expect(page.getByRole("alert").filter({ hasText: "Choose a PNG or JPG image up to 4 MB." })).toBeVisible();
     await page.getByLabel("Choose a profile photo").setInputFiles({ name: "me.png", mimeType: "image/png", buffer: Buffer.from("not-a-real-image") });
     await expect(unsaved(page)).toBeVisible();
-    await saveButton(page, "Save profile").click();
+    await saveAndWait(page, "Save profile");
     await expect(topBar(page).locator("img")).toHaveCount(1);
     await page.getByRole("button", { name: "Remove photo" }).click();
-    await saveButton(page, "Save profile").click();
+    await saveAndWait(page, "Save profile");
     await expect(topBar(page).locator("img")).toHaveCount(0);
   });
 });
@@ -765,7 +774,7 @@ test.describe("Unsaved changes", () => {
   test("saving clears the unsaved state, so leaving needs no confirmation", async ({ page }) => {
     await page.goto("/settings");
     await field(page, "City").fill("Round Rock");
-    await saveButton(page, "Save changes").click();
+    await saveAndWait(page, "Save changes");
     await primaryNav(page).getByRole("link", { name: "Overview" }).click();
     await expect(confirm(page)).toBeHidden();
     await expect(page).toHaveURL(/\/$/);

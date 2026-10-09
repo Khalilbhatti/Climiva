@@ -11,33 +11,39 @@ import { SettingsProvider } from "@/components/settings/SettingsProvider";
 import { TeamProvider } from "@/components/team/TeamProvider";
 import { ToastProvider } from "@/components/ui/Toast";
 import { WebsiteProvider } from "@/components/website/WebsiteProvider";
+import { WorkspaceProvider } from "@/components/workspace/WorkspaceProvider";
+import type { WorkspaceSnapshot } from "@/lib/workspace-types";
 
 /**
- * Every in-memory demo store, mounted once at the app root. They used to sit in the workspace layout; the
- * Website and Marketplace previews (customer-facing pages outside the workspace shell) need the same session data,
- * and React keeps provider state only across routes that share the provider's ancestors. Nothing here persists:
- * a reload restores the canonical fixtures.
+ * Everything the signed-in workspace needs, mounted once around it. `snapshot` was read and verified on the server for
+ * this request (the person, their workspaces, the active workspace's stored settings); the in-memory demo stores below
+ * start from their built-in sample data and still reset on reload. The customer-facing previews sit inside the same
+ * providers so they read what the workspace saved.
+ *
+ * Callers pass `key={snapshot.organization.id}`, so a different workspace can never inherit any state from another.
  */
-export function AppProviders({ children }: { children: ReactNode }) {
+export function AppProviders({ snapshot, children }: { snapshot: WorkspaceSnapshot; children: ReactNode }) {
   return (
-    <ToastProvider>
-      <SettingsProvider>
-        <TeamProvider>
-          <OperationsProvider>
-            <FinancialProvider>
-              <MaintenancePlansProvider>
-                <WebsiteProvider>
-                  <MarketplaceProvider>
-                    <ReviewsProvider>
-                      <MarketingProvider>{children}</MarketingProvider>
-                    </ReviewsProvider>
-                  </MarketplaceProvider>
-                </WebsiteProvider>
-              </MaintenancePlansProvider>
-            </FinancialProvider>
-          </OperationsProvider>
-        </TeamProvider>
-      </SettingsProvider>
-    </ToastProvider>
+    <WorkspaceProvider snapshot={snapshot}>
+      <ToastProvider>
+        <SettingsProvider initial={snapshot.settings}>
+          <TeamProvider>
+            <OperationsProvider>
+              <FinancialProvider>
+                <MaintenancePlansProvider>
+                  <WebsiteProvider>
+                    <MarketplaceProvider>
+                      <ReviewsProvider>
+                        <MarketingProvider>{children}</MarketingProvider>
+                      </ReviewsProvider>
+                    </MarketplaceProvider>
+                  </WebsiteProvider>
+                </MaintenancePlansProvider>
+              </FinancialProvider>
+            </OperationsProvider>
+          </TeamProvider>
+        </SettingsProvider>
+      </ToastProvider>
+    </WorkspaceProvider>
   );
 }

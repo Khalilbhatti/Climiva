@@ -1,10 +1,9 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createContext, Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   DEFAULT_ACCENT,
   getTimeZone,
-  initialSettings,
   type Branding,
   type BusinessInfo,
   type Preferences,
@@ -12,28 +11,47 @@ import {
   type SettingsData,
   type WeeklyHours,
 } from "@/data/settings";
-import { setDisplayPreferences } from "@/lib/display-preferences";
+import { DEFAULT_DISPLAY_PREFERENCES, setDisplayPreferences } from "@/lib/display-preferences";
+import type { ActionResult } from "@/lib/action-result";
 import * as state from "@/lib/settings-state";
+import { saveBusinessAction, saveHoursAction, savePreferencesAction, saveProfileAction } from "@/server/actions/settings";
+
+/** What a save reports back to its form. A failure carries the words to show; the working copy is unchanged. */
+export type SaveResult = { ok: true } | { ok: false; error: string; fields?: Record<string, string> };
 
 type SettingsContextValue = {
-  /** The working settings: the canonical baseline plus any demo edits made in this session. */
+  /** The working settings: what is stored for the active workspace (and, for branding, this session's edits). */
   settings: SettingsData;
-  saveBusiness: (business: BusinessInfo) => void;
-  saveHours: (hours: WeeklyHours) => void;
+  saveBusiness: (business: BusinessInfo) => Promise<SaveResult>;
+  saveHours: (hours: WeeklyHours) => Promise<SaveResult>;
+  savePreferences: (preferences: Preferences) => Promise<SaveResult>;
+  saveProfile: (profile: Profile) => Promise<SaveResult>;
+  /** Branding is not stored yet (a logo needs file storage); it lasts for the session only. */
   saveBranding: (branding: Branding) => void;
-  savePreferences: (preferences: Preferences) => void;
-  saveProfile: (profile: Profile) => void;
 };
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
 
+/** Runs a server action; if the server cannot be reached the person gets words to read, not an uncaught error. */
+async function send<T>(call: () => Promise<ActionResult<T>>): Promise<ActionResult<T>> {
+  try {
+    return await call();
+  } catch {
+    return { ok: false, error: "We couldn't reach the server, so nothing was saved. Check your connection and try again." };
+  }
+}
+
 /**
- * The one editable copy of the business identity and workspace preferences. Mounted at the app root so the Website and
- * Marketplace previews (outside the workspace shell) read what was saved inside it. In memory only: a reload restores
- * the baseline, which is the canonical Business and User records.
+ * The one editable copy of the business identity and workspace preferences, for the active workspace.
+ *
+ * `initial` is what the server read from PostgreSQL for this page load. A save goes to the server, which validates it
+ * again and stores it for the active workspace; only when that succeeds does the working copy change, so what is on
+ * screen is never ahead of what is stored. Mounted around the whole workspace and the customer-facing previews, so they
+ * read what was saved inside it.
  */
-export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<SettingsData>(initialSettings);
+export function SettingsProvider({ initial, children }: { initial: SettingsData; children: ReactNode }) {
+  const [settings, setSettings] = useState<SettingsData>(initial);
+  const [styleEpoch, setStyleEpoch] = useState(0);
   const latest = useRef(settings);
 
   const commit = useCallback((next: SettingsData) => {
@@ -43,19 +61,55 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     setSettings(next);
   }, []);
 
+  // The formatters are plain functions with module-level state, which the server must never write (it serves many
+  // workspaces at once). So the first render, on the server and in the browser, uses the default style and hydration
+  // agrees. Once mounted, a workspace with a different saved style applies it and remounts the tree beneath once.
+  useEffect(() => {
+    const saved = initial.preferences;
+    if (saved.dateFormat === DEFAULT_DISPLAY_PREFERENCES.dateFormat && saved.timeFormat === DEFAULT_DISPLAY_PREFERENCES.timeFormat) return;
+    setDisplayPreferences({ dateFormat: saved.dateFormat, timeFormat: saved.timeFormat });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the remount is the point: it re-renders every date in the saved style
+    setStyleEpoch(1);
+  }, [initial.preferences]);
+
   const value = useMemo<SettingsContextValue>(
     () => ({
       settings,
-      saveBusiness: (business) => commit(state.saveBusiness(latest.current, business)),
-      saveHours: (hours) => commit(state.saveHours(latest.current, hours)),
+      saveBusiness: async (business) => {
+        const result = await send(() => saveBusinessAction(business));
+        if (!result.ok) return result;
+        commit(state.saveBusiness(latest.current, result.data));
+        return { ok: true };
+      },
+      saveHours: async (hours) => {
+        const result = await send(() => saveHoursAction(hours));
+        if (!result.ok) return result;
+        commit(state.saveHours(latest.current, result.data));
+        return { ok: true };
+      },
+      savePreferences: async (preferences) => {
+        const result = await send(() => savePreferencesAction(preferences));
+        if (!result.ok) return result;
+        commit(state.savePreferences(latest.current, result.data));
+        return { ok: true };
+      },
+      saveProfile: async (profile) => {
+        // Only the name is stored; a chosen photo is shown for this session (it needs file storage to be kept).
+        const result = await send(() => saveProfileAction(profile.name));
+        if (!result.ok) return result;
+        commit(state.saveProfile(latest.current, { ...profile, name: result.data.name }));
+        return { ok: true };
+      },
       saveBranding: (branding) => commit(state.saveBranding(latest.current, branding)),
-      savePreferences: (preferences) => commit(state.savePreferences(latest.current, preferences)),
-      saveProfile: (profile) => commit(state.saveProfile(latest.current, profile)),
     }),
     [settings, commit],
   );
 
-  return <SettingsContext value={value}>{children}</SettingsContext>;
+  return (
+    <SettingsContext value={value}>
+      <Fragment key={styleEpoch}>{children}</Fragment>
+    </SettingsContext>
+  );
 }
 
 export function useSettings(): SettingsContextValue {

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useOperations } from "@/components/operations/OperationsProvider";
 import { SearchInput } from "@/components/ui/SearchInput";
+import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { cn } from "@/lib/cn";
 import { MIN_QUERY, SEARCH_GROUPS, searchWorkspace } from "@/lib/global-search";
 
@@ -19,6 +20,7 @@ export function GlobalSearch() {
   const router = useRouter();
   const pathname = usePathname();
   const { data } = useOperations();
+  const { hasSampleData } = useWorkspace();
   const listId = useId();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -33,7 +35,8 @@ export function GlobalSearch() {
     setActive(-1);
   }
 
-  const results = useMemo(() => searchWorkspace(query, data), [query, data]);
+  // The records searched are the sample dataset's: any other workspace has none of them yet.
+  const results = useMemo(() => (hasSampleData ? searchWorkspace(query, data) : []), [query, data, hasSampleData]);
   const searching = query.trim().length >= MIN_QUERY;
   const listed = open && searching && results.length > 0;
   const optionId = (index: number) => `${listId}-option-${index}`;

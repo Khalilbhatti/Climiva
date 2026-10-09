@@ -4,6 +4,7 @@ import { Mail, MapPin, Phone } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
+import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { US_STATES, type BusinessAddress, type BusinessInfo } from "@/data/settings";
 import { formatCityStateZip } from "@/data/fixtures";
 import { getInitials, toTelHref } from "@/lib/format";
@@ -15,24 +16,30 @@ import { useSettings } from "./SettingsProvider";
 export function BusinessInformationForm() {
   const { settings, saveBusiness } = useSettings();
   const { toast } = useToast();
+  const { canEditSettings } = useWorkspace();
   const saved = settings.business;
-  const { draft, setDraft, dirty, showErrors, setShowErrors, guard, discard } = useSettingsDraft<BusinessInfo>(saved, isSameBusiness, "business information");
+  const { draft, setDraft, dirty, showErrors, setShowErrors, problem, setProblem, guard, discard } = useSettingsDraft<BusinessInfo>(saved, isSameBusiness, "business information");
 
   const errors = validateBusiness(draft);
   const shown = showErrors ? errors : {};
   const setAddress = (patch: Partial<BusinessAddress>) => setDraft({ ...draft, address: { ...draft.address, ...patch } });
 
-  function save() {
+  async function save() {
+    setProblem(undefined);
     if (Object.keys(errors).length > 0) {
       setShowErrors(true);
       return false;
     }
     const next = normalizeBusiness(draft);
-    saveBusiness(next);
+    const result = await saveBusiness(next);
+    if (!result.ok) {
+      setProblem(result.error);
+      return true;
+    }
     // Show the tidied values (for example the phone number in one format) so the form matches what was saved.
     setDraft(next);
     setShowErrors(false);
-    toast("Business information saved for this session. Reloading restores the standard record.");
+    toast("Business information saved.");
     return true;
   }
 
@@ -44,6 +51,8 @@ export function BusinessInformationForm() {
       dirty={dirty}
       saveLabel="Save changes"
       onSave={save}
+      problem={problem}
+      readOnly={!canEditSettings}
       onDiscard={() => discard()}
       guard={guard}
       aside={<BusinessDetails business={saved} />}

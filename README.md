@@ -1,43 +1,81 @@
 # Climvia Business Workspace
 
-A workspace for an HVAC service business: bookings and scheduling, jobs, customers and services, the team,
+A multi-tenant workspace for HVAC service businesses: bookings and scheduling, jobs, customers and services, the team,
 quotes, invoices and payments, maintenance plans, the public website and marketplace listing, reviews, marketing
-campaigns, analytics and settings. The business in the sample data is Apex Climate Heating & Air, Austin, TX.
+campaigns, analytics and settings. People sign up, set up their business, and work in it; one person can belong to
+several businesses, and one business's data is never visible to another.
 
 ## What this is, and what it is not
 
-This is the **front end** of the product, complete and navigable. It runs entirely in the browser on sample data that
-ships with the code.
+The **front end is complete** and the **SaaS foundation is in place**: real accounts, businesses ("organizations"), roles,
+workspace switching, and a PostgreSQL database that keeps businesses apart. Not every module is on the database yet.
 
-- Everything you change (create a booking, record a payment, edit Settings…) lives **in memory for the session**
-  and is gone when the page reloads. That is by design, not a bug.
-- There is **no backend, no database, no sign-in, no payment processor, no email or SMS sending, and no real domain
-  connection.** The screens that appear to do those things record the action and say so; nothing leaves the browser.
-- Nothing here claims production services. See [docs/production-handoff.md](docs/production-handoff.md) for what a
-  real backend would need to provide and where it would plug in.
+- **On PostgreSQL now:** accounts and sessions, organizations, memberships and roles, the Business information, Business
+  hours and Workspace preferences of each business, each person's profile name, and the `sites` a business owns.
+- **Still on built-in sample data** (in memory for the visit, gone on reload): Customers, Services, Team, Bookings,
+  Schedule, Jobs, Quotes & Invoices, Payments, Maintenance Plans, Website, Marketplace, Reviews, Marketing and Analytics.
+  That sample belongs to **one** business, Apex Climate Heating & Air; every other business sees those modules as "not
+  available yet", never Apex's records.
+- **Not built:** email (so no verification, password reset or invitations by email), billing for Climvia itself, a payment
+  processor, SMS, real domain connection, file storage (logo and photo last for the session), the Website Builder, deployment to AWS.
+
+Read [docs/saas-architecture.md](docs/saas-architecture.md) first: it explains the model, the isolation rules and what comes next.
+[docs/production-handoff.md](docs/production-handoff.md) covers the front end.
 
 ## Stack
 
 | | |
 | --- | --- |
-| Framework | Next.js 16.3.8 (App Router, typed routes) |
-| UI | React 19.2.8, Tailwind CSS 4, lucide-react icons, Inter (self-hosted) |
-| Language | TypeScript 5, strict |
-| Tests | Playwright 1.63 (Chromium) against the production build |
+| Framework | Next.js 16.3.8 (App Router, typed routes), React 19.2.8, TypeScript 5 strict |
+| UI | Tailwind CSS 4, lucide-react icons, Inter (self-hosted) |
+| Database | PostgreSQL 17, Drizzle ORM + drizzle-kit migrations, `pg` |
+| Auth | Better Auth (email + password, sessions in PostgreSQL) |
+| Local services | Docker Compose (PostgreSQL only; the app runs on your machine) |
+| Tests | Playwright 1.63 (Chromium) against the production build and a dedicated test database |
 
-No UI kit, state library, data-fetching library or analytics client is used. Runtime dependencies are `next`, `react`,
-`react-dom` and `lucide-react`.
+No UI kit, state library or analytics client. No Supabase, Firebase, Clerk or Auth0, and no cloud SDK.
 
 ## Getting started
 
-Requires Node.js 20.9 or newer (developed on 24) and npm.
+Requires Node.js 20.9 or newer (developed on 24), npm and Docker.
 
 ```bash
-npm install            # install dependencies
-npm run dev            # development server at http://localhost:3000
+cp .env.example .env              # then replace every placeholder (see the comments in the file)
+docker compose up -d postgres     # PostgreSQL 17 on 127.0.0.1:5432, data kept in a named volume
+npm install
+npm run db:migrate                # creates the restricted runtime role and applies every migration
+npm run db:seed                   # development data: two businesses, four people (see below)
+npm run dev                       # http://localhost:3000
 ```
 
-Checks and production build:
+`docker compose down` stops the database and keeps its data; `docker compose down -v` deletes it.
+Set `BETTER_AUTH_URL` in `.env` to the origin you open in the browser (for example `http://localhost:3000`).
+
+### Database scripts
+
+| Script | Does |
+| --- | --- |
+| `npm run db:generate` | writes a new SQL migration after you change the schema in `src/db/schema` |
+| `npm run db:migrate` | creates the `climvia_app` role if missing and applies pending migrations (safe to repeat) |
+| `npm run db:seed` | inserts the development data below (idempotent; refuses to run when `NODE_ENV=production`) |
+| `npm run db:reset` | drops, recreates, migrates and seeds the **development** database |
+| `npm run db:studio` | opens drizzle-kit Studio |
+| `npm run db:test:prepare` | recreates the separate `climvia_test` database, migrates and seeds it (run for you by `npm run test:e2e`) |
+
+### Development accounts
+
+All use the `SEED_PASSWORD` from your `.env`.
+
+| Email | Workspaces |
+| --- | --- |
+| `alex.morgan@apex.test` | Apex Climate Heating & Air, owner (has the sample data) |
+| `jamie.rivera@apex.test` | Apex, member (can view Settings, not change them) |
+| `taylor.brooks@northstar.test` | Northstar Heating & Cooling, owner (no sample data) |
+| `casey.nguyen@climvia.test` | admin in **both** (use the workspace switcher) |
+
+Or sign up with a new email and the setup flow creates a business of your own.
+
+### Checks and production build
 
 ```bash
 npm run typecheck      # tsc --noEmit
@@ -46,85 +84,91 @@ npm run build          # production build
 npm run start          # serve the production build at http://localhost:3000
 ```
 
-Tests:
+### Tests
 
 ```bash
 npx playwright install chromium   # once, only if the Playwright browser is not installed yet
-npm run test:e2e                  # builds, serves on port 3460, runs every spec, stops the server
+npm run test:e2e                  # prepares climvia_test, builds, serves on port 3460, runs every spec, stops the server
 ```
 
-`npm run test:e2e` reuses a server that is already listening on port 3460 (outside CI), which makes re-runs fast
-after a build. Run a single spec with `npx playwright test e2e/payments.spec.ts`. The browser tests need no network:
-the font is bundled and nothing calls out.
+PostgreSQL must be running (`docker compose up -d postgres`). The suite never touches your development database: it
+recreates, migrates and seeds `climvia_test` from nothing every run, which is also the clean-database migration check.
+`npm run test:e2e` reuses a server already listening on port 3460 (outside CI). Run one spec with
+`npx playwright test e2e/payments.spec.ts`.
 
 ## How it is put together
 
 ```
 src/
   app/
-    (workspace)/    every module, inside the one shell (sidebar + top bar)
-    (site)/         the customer-facing pages: Website preview and Marketplace listing, no shell
-    layout.tsx      fonts, global styles, and the session providers
-  components/       one folder per module, plus shell/ (layout) and ui/ (shared primitives)
+    (auth)/         Log in, Sign up and business set-up: no shell
+    (workspace)/    every module, inside the one shell (sidebar + top bar), behind a verified workspace
+    (site)/         the customer-facing Website preview and Marketplace listing, no shell
+    api/auth/       Better Auth's endpoints
+    layout.tsx      fonts, global styles, and the providers for the signed-in workspace
+  components/       one folder per module, plus auth/, shell/ (layout), workspace/ and ui/ (shared primitives)
   config/           navigation (the sidebar) and typed route helpers
   data/             the sample records and the selectors that read them, one file per module
-  lib/              state transitions, date and display helpers
+  db/               the PostgreSQL schema (Drizzle), the connection, and the tenant-context helpers
+  lib/              auth setup, validation, state transitions, date and display helpers
+  server/           server-only code: session, active workspace, organizations, Server Actions, the sample-data gate
+  proxy.ts          the early "no session cookie" redirect (not the security boundary)
+drizzle/            SQL migrations, including the Row Level Security policies
+scripts/db/         migrate, seed, reset and test-database preparation
 e2e/                Playwright specs and their helpers
-docs/               design map, visual audit, production handoff
+docs/               SaaS architecture, design map, visual audit, production handoff
 ```
 
 - **The shell.** `AppShell` (top bar, 240 px sidebar, content area) wraps every route in `(workspace)` and stays mounted
   as the user moves between modules. The public previews live in `(site)` so they never get the workspace chrome.
-- **Session providers.** One provider per area (Settings, Team, Operations, Financial, Maintenance Plans, Website,
-  Marketplace, Reviews, Marketing) is mounted once at the app root, so the public previews read the same session as
-  the workspace.
-- **Records and selectors.** `src/data/*` holds the sample records as typed objects and the pure selectors that
-  derive everything shown (balances, counts, statuses). Nothing is stored twice.
-- **Session-only changes.** Every action goes through a pure function in `src/lib/*-state.ts` that takes the current
-  data and returns the next; the provider holds the result in React state. Reloading restores the sample data.
-- **A fixed clock.** The product's "today" is Friday, October 25, 2024, in the business's time zone
-  (America/Chicago). Nothing reads the system clock or the browser's time zone, so every visitor sees the same
-  dates and times and the server and browser always render the same text.
+- **Who is signed in, and where.** `resolveWorkspace()` (`src/server/workspace.ts`) validates the session in the database,
+  lists the person's memberships and picks the active workspace (a cookie is only a preference, re-checked each time).
+  Every page and Server Action asks it again next to its data; PostgreSQL's Row Level Security checks once more.
+- **Providers.** One provider per area is mounted once at the root, around the signed-in workspace only, so the public
+  previews read the same session as the workspace. Signing in or out and switching workspace are full page loads, so one
+  business's state can never carry into another's.
+- **Records and selectors.** `src/data/*` holds the sample records as typed objects and the pure selectors that derive
+  everything shown. Modules on sample data change them in memory only; reloading restores the sample.
+- **A fixed clock.** The sample data's "today" is Friday, October 25, 2024, in the business's time zone. Nothing reads
+  the system clock or the browser's time zone, so the server and browser always render the same text.
 
 ### Which module owns which fact
 
-| Fact | Owner | Read by |
+| Fact | Owner | Stored |
 | --- | --- | --- |
-| Business name, phone, email, address | Settings → Business information | Overview, Website, Marketplace, invoices, public pages |
-| Business hours | Settings → Business hours | Overview, Schedule, booking slots, Website, Marketplace, Team availability |
-| Logo and accent | Settings → Branding | Website and Marketplace previews |
-| Date, time and currency display | Settings → Workspace preferences | every date and time on every screen |
-| Signed-in person's name | Settings → My profile | top bar, review responses |
-| The Services offered | Services | Bookings, Website, Marketplace, Analytics, Team eligibility |
-| Who can be assigned work | Team | Jobs, Schedule, Bookings, Maintenance Plans |
-| Public site content | Website | the Website preview |
-| Marketplace listing | Marketplace | the Marketplace preview |
+| Business name, phone, email, address | Settings → Business information | PostgreSQL (`organizations`) |
+| Business hours | Settings → Business hours | PostgreSQL (`organization_business_hours`) |
+| Date, time and time zone display | Settings → Workspace preferences | PostgreSQL (`organizations`) |
+| Signed-in person's name | Settings → My profile | PostgreSQL (`profiles`) |
+| Logo and accent | Settings → Branding | the session only (needs file storage) |
+| Everything else (services, team, customers, jobs, money, website, marketplace, reviews, marketing) | its module | the sample data, sample business only |
 
 Analytics owns nothing: it reads the other modules.
 
 ## Testing
 
-The Playwright suite drives the production build in Chromium. It covers each module's screens and flows, then the
-whole product: a crawl of every route and state (no console error, hydration warning or failed request), the
-sidebar and Overview quick actions, the sample-data invariants, session changes followed across modules, five
-screen sizes, accessibility and colour contrast, identical text under other time zones, languages and clocks, and a
-scan for leftovers and out-of-scope concepts. At the last run all 1725 tests passed (37 spec files, about six minutes).
+The Playwright suite drives the production build in Chromium against its own database. It covers each module's screens
+and flows, then the whole product: a crawl of every route and state (no console error, hydration warning or failed
+request), the sidebar and Overview quick actions, the sample-data invariants, session changes followed across modules,
+five screen sizes, accessibility and colour contrast, identical text under other time zones, languages and clocks, and a
+scan for leftovers and out-of-scope concepts. For the SaaS foundation it adds sign-up, log-in and log-out, session
+expiry, business set-up, workspace switching, tenant isolation (through the browser and straight against PostgreSQL as
+the restricted runtime role), Settings persistence, and source-level checks of the server boundaries. Each worker signs
+in as the owner of its own copy of the Apex workspace, restored before every test.
+
+At the last run all 1902 tests passed (45 spec files, about seven minutes on six workers): the 1725 front-end tests, none removed or skipped and adapted only where Settings is now stored, the top bar has menus and every page needs a sign-in, plus 177 for the SaaS foundation.
 See [docs/production-handoff.md](docs/production-handoff.md#testing-status) for what each group covers.
 
 ## Deploying
 
-The app is a standard Next.js build with no environment variables, no API routes, no middleware and no server
-actions, so it deploys to Vercel (or any Node host) unchanged:
-
-1. Import the repository in Vercel; the framework preset is detected as Next.js.
-2. Build command `npm run build`, install command `npm install`, no environment variables.
-3. Deploy. Every visitor gets the same sample data, and changes made in a visit do not persist or reach anyone else.
-
-Deploying shows the workspace as a demonstration. It does not make it a hosted product: there is nowhere to store
-what people do.
+Nothing is deployed from this repository yet. The app is built so that one Ubuntu server (EC2) can run it later:
+a `Dockerfile` builds the app and a one-off `tools` image that applies migrations; configuration is environment
+variables only. See [docs/saas-architecture.md](docs/saas-architecture.md#16-deployment-and-the-future-aws-topology)
+for the commands, the environment, the backup plan and the AWS layout.
 
 ## More
 
-- [docs/production-handoff.md](docs/production-handoff.md): modules, routes, data model, limits, and the seams a backend would use.
+- [docs/saas-architecture.md](docs/saas-architecture.md): authentication, organizations, roles, tenant isolation, deployment, billing, what is deferred.
+- [docs/production-handoff.md](docs/production-handoff.md): modules, routes, data model, limits.
 - [docs/final-visual-audit.md](docs/final-visual-audit.md): how the finished product compares with the approved designs.
 - [docs/stitch-screen-map.md](docs/stitch-screen-map.md): the design export, screen by screen, and every decision made where it contradicted itself.

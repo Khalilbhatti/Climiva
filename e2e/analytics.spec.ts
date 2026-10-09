@@ -247,9 +247,9 @@ test.describe("Analytics: date range", () => {
     await expect(rangeButton(page)).toContainText("This month");
   });
 
-  test("the same range reads the same in any browser timezone", async ({ browser, baseURL }) => {
+  test("the same range reads the same in any browser timezone", async ({ browser, baseURL, storageState }) => {
     for (const timezoneId of ["Pacific/Auckland", "America/Los_Angeles", "Asia/Kolkata"]) {
-      const context = await browser.newContext({ baseURL, timezoneId });
+      const context = await browser.newContext({ baseURL, timezoneId, storageState });
       const page = await context.newPage();
       try {
         await page.goto("/analytics");

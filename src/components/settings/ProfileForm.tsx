@@ -7,6 +7,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
+import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { LOGO_TYPES, MAX_LOGO_BYTES, type Profile } from "@/data/settings";
 import { isSameProfile, validateProfileName } from "@/lib/settings-state";
 import { SettingsForm, useSettingsDraft } from "./SettingsForm";
@@ -22,8 +23,9 @@ const PHOTO_TYPES = LOGO_TYPES.filter((type) => type !== "image/svg+xml");
 export function ProfileForm() {
   const { settings, saveProfile } = useSettings();
   const { toast } = useToast();
+  const { hasSampleData } = useWorkspace();
   const saved = settings.profile;
-  const { draft, setDraft, dirty, showErrors, setShowErrors, guard, discard } = useSettingsDraft<Profile>(saved, isSameProfile, "profile");
+  const { draft, setDraft, dirty, showErrors, setShowErrors, problem, setProblem, guard, discard } = useSettingsDraft<Profile>(saved, isSameProfile, "profile");
   const [photoError, setPhotoError] = useState<string>();
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -47,12 +49,17 @@ export function ProfileForm() {
     if (draft.photo && draft.photo !== saved.photo) URL.revokeObjectURL(draft.photo);
   }
 
-  function save() {
+  async function save() {
+    setProblem(undefined);
     if (nameError) {
       setShowErrors(true);
       return false;
     }
-    saveProfile(draft);
+    const result = await saveProfile(draft);
+    if (!result.ok) {
+      setProblem(result.error);
+      return true;
+    }
     setDraft({ ...draft, name: draft.name.trim() });
     setShowErrors(false);
     toast("Profile updated.");
@@ -67,6 +74,7 @@ export function ProfileForm() {
       dirty={dirty}
       saveLabel="Save profile"
       onSave={save}
+      problem={problem}
       onDiscard={() =>
         discard(() => {
           releaseDraftPhoto();
@@ -131,14 +139,16 @@ export function ProfileForm() {
             </span>
             {saved.role}
           </span>
-          <Link href="/team" className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline">
-            Manage Team
-            <ArrowRight aria-hidden className="size-3.5" />
-          </Link>
+          {hasSampleData && (
+            <Link href="/team" className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline">
+              Manage Team
+              <ArrowRight aria-hidden className="size-3.5" />
+            </Link>
+          )}
         </div>
         <p className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-muted">
           <Info aria-hidden className="size-3.5" />
-          Role access is managed with your Team record.
+          {hasSampleData ? "Role access is managed with your Team record." : "Your role is set by an owner of this workspace."}
         </p>
       </div>
     </SettingsForm>

@@ -17,6 +17,11 @@ const eslintConfig = defineConfig([
     // Local Claude Code configuration and skills, not application code.
     ".claude/**",
   ]),
+  {
+    // Playwright fixtures hand their value over with a function called `use`; it is not a React hook.
+    files: ["e2e/**/*.ts"],
+    rules: { "react-hooks/rules-of-hooks": "off" },
+  },
 ]);
 
 export default eslintConfig;

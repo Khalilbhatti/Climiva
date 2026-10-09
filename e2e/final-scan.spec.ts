@@ -64,15 +64,18 @@ test.describe("none is in the source either", () => {
 test.describe("development leftovers", () => {
   test("no console output, debugger statements or work markers in the source", () => {
     const hits: string[] = [];
+    // The server layer reports a failure it has handled with console.error (that is what an operator reads); nothing in the browser code does.
+    const isServerSide = (file: string) => /src[\\/](server|db)[\\/]|src[\\/]lib[\\/]auth\.ts$/.test(file);
     for (const file of sourceFiles("src")) {
       const raw = readFileSync(file, "utf8");
-      if (/console\.(log|debug|info|warn|error|trace)\(|\bdebugger\b/.test(stripComments(raw))) hits.push(`${file}: console/debugger`);
+      const consoleCall = isServerSide(file) ? /console\.(log|debug|info|warn|trace)\(|\bdebugger\b/ : /console\.(log|debug|info|warn|error|trace)\(|\bdebugger\b/;
+      if (consoleCall.test(stripComments(raw))) hits.push(`${file}: console/debugger`);
       if (/\b(TODO|FIXME|HACK|XXX)\b/.test(raw)) hits.push(`${file}: work marker`);
     }
     expect(hits).toEqual([]);
   });
 
-  test("lint suppressions are the three justified ones: local object URLs shown with a plain <img>", () => {
+  test("lint suppressions are the four justified ones: local object URLs shown with a plain <img>, and one remount after hydration", () => {
     const suppressions: string[] = [];
     for (const file of sourceFiles("src")) {
       const raw = readFileSync(file, "utf8");
@@ -81,6 +84,7 @@ test.describe("development leftovers", () => {
     expect(suppressions.sort()).toEqual([
       "src/components/settings/BrandMark.tsx: eslint-disable-next-line @next/next/no-img-element",
       "src/components/settings/BrandingForm.tsx: eslint-disable-next-line @next/next/no-img-element",
+      "src/components/settings/SettingsProvider.tsx: eslint-disable-next-line react-hooks/set-state-in-effect -- the remount is the point: it re-renders every date in the saved style",
       "src/components/ui/Avatar.tsx: eslint-disable-next-line @next/next/no-img-element",
     ]);
   });
@@ -149,23 +153,26 @@ test.describe("dependencies", () => {
   test("every runtime dependency is imported by the application", () => {
     const code = sourceFiles("src").map((file) => readFileSync(file, "utf8")).join("\n");
     for (const name of Object.keys(manifest.dependencies)) {
-      const imported = new RegExp(`from\\s+["']${name.replace("/", "\\/")}(/[^"']*)?["']`).test(code) || (name === "react-dom" && /react-dom/.test(code + readFileSync("package.json", "utf8"))) || name === "next";
+      const imported = new RegExp(`(from\\s+|import\\s+)["']${name.replace("/", "\\/")}(/[^"']*)?["']`).test(code) || (name === "react-dom" && /react-dom/.test(code + readFileSync("package.json", "utf8"))) || name === "next";
       expect(imported, name).toBe(true);
     }
   });
 
   test("every development dependency is used by a config file, a script or the tests", () => {
-    const configs = ["eslint.config.mjs", "postcss.config.mjs", "tsconfig.json", "playwright.config.ts", "next.config.ts", "src/app/globals.css"].map((file) => readFileSync(file, "utf8")).join("\n") + JSON.stringify(manifest.scripts);
+    const configs = ["eslint.config.mjs", "postcss.config.mjs", "tsconfig.json", "playwright.config.ts", "next.config.ts", "drizzle.config.ts", "src/app/globals.css"].map((file) => readFileSync(file, "utf8")).join("\n") + JSON.stringify(manifest.scripts);
     const tests = sourceFiles("e2e").map((file) => readFileSync(file, "utf8")).join("\n");
     const usedBy: Record<string, RegExp> = {
       "@tailwindcss/postcss": /@tailwindcss\/postcss/,
       "@types/node": /node:|process\./,
+      "@types/pg": /from "pg"/,
       "@types/react": /tsconfig/,
       "@types/react-dom": /tsconfig/,
+      "drizzle-kit": /drizzle-kit/,
       eslint: /eslint/,
       "eslint-config-next": /eslint-config-next/,
       playwright: /playwright/,
       tailwindcss: /tailwindcss/,
+      tsx: /\btsx scripts\//,
       typescript: /tsc|typescript|tsconfig/,
     };
     for (const name of Object.keys(manifest.devDependencies)) {
@@ -178,8 +185,9 @@ test.describe("dependencies", () => {
     for (const script of ["dev", "build", "start", "lint", "typecheck", "test:e2e"]) expect(manifest.scripts[script], script).toBeTruthy();
   });
 
-  test("there is no backend, database, auth, payment or analytics client in the dependencies", () => {
-    const all = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies }).join(" ");
-    expect(all).not.toMatch(/prisma|mongoose|pg\b|mysql|sqlite|supabase|firebase|next-auth|clerk|auth0|stripe|paypal|sentry|segment|mixpanel|posthog|amplitude|axios|swr|react-query|redux|zustand/i);
+  test("the SaaS stack is exactly PostgreSQL, Drizzle and Better Auth: no backend-as-a-service, other database client, payment, cloud or analytics SDK", () => {
+    const names = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies });
+    for (const required of ["pg", "drizzle-orm", "drizzle-kit", "better-auth"]) expect(names, required).toContain(required);
+    expect(names.join(" ")).not.toMatch(/prisma|mongoose|mysql|sqlite|supabase|firebase|next-auth|clerk|auth0|stripe|paypal|sentry|segment|mixpanel|posthog|amplitude|axios|swr|react-query|redux|zustand|aws-sdk|@aws-sdk|redis|bullmq|ioredis/i);
   });
 });

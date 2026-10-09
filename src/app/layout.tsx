@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { AppProviders } from "@/components/providers/AppProviders";
+import { resolveWorkspace } from "@/server/workspace";
 import "./globals.css";
 
 // Inter (OFL), self-hosted: no third-party font request at build or runtime.
@@ -19,11 +20,26 @@ export const metadata: Metadata = {
   description: "Run bookings, jobs, payments and growth for your HVAC business in one workspace.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+/**
+ * The providers live here, once, around every route, so the workspace and the customer-facing previews share one
+ * session and moving between them keeps what was edited. They are mounted only for someone signed in to a workspace
+ * (the Log in, Sign up and Set up pages have none), and with the settings the SERVER read for that person's active
+ * workspace this request. Signing in or out and switching workspace are always full page loads, so what is mounted here
+ * can never outlive the person or workspace it was built for. Each page still checks for itself (see fixture-gate.tsx).
+ */
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const state = await resolveWorkspace();
+  const snapshot = state.status === "ready" ? state.context.snapshot : null;
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
       <body className="min-h-dvh bg-canvas font-sans text-ink">
-        <AppProviders>{children}</AppProviders>
+        {snapshot ? (
+          <AppProviders key={snapshot.organization.id} snapshot={snapshot}>
+            {children}
+          </AppProviders>
+        ) : (
+          children
+        )}
       </body>
     </html>
   );

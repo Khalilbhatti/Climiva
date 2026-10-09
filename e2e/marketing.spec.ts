@@ -412,9 +412,9 @@ test.describe("Scheduled campaign", () => {
     await expect(page.getByRole("link", { name: "Edit campaign" })).toHaveAttribute("href", "/marketing/cmp-fall-maintenance-reminder/edit");
   });
 
-  test("the schedule shows the same wall-clock time whatever the browser's timezone", async ({ browser }) => {
+  test("the schedule shows the same wall-clock time whatever the browser's timezone", async ({ browser, storageState }) => {
     for (const timezoneId of ["Pacific/Auckland", "America/Los_Angeles", "Asia/Kolkata"]) {
-      const context = await browser.newContext({ timezoneId });
+      const context = await browser.newContext({ timezoneId, storageState });
       const page = await context.newPage();
       await page.goto("/marketing/cmp-fall-maintenance-reminder");
       await expect(page.getByRole("region", { name: "Campaign summary" })).toContainText("Oct 30, 2024 · 9:00 AM");

@@ -19,12 +19,12 @@ async function go(page: Page, href: string) {
 }
 
 test.describe("a Settings change reaches every module that shows it", () => {
-  test("business name and phone: Overview, Website, the public site and the Marketplace listing; a reload restores them", async ({ page }) => {
+  test("business name and phone: Overview, Website, the public site and the Marketplace listing; a reload keeps them, they are stored", async ({ page }) => {
     await page.goto("/settings");
     await page.getByLabel("Business name").fill("Summit HVAC Services");
     await page.getByLabel(/^Phone( [*])?$/).fill("(737) 555-0100");
     await page.getByRole("button", { name: "Save changes", exact: true }).click();
-    await expect(toast(page)).toBeVisible();
+    await expect(toast(page)).toContainText("Business information saved.");
 
     await go(page, "/");
     await expect(page.getByRole("region", { name: "Business information" })).toContainText("Summit HVAC Services");
@@ -39,8 +39,8 @@ test.describe("a Settings change reaches every module that shows it", () => {
     await expect(page.getByTestId("directory-frame")).not.toContainText("Apex Climate");
 
     await page.reload();
-    await expect(page.getByTestId("directory-frame")).toContainText("Apex Climate Heating & Air");
-    await expect(page.getByTestId("directory-frame")).toContainText("(555) 392-8100");
+    await expect(page.getByTestId("directory-frame")).toContainText("Summit HVAC Services");
+    await expect(page.getByTestId("directory-frame")).toContainText("(737) 555-0100");
   });
 
   test("business hours: the Overview card, the Website, the Marketplace and Team availability follow the saved hours", async ({ page }) => {
@@ -62,7 +62,7 @@ test.describe("a Settings change reaches every module that shows it", () => {
     await expect(main(page)).toContainText("Mon–Fri 8:00 AM–5:00 PM");
 
     await page.reload();
-    await expect(main(page)).toContainText("Mon–Fri 7:30 AM–6:00 PM");
+    await expect(main(page)).toContainText("Mon–Fri 8:00 AM–5:00 PM");
   });
 });
 

@@ -62,10 +62,10 @@ test.describe("the top bar at each audited size", () => {
       // Left to right, as the eye reads them.
       const parts: [string, Locator][] = [
         ["logo", header.locator("a[href='/']").first()],
-        ["workspace", header.getByRole("link", { name: /Apex Climate Heating & Air/ })],
+        ["workspace", header.getByRole("button", { name: /Apex Climate Heating & Air/ })],
         ["search", header.getByPlaceholder("Search customers, jobs, bookings, schedule...")],
         ["notifications", header.getByRole("button", { name: /Notifications/ })],
-        ["user", header.getByRole("link", { name: "Alex Morgan, Operations Lead" })],
+        ["user", header.getByRole("button", { name: "Alex Morgan, Operations Lead" })],
       ];
       const rects: [string, Rect][] = [];
       for (const [name, locator] of parts) {
@@ -101,8 +101,8 @@ test.describe("the top bar at each audited size", () => {
       await page.goto("/");
       const header = page.getByRole("banner");
       const logo = await rectOf(header.locator("a[href='/']").first());
-      const workspace = await rectOf(header.getByRole("link", { name: /Apex Climate Heating & Air/ }));
-      const user = await rectOf(header.getByRole("link", { name: "Alex Morgan, Operations Lead" }));
+      const workspace = await rectOf(header.getByRole("button", { name: /Apex Climate Heating & Air/ }));
+      const user = await rectOf(header.getByRole("button", { name: "Alex Morgan, Operations Lead" }));
       expect(logo.left).toBeCloseTo(24, 0);
       expect(workspace.left).toBeCloseTo(152, 0);
       expect(workspace.width).toBeCloseTo(260, 0);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { Check, Info } from "lucide-react";
+import { Check, Info, Lock } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cardClasses } from "@/components/ui/Card";
 import { useUnsavedGuard } from "@/components/ui/UnsavedGuard";
@@ -15,6 +15,8 @@ import { cn } from "@/lib/cn";
 export function useSettingsDraft<T>(saved: T, same: (a: T, b: T) => boolean, what: string) {
   const [draft, setDraft] = useState<T>(saved);
   const [showErrors, setShowErrors] = useState(false);
+  /** Why the last save did not go through (the server said no, or could not be reached). Cleared by the next attempt. */
+  const [problem, setProblem] = useState<string>();
   const dirty = !same(draft, saved);
   const { guard, confirmDiscard } = useUnsavedGuard(
     dirty,
@@ -27,10 +29,11 @@ export function useSettingsDraft<T>(saved: T, same: (a: T, b: T) => boolean, wha
     confirmDiscard(() => {
       setDraft(saved);
       setShowErrors(false);
+      setProblem(undefined);
       extra?.();
     });
 
-  return { draft, setDraft, dirty, showErrors, setShowErrors, guard, discard };
+  return { draft, setDraft, dirty, showErrors, setShowErrors, problem, setProblem, guard, discard };
 }
 
 type SettingsFormProps = {
@@ -40,8 +43,12 @@ type SettingsFormProps = {
   what: string;
   dirty: boolean;
   saveLabel: string;
-  /** Returns false when the draft is not valid, which moves focus to the first field to fix. */
-  onSave: () => boolean;
+  /** Resolves to false when the draft is not valid, which moves focus to the first field to fix. */
+  onSave: () => boolean | Promise<boolean>;
+  /** Shown above the fields when the last save failed. */
+  problem?: string;
+  /** For people who may look but not change this section (workspace members): the fields and buttons are disabled. */
+  readOnly?: boolean;
   onDiscard: () => void;
   guard: ReactNode;
   /** A side card shown beside the form on wide screens. */
@@ -50,15 +57,23 @@ type SettingsFormProps = {
 };
 
 /** The card every Settings section sits in: heading, unsaved notice, fields, and the Discard / Save buttons. */
-export function SettingsForm({ title, description, what, dirty, saveLabel, onSave, onDiscard, guard, aside, children }: SettingsFormProps) {
+export function SettingsForm({ title, description, what, dirty, saveLabel, onSave, problem, readOnly = false, onDiscard, guard, aside, children }: SettingsFormProps) {
   const headingId = useId();
   const form = useRef<HTMLFormElement>(null);
+  const [saving, setSaving] = useState(false);
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!dirty) return;
+    if (!dirty || saving || readOnly) return;
+    setSaving(true);
+    let valid = false;
+    try {
+      valid = await onSave();
+    } finally {
+      setSaving(false);
+    }
     // Errors render on the next paint; move focus to the first field that has one.
-    if (!onSave()) requestAnimationFrame(() => form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus());
+    if (!valid) requestAnimationFrame(() => form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus());
   }
 
   return (
@@ -70,6 +85,19 @@ export function SettingsForm({ title, description, what, dirty, saveLabel, onSav
           </h2>
           <p className="mt-1 text-sm text-ink-muted">{description}</p>
         </div>
+
+        {readOnly && (
+          <p className="mt-5 flex items-start gap-2.5 rounded-card bg-surface-low p-3 text-sm text-ink-muted">
+            <Lock aria-hidden className="mt-0.5 size-4 shrink-0 text-primary" />
+            <span>Only an owner or admin can change this. You can view it here.</span>
+          </p>
+        )}
+
+        {problem && (
+          <p role="alert" className="mt-5 rounded-btn border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger">
+            {problem}
+          </p>
+        )}
 
         {dirty && (
           <div
@@ -84,15 +112,21 @@ export function SettingsForm({ title, description, what, dirty, saveLabel, onSav
           </div>
         )}
 
-        <div className="mt-6 space-y-6">{children}</div>
+        {readOnly ? (
+          <fieldset disabled className="mt-6 min-w-0 space-y-6">
+            {children}
+          </fieldset>
+        ) : (
+          <div className="mt-6 space-y-6">{children}</div>
+        )}
 
         <div className="mt-8 flex flex-wrap items-center justify-end gap-3 border-t border-line pt-5">
-          <Button variant="secondary" onClick={onDiscard} disabled={!dirty}>
+          <Button variant="secondary" onClick={onDiscard} disabled={!dirty || saving || readOnly}>
             Discard changes
           </Button>
-          <Button type="submit" disabled={!dirty}>
+          <Button type="submit" disabled={!dirty || saving || readOnly}>
             <Check aria-hidden className="size-4" />
-            {saveLabel}
+            {saving ? "Saving…" : saveLabel}
           </Button>
         </div>
       </form>

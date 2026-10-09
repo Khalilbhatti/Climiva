@@ -36,7 +36,12 @@ function watchRequests(page: Page, origin: string) {
   page.on("response", (response) => {
     if (new URL(response.url()).origin === origin && response.status() >= 400) problems.push(`${response.status()} ${response.url()}`);
   });
-  page.on("requestfailed", (request) => problems.push(`failed ${request.url()}: ${request.failure()?.errorText}`));
+  page.on("requestfailed", (request) => {
+    // Next.js cancels the background fetches it makes for links (the `_rsc` prefetches) when it no longer needs them; that is its
+    // own housekeeping, not a page failing to load.
+    if (request.url().includes("_rsc=") && request.failure()?.errorText === "net::ERR_ABORTED") return;
+    problems.push(`failed ${request.url()}: ${request.failure()?.errorText}`);
+  });
   return problems;
 }
 

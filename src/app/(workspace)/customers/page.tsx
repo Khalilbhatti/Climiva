@@ -2,10 +2,13 @@ import type { Metadata } from "next";
 import { CustomerDirectory } from "@/components/customers/CustomerDirectory";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { getCustomers } from "@/data/customers";
+import { fixtureGate } from "@/server/fixture-gate";
 
 export const metadata: Metadata = { title: "Customers" };
 
-export default function CustomersPage() {
+export default async function CustomersPage() {
+  const gate = await fixtureGate("Customers");
+  if (gate) return gate;
   return (
     <>
       <PageHeader

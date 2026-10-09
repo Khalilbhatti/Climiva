@@ -4,13 +4,11 @@ import { CustomerHeader } from "@/components/customers/CustomerHeader";
 import { BackLink } from "@/components/ui/BackLink";
 import { TabNav } from "@/components/ui/TabNav";
 import { customerHref, customerPropertiesHref } from "@/config/routes";
-import { CUSTOMERS, getCustomerById, getEquipmentForCustomer } from "@/data/customers";
-
-export function generateStaticParams() {
-  return CUSTOMERS.map((customer) => ({ customerId: customer.id }));
-}
+import { getCustomerById, getEquipmentForCustomer } from "@/data/customers";
+import { fixtureGate, hasSampleDataAccess } from "@/server/fixture-gate";
 
 export async function generateMetadata({ params }: LayoutProps<"/customers/[customerId]">): Promise<Metadata> {
+  if (!(await hasSampleDataAccess())) return { title: "Not available" };
   const { customerId } = await params;
   const customer = getCustomerById(customerId);
   return { title: customer?.name ?? "Customer" };
@@ -18,6 +16,8 @@ export async function generateMetadata({ params }: LayoutProps<"/customers/[cust
 
 /** Shared by every customer tab, so the header and tab bar stay mounted while switching tabs. */
 export default async function CustomerLayout({ children, params }: LayoutProps<"/customers/[customerId]">) {
+  const gate = await fixtureGate("Customers");
+  if (gate) return gate;
   const { customerId } = await params;
   const customer = getCustomerById(customerId);
   if (!customer) notFound();

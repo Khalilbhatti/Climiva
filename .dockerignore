@@ -1,0 +1,24 @@
+# Nothing secret or machine-specific goes into an image.
+.env
+.env.*
+!.env.example
+
+node_modules
+.next
+out
+build
+coverage
+test-results
+playwright-report
+*.tsbuildinfo
+
+.git
+.gitignore
+.claude
+design-reference
+docs
+e2e
+Dockerfile
+.dockerignore
+docker-compose*.yml
+npm-debug.log*

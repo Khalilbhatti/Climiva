@@ -17,14 +17,14 @@ import { FINANCIALS, INVOICES, QUOTES, getInvoicesForQuote } from "../src/data/f
 import { overviewMetrics } from "../src/data/fixtures";
 import { PLANS_DATA, getPlanMetrics } from "../src/data/maintenance-plans";
 import { OPERATIONS } from "../src/data/operations";
-import { SERVICES } from "../src/data/services";
 import { buildAnalytics, formatRange, hasActivity, isReportPeriod, resolveRange, validateCustomRange } from "../src/lib/analytics-state";
 import { createInvoiceFromQuote, recordPayment, voidPayment } from "../src/lib/financial-state";
 import { completeJob, startJob } from "../src/lib/operations-state";
 import { buildReport, reportFileName, toCsv, toPdf } from "../src/lib/report-export";
+import { SERVICES } from "./apex-data";
 
 const sum = (values: readonly number[]) => values.reduce((total, value) => total + value, 0);
-const baseline = () => buildAnalytics(FINANCIALS, PLANS_DATA, OPERATIONS);
+const baseline = () => buildAnalytics(FINANCIALS, PLANS_DATA, OPERATIONS, SERVICES);
 
 test.describe("approved baselines", () => {
   test("the aggregates add up to the Overview's totals", () => {
@@ -78,7 +78,7 @@ test.describe("approved baselines", () => {
 test.describe("what follows the session", () => {
   test("a payment on INV-1050 moves received, recorded, outstanding and the invoice statuses together", () => {
     const { data } = recordPayment(FINANCIALS, { invoiceId: "INV-1050", amount: 300, method: "check", date: "2024-10-25" });
-    const model = buildAnalytics(data, PLANS_DATA, OPERATIONS);
+    const model = buildAnalytics(data, PLANS_DATA, OPERATIONS, SERVICES);
     expect(model.kpis.paymentsReceived).toBe(2430);
     expect(model.payments).toMatchObject({ recorded: 8, received: 2430 });
     expect(model.invoices.outstanding).toBe(380);
@@ -93,7 +93,7 @@ test.describe("what follows the session", () => {
     const { data, invoice } = createInvoiceFromQuote(FINANCIALS, quote.id, { terms: "net-30" });
     expect(invoice).toBeDefined();
     const added = invoice!.lineItems.reduce((total, line) => total + line.quantity * line.rate, 0);
-    const model = buildAnalytics(data, PLANS_DATA, OPERATIONS);
+    const model = buildAnalytics(data, PLANS_DATA, OPERATIONS, SERVICES);
     expect(model.kpis.invoiced).toBeCloseTo(6240 + added, 2);
     expect(model.invoices.count).toBe(19);
     expect(model.invoices.counts.unpaid).toBe(INVOICE_BASELINE_COUNTS.unpaid + 1);
@@ -103,7 +103,7 @@ test.describe("what follows the session", () => {
 
   test("voiding a payment takes it out of received and adds it to the voided list", () => {
     const voided = voidPayment(FINANCIALS, "PAY-1005", "Entered by mistake");
-    const model = buildAnalytics(voided, PLANS_DATA, OPERATIONS);
+    const model = buildAnalytics(voided, PLANS_DATA, OPERATIONS, SERVICES);
     expect(model.payments.recorded).toBe(6);
     expect(model.payments.received).toBe(2130 - 210);
     expect(model.payments.voided.map((payment) => payment.id).sort()).toEqual(["PAY-1001", "PAY-1005"]);
@@ -116,7 +116,7 @@ test.describe("what follows the session", () => {
 
   test("Bookings, Jobs, Quotes, the chart and the Service table are aggregates: working jobs does not move them", () => {
     const worked = completeJob(startJob(OPERATIONS, "JB-201"), "JB-201", "Done.");
-    const model = buildAnalytics(FINANCIALS, PLANS_DATA, worked);
+    const model = buildAnalytics(FINANCIALS, PLANS_DATA, worked, SERVICES);
     const before = baseline();
     expect(model.kpis).toEqual(before.kpis);
     expect(model.bookings).toEqual(before.bookings);
@@ -129,7 +129,7 @@ test.describe("what follows the session", () => {
 
   test("the model never mutates the stores it reads", () => {
     const frozen = JSON.stringify({ FINANCIALS, PLANS_DATA, OPERATIONS });
-    buildAnalytics(FINANCIALS, PLANS_DATA, OPERATIONS);
+    buildAnalytics(FINANCIALS, PLANS_DATA, OPERATIONS, SERVICES);
     expect(JSON.stringify({ FINANCIALS, PLANS_DATA, OPERATIONS })).toBe(frozen);
   });
 });

@@ -4,8 +4,8 @@
  * (port 3458, this project's own) whose database address points nowhere.
  */
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { CUSTOMERS } from "../src/data/customers";
 import { business } from "../src/data/fixtures";
+import { CUSTOMERS } from "./apex-data";
 import { expect, NOT_SIGNED_IN, test, waitsForHydration } from "./saas";
 
 const PORT = 3458;

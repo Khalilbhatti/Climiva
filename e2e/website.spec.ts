@@ -1,7 +1,7 @@
 import type { Page } from "playwright/test";
 import { business } from "../src/data/fixtures";
-import { SERVICES } from "../src/data/services";
 import { expect, test } from "./fixtures";
+import { SERVICES } from "./apex-data";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
 const main = (page: Page) => page.getByRole("main");
@@ -359,6 +359,7 @@ test.describe("Customer-facing preview", () => {
   test("the Desktop / Mobile switch narrows the customer's page", async ({ page }) => {
     await page.goto("/website/preview");
     const frame = page.getByTestId("site-frame");
+    await expect(frame).toBeVisible(); // boundingBox() does not wait for the page to finish streaming
     const wide = (await frame.boundingBox())!.width;
     await page.getByRole("button", { name: "Mobile" }).click();
     await expect(page.getByRole("button", { name: "Mobile" })).toHaveAttribute("aria-pressed", "true");

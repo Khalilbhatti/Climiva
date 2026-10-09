@@ -13,7 +13,7 @@ import { SectionCard } from "@/components/ui/SectionCard";
 import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/components/ui/Toast";
 import { customerHref, customerPropertiesHref, jobTabHref } from "@/config/routes";
-import { EQUIPMENT, formatPropertyAddress, getCustomerById, getPropertyById } from "@/data/customers";
+import { formatPropertyAddress, getCustomerById, getPropertyById } from "@/data/customers";
 import {
   FILE_CATEGORIES,
   formatFileSize,
@@ -26,18 +26,20 @@ import { cn } from "@/lib/cn";
 import { formatLocalDateTime, formatTime } from "@/lib/dates";
 import { toTelHref } from "@/lib/format";
 import { useJob } from "./JobWorkspace";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 const linkClasses = "inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline";
 
 /* ───────────────────────── overview ───────────────────────── */
 
 export function JobOverviewTab() {
+  const dir = useDirectory();
   const { job } = useJob();
   const { data } = useOperations();
 
-  const customer = job.customerId ? getCustomerById(job.customerId) : undefined;
-  const property = getPropertyById(job.propertyId ?? "");
-  const equipment = EQUIPMENT.find((item) => item.id === job.equipmentId);
+  const customer = job.customerId ? getCustomerById(job.customerId, dir) : undefined;
+  const property = getPropertyById(job.propertyId ?? "", dir);
+  const equipment = dir.equipment.find((item) => item.id === job.equipmentId);
   const booking = job.bookingId ? getBookingById(job.bookingId, data) : undefined;
   const { details } = job;
   const checklist = details.checklist ?? [];
@@ -173,7 +175,7 @@ export function JobOverviewTab() {
                 { label: "Source channel", value: booking.source ?? "—" },
                 { label: "Booking ID", value: `#${booking.id}` },
                 ...(booking.confirmedAt ? [{ label: "Confirmed", value: formatLocalDateTime(booking.confirmedAt) }] : []),
-                { label: "Technician", value: getAssigneeName(job) ?? "Unassigned" },
+                { label: "Technician", value: getAssigneeName(job, dir) ?? "Unassigned" },
               ]}
             />
           </SectionCard>
@@ -304,6 +306,7 @@ const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const ACCEPT = "image/jpeg,image/png,application/pdf";
 
 export function JobFilesTab() {
+  const dir = useDirectory();
   const { job, locked } = useJob();
   const { addJobFiles, setFileVisibility } = useOperations();
   const { toast } = useToast();
@@ -435,7 +438,7 @@ export function JobFilesTab() {
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-surface-low px-4 py-3 text-xs text-ink-muted">
                 <span>
-                  {getAssigneeName(job) ?? "Team"} · <span className="font-mono">{file.name}</span> · {formatFileSize(file.sizeKb)}
+                  {getAssigneeName(job, dir) ?? "Team"} · <span className="font-mono">{file.name}</span> · {formatFileSize(file.sizeKb)}
                 </span>
                 {!locked && (
                   <button

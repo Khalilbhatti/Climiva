@@ -2,30 +2,26 @@ import "server-only";
 import { randomBytes, randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import type { BusinessInfo, Preferences, WeeklyHours } from "@/data/settings";
+import { EMPTY_TEAM, SYSTEM_ROLES, weeklyFromBusinessHours, type TeamMember } from "@/data/team";
+import { persistTeamData } from "@/db/core-queries";
 import { hoursRowsFromWeekly, organizationValuesFromBusiness, organizationValuesFromPreferences } from "@/db/settings-mappers";
 import { organizationBusinessHours, organizationMemberships, organizations, sites } from "@/db/schema";
 import { selectOrganization, withUser } from "@/db/tenant";
 import { slugCandidates, slugify } from "@/lib/validation";
+import { uniqueViolationOf } from "./db-errors";
 
 export type NewOrganizationInput = { business: BusinessInfo; preferences: Preferences; hours: WeeklyHours };
-
-/** A pg unique violation, whether pg's error or Drizzle's wrapper around it. */
-function uniqueViolationOf(error: unknown): string | undefined {
-  for (let current: unknown = error; current && typeof current === "object"; current = (current as { cause?: unknown }).cause) {
-    const candidate = current as { code?: string; constraint?: string };
-    if (candidate.code === "23505") return candidate.constraint ?? "";
-  }
-  return undefined;
-}
 
 /**
  * Create a business workspace for `userId`, atomically.
  *
  * In ONE transaction: the organization (with a unique slug), the creator's owner membership, the seven opening-hours
- * rows and a first (draft) site. If any step fails, none of it is kept. It creates no customers, services, jobs, bookings
- * or financial records. Returns the new organization's id; the caller makes it the active one.
+ * rows, a first (draft) site, the business's six system Team roles and the creator as its first team member (the owner,
+ * linked to their login). If any step fails, none of it is kept. It creates no customers, no Services (a new business
+ * starts with none; a starter-template step may offer presets later), no jobs, bookings or financial records.
+ * Returns the new organization's id; the caller makes it the active one.
  */
-export async function createOrganizationForUser(userId: string, input: NewOrganizationInput): Promise<{ organizationId: string; slug: string }> {
+export async function createOrganizationForUser(userId: string, input: NewOrganizationInput, ownerName: string): Promise<{ organizationId: string; slug: string }> {
   const organizationId = randomUUID();
   const candidates = slugCandidates(slugify(input.business.name), () => randomBytes(3).toString("hex"));
 
@@ -57,6 +53,23 @@ export async function createOrganizationForUser(userId: string, input: NewOrgani
     await selectOrganization(tx, organizationId);
     await tx.insert(organizationBusinessHours).values(hoursRowsFromWeekly(organizationId, input.hours));
     await tx.insert(sites).values({ organizationId, name: input.business.name, slug: "main", status: "draft" });
+
+    // The Team: the six system roles and the person who created the business, as its owner. A team member is a worker of
+    // the business, not a login; this one happens to have one, so it is linked.
+    const ownerSlug = slugify(ownerName, "owner").slice(0, 70).replace(/-+$/g, "") || "owner";
+    const owner: TeamMember = {
+      id: ownerSlug,
+      name: ownerName.trim().slice(0, 80) || "Owner",
+      role: "Owner",
+      roleId: "owner",
+      status: "active",
+      fieldAssignable: true,
+      availability: { mode: "business-hours", weekly: weeklyFromBusinessHours(input.hours), unavailable: [] },
+      serviceMode: "all",
+      serviceIds: [],
+      activity: [],
+    };
+    await persistTeamData(tx, organizationId, EMPTY_TEAM, { roles: SYSTEM_ROLES, members: [owner] }, { userIds: { [ownerSlug]: userId } });
     return { organizationId, slug };
   });
 }

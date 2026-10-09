@@ -16,8 +16,8 @@ type ReviewsContextValue = {
 const ReviewsContext = createContext<ReviewsContextValue | null>(null);
 
 /** In memory only; a reload restores the baseline. Nothing is sent to, or read from, any outside review site. */
-export function ReviewsProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<ReviewsData>(REVIEWS_DATA);
+export function ReviewsProvider({ initial = REVIEWS_DATA, children }: { initial?: ReviewsData; children: ReactNode }) {
+  const [data, setData] = useState<ReviewsData>(initial);
   const author = useSettings().settings.profile.name;
   const latest = useRef(data);
 

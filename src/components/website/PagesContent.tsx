@@ -10,6 +10,7 @@ import { getPageStatus, getPrimaryDomain, getShownServices, WEBSITE_PAGES, type 
 import { editorHref, previewHref } from "./site-links";
 import { PageStatusBadge } from "./site-ui";
 import { useWebsite } from "./WebsiteProvider";
+import { useServices } from "@/components/services/ServicesProvider";
 
 const ICONS: Record<PageId, LucideIcon> = { home: Home, services: Store, about: Info, contact: Phone, booking: CalendarCheck };
 
@@ -21,7 +22,8 @@ export function PagesContent() {
   const statuses = WEBSITE_PAGES.map((page) => getPageStatus(site, page.id));
   const changed = statuses.filter((status) => status === "unpublished-changes").length;
   const summary = !site.published ? "Private" : changed > 0 ? `${changed} with unpublished changes` : `${WEBSITE_PAGES.length} Published`;
-  const shown = getShownServices(site.draft.services);
+  const { services: catalog } = useServices();
+  const shown = getShownServices(site.draft.services, catalog);
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">

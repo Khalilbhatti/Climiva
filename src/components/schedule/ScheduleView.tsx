@@ -21,16 +21,17 @@ import {
   type ScheduleEvent,
   type WorkEvent,
 } from "@/data/operations";
-import { SERVICES } from "@/data/services";
 import { useTeam } from "@/components/team/TeamProvider";
 import { getAssignableMembers } from "@/data/team";
 import { addDays, formatLongDate, formatTimeRange, formatWeekdayDate, formatWeekRange, isValidDate, startOfWeek } from "@/lib/dates";
 import { EventDetails } from "./EventDetails";
 import { DayTimeline, UnassignedBanner, UnassignedPanel, WeekBoard } from "./ScheduleBoards";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 type View = "day" | "week";
 
 export function ScheduleView() {
+  const dir = useDirectory();
   const { data, assign } = useOperations();
   const { data: team } = useTeam();
   const { toast } = useToast();
@@ -152,7 +153,7 @@ export function ScheduleView() {
             <div className="w-52">
               <Select label="Service" hideLabel value={service} onChange={(event) => setService(event.target.value)}>
                 <option value="all">All services</option>
-                {SERVICES.map((item) => (
+                {dir.services.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
                   </option>
@@ -219,13 +220,13 @@ export function ScheduleView() {
 
       {assigning && (
         <AssignDialog
-          description={`${getServiceNameFor(assigning)} for ${getPartyName(assigning)} · ${formatWeekdayDate(assigning.date)}, ${formatTimeRange(assigning.start, assigning.end)}`}
+          description={`${getServiceNameFor(assigning, dir)} for ${getPartyName(assigning, dir)} · ${formatWeekdayDate(assigning.date)}, ${formatTimeRange(assigning.start, assigning.end)}`}
           currentAssigneeId={assigning.assigneeId}
           onClose={() => setAssigning(null)}
           onAssign={(memberId) => {
             assign({ bookingId: assigning.bookingId, jobId: assigning.jobId }, memberId);
             setAssigning(null);
-            toast(memberId ? `${getPartyName(assigning)} assigned.` : `${getPartyName(assigning)} is unassigned.`);
+            toast(memberId ? `${getPartyName(assigning, dir)} assigned.` : `${getPartyName(assigning, dir)} is unassigned.`);
           }}
         />
       )}

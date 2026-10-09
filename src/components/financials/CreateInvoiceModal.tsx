@@ -17,6 +17,7 @@ import { getPartyName } from "@/data/operations";
 import { formatDate } from "@/lib/format";
 import { useFinancials } from "./FinancialProvider";
 import { usd } from "./shared";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 /**
  * Create an invoice from an approved quote. The quote's details are shown for review first; creating adds an
@@ -24,6 +25,7 @@ import { usd } from "./shared";
  * never changes the quote.
  */
 export function CreateInvoiceModal({ quote, onClose }: { quote: Quote; onClose: () => void }) {
+  const dir = useDirectory();
   const { createInvoiceFromQuote } = useFinancials();
   const { toast } = useToast();
   const router = useRouter();
@@ -132,7 +134,7 @@ export function CreateInvoiceModal({ quote, onClose }: { quote: Quote; onClose: 
           <h4 className="font-semibold text-ink">Billing summary</h4>
           <KeyValueList
             items={[
-              { label: "Customer", value: getPartyName(quote) },
+              { label: "Customer", value: getPartyName(quote, dir) },
               { label: "Source quote", value: `#${quote.id}` },
               ...(quote.jobId ? [{ label: "Related job", value: `#${quote.jobId}` }] : []),
               { label: "Invoice number", value: "Assigned when created" },

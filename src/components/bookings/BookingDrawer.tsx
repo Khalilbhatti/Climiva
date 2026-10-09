@@ -18,6 +18,7 @@ import { getAssigneeName, getPartyName, getServiceNameFor, type Booking, type Bo
 import { BOOKING_METHOD_ARRIVAL, BOOKING_METHOD_LABEL, getServiceById } from "@/data/services";
 import { formatLocalDateTime, formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import { toTelHref } from "@/lib/format";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 const sectionHeading = "mb-2 text-micro font-bold tracking-wider text-ink-muted uppercase";
 
@@ -35,6 +36,7 @@ export function BookingDrawer({
   /** Shown beside the calendar: hides the "View in schedule" link and links to the booking list instead. */
   inSchedule?: boolean;
 }) {
+  const dir = useDirectory();
   const { confirmBooking, cancelBooking, assign, createJobForBooking } = useOperations();
   const { toast } = useToast();
   const { data: plans } = useMaintenancePlans();
@@ -46,11 +48,11 @@ export function BookingDrawer({
     headingRef.current?.focus();
   }, [booking.id]);
 
-  const customer = booking.customerId ? getCustomerById(booking.customerId) : undefined;
-  const property = getPropertyById(booking.propertyId ?? "");
-  const service = getServiceById(booking.serviceId);
-  const name = getPartyName(booking);
-  const assignee = getAssigneeName(booking);
+  const customer = booking.customerId ? getCustomerById(booking.customerId, dir) : undefined;
+  const property = getPropertyById(booking.propertyId ?? "", dir);
+  const service = getServiceById(booking.serviceId, dir.services);
+  const name = getPartyName(booking, dir);
+  const assignee = getAssigneeName(booking, dir);
   const when = `${formatWeekdayDate(booking.date)} · ${formatTimeRange(booking.start, booking.end)}`;
   const pending = booking.status === "pending";
   const included = getPlanVisitForBooking(booking, plans);
@@ -169,7 +171,7 @@ export function BookingDrawer({
         <section aria-label="Service and requested time">
           <h3 className={sectionHeading}>Service &amp; requested time</h3>
           <div className="rounded-card bg-surface-low p-4">
-            <p className="font-semibold text-ink">{getServiceNameFor(booking)}</p>
+            <p className="font-semibold text-ink">{getServiceNameFor(booking, dir)}</p>
             <p className="mt-2 flex items-start gap-2 rounded-btn bg-surface p-3 text-sm text-ink">
               <Calendar aria-hidden className="mt-0.5 size-4 shrink-0 text-primary" />
               <span>
@@ -306,7 +308,7 @@ export function BookingDrawer({
 
       {dialog === "assign" && (
         <AssignDialog
-          description={`${getServiceNameFor(booking)} for ${name} · ${when}`}
+          description={`${getServiceNameFor(booking, dir)} for ${name} · ${when}`}
           currentAssigneeId={booking.assigneeId}
           onClose={() => setDialog(null)}
           onAssign={(memberId) => {
@@ -320,7 +322,7 @@ export function BookingDrawer({
       {dialog === "cancel" && (
         <ReasonDialog
           title={pending ? "Decline this request?" : "Cancel this booking?"}
-          description={`${name} · ${getServiceNameFor(booking)} · ${when}`}
+          description={`${name} · ${getServiceNameFor(booking, dir)} · ${when}`}
           confirmLabel={pending ? "Decline request" : "Cancel booking"}
           keepLabel={pending ? "Keep request" : "Keep booking"}
           onClose={() => setDialog(null)}

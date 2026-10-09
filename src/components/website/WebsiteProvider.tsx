@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
+import { useServices } from "@/components/services/ServicesProvider";
 import { initialWebsiteState, type PageContent, type PageId, type ServiceDisplay, type WebsiteState } from "@/data/website";
 import * as state from "@/lib/website-state";
 
@@ -24,7 +25,9 @@ const WebsiteContext = createContext<WebsiteContextValue | null>(null);
  * It lives only in memory; a reload restores the baseline, and nothing is sent anywhere.
  */
 export function WebsiteProvider({ children }: { children: ReactNode }) {
-  const [site, setSite] = useState<WebsiteState>(initialWebsiteState);
+  // Starts from the business's Services as they were when the page loaded; the site's own content is held here.
+  const { services } = useServices();
+  const [site, setSite] = useState<WebsiteState>(() => initialWebsiteState(services));
   const latest = useRef(site);
 
   const commit = useCallback((next: WebsiteState) => {

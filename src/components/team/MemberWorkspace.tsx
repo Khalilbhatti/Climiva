@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { SearchX, UserX } from "lucide-react";
+import { useServices } from "@/components/services/ServicesProvider";
 import { Avatar } from "@/components/ui/Avatar";
 import { BackLink } from "@/components/ui/BackLink";
 import { Button, ButtonLink } from "@/components/ui/Button";
@@ -9,6 +10,7 @@ import { cardClasses } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { TabNav } from "@/components/ui/TabNav";
 import { useToast } from "@/components/ui/Toast";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { memberTabHref } from "@/config/routes";
 import {
   CLASSIFICATION_LABEL,
@@ -18,21 +20,18 @@ import {
   getRoleById,
   type TeamMember,
 } from "@/data/team";
-import { SERVICES } from "@/data/services";
 import { DeactivateMemberModal } from "./DeactivateMemberModal";
 import { MemberStatusBadge } from "./MemberBadges";
 import { useTeam } from "./TeamProvider";
 
 const MemberContext = createContext<TeamMember | null>(null);
 
-/** The team member shown by the current /team/[memberId]/* page, read live from the session's Team data. */
+/** The team member shown by the current /team/[memberId]/* page, read from the business's team (as stored, and as changed here). */
 export function useMember(): TeamMember {
   const member = useContext(MemberContext);
   if (!member) throw new Error("useMember must be used inside <MemberWorkspace>.");
   return member;
 }
-
-const activeServiceIds = SERVICES.filter((service) => service.active).map((service) => service.id);
 
 /** Layout for /team/[memberId]/*: resolves the member, then hosts the header, the tabs and Deactivate. */
 export function MemberWorkspace({ memberId, children }: { memberId: string; children: ReactNode }) {
@@ -45,7 +44,7 @@ export function MemberWorkspace({ memberId, children }: { memberId: string; chil
         as="h1"
         icon={SearchX}
         title="Team member not found"
-        description="This person isn't in the Team list. Members added in this session are cleared when the page reloads."
+        description="This person isn't on your team."
         action={<ButtonLink href="/team">Back to Team</ButtonLink>}
       />
     );
@@ -60,11 +59,16 @@ export function MemberWorkspace({ memberId, children }: { memberId: string; chil
 function MemberFrame({ member, children }: { member: TeamMember; children: ReactNode }) {
   const { data, deactivateMember } = useTeam();
   const { toast } = useToast();
+  const { services } = useServices();
+  const canManage = useCan("team:manage");
   const [deactivating, setDeactivating] = useState(false);
 
   const role = getRoleById(member.roleId, data);
   const isOwner = member.roleId === "owner";
-  const serviceCount = getAssignedServiceIds(member, activeServiceIds).length;
+  const serviceCount = getAssignedServiceIds(
+    member,
+    services.filter((service) => service.active).map((service) => service.id),
+  ).length;
 
   return (
     <>
@@ -90,7 +94,7 @@ function MemberFrame({ member, children }: { member: TeamMember; children: React
             </p>
           </div>
         </div>
-        {member.status !== "inactive" && !isOwner && (
+        {member.status !== "inactive" && !isOwner && canManage && (
           <Button variant="destructive" onClick={() => setDeactivating(true)}>
             <UserX aria-hidden className="size-4" />
             Deactivate member
@@ -115,8 +119,9 @@ function MemberFrame({ member, children }: { member: TeamMember; children: React
         <DeactivateMemberModal
           member={member}
           onClose={() => setDeactivating(false)}
-          onConfirm={() => {
-            deactivateMember(member.id);
+          onConfirm={async () => {
+            const result = await deactivateMember(member.id);
+            if (!result.ok) return result.error;
             setDeactivating(false);
             toast(`${member.name} was deactivated.`);
           }}

@@ -11,6 +11,7 @@ import { formatPropertyCityLine, getCustomerById, getPropertyById } from "@/data
 import { BOOKING_TABS, getBookingById, getPartyName } from "@/data/operations";
 import { getServiceById } from "@/data/services";
 import { toTelHref, formatUSD } from "@/lib/format";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 type Party = { customerId?: string; contactName?: string; propertyId?: string };
 
@@ -19,7 +20,8 @@ export const usd = (amount: number) => formatUSD(amount, 2);
 
 /** The customer's name, linked to their record when they have one. */
 export function PartyName({ record }: { record: Party }) {
-  const name = getPartyName(record);
+  const dir = useDirectory();
+  const name = getPartyName(record, dir);
   return record.customerId ? (
     <Link href={customerHref(record.customerId)} className="hover:underline">
       {name}
@@ -31,9 +33,10 @@ export function PartyName({ record }: { record: Party }) {
 
 /** Customer details for a record's side panel. People without a Customers record show their name only. */
 export function CustomerCard({ record }: { record: Party }) {
-  const name = getPartyName(record);
-  const customer = record.customerId ? getCustomerById(record.customerId) : undefined;
-  const property = getPropertyById(record.propertyId ?? customer?.propertyIds[0] ?? "");
+  const dir = useDirectory();
+  const name = getPartyName(record, dir);
+  const customer = record.customerId ? getCustomerById(record.customerId, dir) : undefined;
+  const property = getPropertyById(record.propertyId ?? customer?.propertyIds[0] ?? "", dir);
 
   return (
     <SectionCard
@@ -95,10 +98,11 @@ type RelatedProps = {
 
 /** Links from a financial record to the quote, invoice, job, booking and service it relates to. */
 export function RelatedRecords({ quoteId, invoiceId, jobId, bookingId, serviceId }: RelatedProps) {
+  const dir = useDirectory();
   const { data } = useOperations();
   const booking = bookingId ? getBookingById(bookingId, data) : undefined;
   const bookingTab = BOOKING_TABS.find((tab) => tab.status === booking?.status)?.id ?? "upcoming";
-  const service = serviceId ? getServiceById(serviceId) : undefined;
+  const service = serviceId ? getServiceById(serviceId, dir.services) : undefined;
 
   const items: { label: string; link: ReactNode }[] = [];
   const add = (label: string, link: ReactNode) => items.push({ label, link });

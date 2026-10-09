@@ -41,6 +41,7 @@ import { useFinancials } from "./FinancialProvider";
 import { RecordPaymentModal } from "./RecordPaymentModal";
 import { InvoiceStatusBadge, PaymentStatusBadge } from "./StatusBadges";
 import { PartyName, usd } from "./shared";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 type TabId = "payments" | "outstanding";
 
@@ -48,6 +49,7 @@ type TabId = "payments" | "outstanding";
 const EMPTY_PREVIEW_INVOICES = ["INV-1044", "INV-1050", "INV-1051"];
 
 export function PaymentsView() {
+  const dir = useDirectory();
   const { data: live } = useFinancials();
   const router = useRouter();
   const params = useSearchParams();
@@ -82,12 +84,12 @@ export function PaymentsView() {
   const payments = [...data.payments].sort((a, b) => b.id.localeCompare(a.id));
   const outstanding = getOutstandingInvoices(data);
   const partyOf = (invoiceId: string) => getInvoiceById(invoiceId, data);
-  const customerNames = [...new Set(payments.map((payment) => getPartyName(partyOf(payment.invoiceId)!)))].sort();
+  const customerNames = [...new Set(payments.map((payment) => getPartyName(partyOf(payment.invoiceId)!, dir)))].sort();
 
   const needle = query.trim().toLowerCase();
   const visiblePayments = payments.filter((payment) => {
     const invoice = partyOf(payment.invoiceId)!;
-    const name = getPartyName(invoice);
+    const name = getPartyName(invoice, dir);
     return (
       `${payment.id} ${payment.invoiceId} ${name}`.toLowerCase().includes(needle) &&
       (method === "all" || payment.method === method) &&
@@ -99,7 +101,7 @@ export function PaymentsView() {
 
   const visibleOutstanding = outstanding.filter(
     (invoice) =>
-      `${invoice.id} ${getPartyName(invoice)} ${getRelatedWork(invoice)}`.toLowerCase().includes(needle) &&
+      `${invoice.id} ${getPartyName(invoice, dir)} ${getRelatedWork(invoice, dir.services)}`.toLowerCase().includes(needle) &&
       (invoiceStatus === "all" || getInvoiceStatus(invoice, data) === invoiceStatus),
   );
   const filteringOutstanding = needle !== "" || invoiceStatus !== "all";
@@ -239,7 +241,7 @@ export function PaymentsView() {
                     ) : (
                       visiblePayments.map((payment) => {
                         const invoice = partyOf(payment.invoiceId)!;
-                        const name = getPartyName(invoice);
+                        const name = getPartyName(invoice, dir);
                         return (
                           <TableRow key={payment.id}>
                             <TableCell className="font-semibold whitespace-nowrap text-primary">
@@ -357,7 +359,7 @@ export function PaymentsView() {
                           <Link href={invoiceHref(invoice.id)} className="font-semibold whitespace-nowrap text-primary hover:underline">
                             #{invoice.id}
                           </Link>
-                          <div className="max-w-52 text-xs text-ink-muted">{getRelatedWork(invoice)}</div>
+                          <div className="max-w-52 text-xs text-ink-muted">{getRelatedWork(invoice, dir.services)}</div>
                         </TableCell>
                         <TableCell className="font-medium whitespace-nowrap">
                           <PartyName record={invoice} />

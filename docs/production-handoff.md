@@ -10,6 +10,10 @@ only Business information, Business hours, Workspace preferences and each person
 > The sample data belongs to **one** business (Apex); any other business sees its modules as "not available yet". Settings (Business information, hours, preferences, profile name)
 > is stored in PostgreSQL per business instead of lost on reload. Everything needs a signed-in person with a verified workspace. Wherever this document says "no backend", "nobody signs in"
 > or "gone on reload", read the SaaS foundation as the exception for those four Settings sections and for accounts.
+>
+> **Phase 10 update.** Customers (with their properties and equipment), Services and the Team (members, roles, availability, assigned Services) moved to PostgreSQL per business: they are read from the
+> database on every load, Services and the Team are changed through Server Actions that persist, and a new business starts with none of them. The sample records for those three now live in the seed
+> (`scripts/db/seed-data`), not in `src/data`. Everything else in this document about the other modules still holds. See [saas-architecture.md §13](saas-architecture.md#13-core-business-data-customers-services-team).
 
 ## Contents
 
@@ -119,7 +123,7 @@ One set of records, read everywhere; nothing is typed twice. The facts every mod
   The sample records themselves are never mutated. **Exception (Phase 9):** Business information, Business hours, Workspace preferences and the profile name are stored in
   PostgreSQL for the active business and are read back from there on every page load. Branding (logo, accent) and a chosen photo are still session-only.
 - Nothing is saved to `localStorage`. Two cookies exist: the Better Auth session cookie and the `climvia_org` active-workspace preference (both `httpOnly`). A second tab starts from the
-  stored settings and the sample data; a different business never sees the sample data.
+  stored settings and the sample data; a different business never sees the sample data. **Exception (Phase 10):** Services and the Team are stored too, and Customers are read from the database.
 - Following an in-app link away from a form with unsaved changes asks "Discard unsaved changes?". Reloading or closing the tab is left to the browser, and loses the changes either way.
 - Created records take the next free number in the session (a booking, job, payment, invoice or plan), with #BK-1048 held back for Sarah's visit.
 - The date and time style, the accent colour and the logo apply to everything read after they are saved; server-rendered text is limited to what does not depend on them.
@@ -129,7 +133,7 @@ One set of records, read everywhere; nothing is typed twice. The facts every mod
 None of this is missing by accident; each has no approved screen or needs infrastructure the project does not have.
 
 - **A backend for the sample modules.** Since Phase 9 there is server code (Better Auth's route handler, a proxy, Server Actions) and a PostgreSQL database, but only accounts,
-  businesses, memberships, the four Settings sections and `sites` use it. Bookings, Jobs, Customers, Services, Team, financials, Website, Marketplace, Reviews, Marketing and
+  businesses, memberships, the four Settings sections, `sites`, and (Phase 10) Customers, Services and the Team use it. Bookings, Jobs, financials, Website, Marketplace, Reviews, Marketing and
   Analytics are still sample data.
 - **Authorization inside a business beyond owner / admin / member.** The Team module's roles and permission matrix are configuration that nothing enforces. SaaS roles are separate (see saas-architecture.md).
 - **Payments.** Record payment writes a record. No card, bank or processor is involved, and nothing is collected on the booking pages ("No payment is collected online").
@@ -190,7 +194,7 @@ npm run test:e2e       # builds, serves on 3460, runs the suite, stops the serve
 ```
 
 The app now needs PostgreSQL and environment variables (database URLs, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`); see `.env.example`, the README and
-[saas-architecture.md](saas-architecture.md#16-deployment-and-the-future-aws-topology), which also covers the `Dockerfile` and the single-EC2 plan. Local setup: `docker compose up -d postgres`,
+[saas-architecture.md](saas-architecture.md#17-deployment-and-the-future-aws-topology), which also covers the `Dockerfile` and the single-EC2 plan. Local setup: `docker compose up -d postgres`,
 `npm run db:migrate`, `npm run db:seed`, `npm run dev`. `npm run test:e2e` prepares its own `climvia_test` database first. The statement that follows from earlier phases, "deploys to Vercel with no
 configuration", no longer applies.
 
@@ -209,7 +213,7 @@ Operational notes:
    Team's own record. Role and permissions always come from Team.
 4. **Authored copy keeps its own words.** Website page text, message templates (the default review request, campaign messages) and the sent quote and invoice messages mention
    "Apex Climate Heating & Air" literally and are not rewritten when the business is renamed. Header, footer, contact card, hours and listing are live.
-5. **Session changes to the sample modules reset on reload.** Settings (Business information, hours, preferences, profile name) no longer does; Branding still does.
+5. **Session changes to the sample modules reset on reload.** Settings (Business information, hours, preferences, profile name), Services and the Team no longer do; Branding still does.
 6. **Dates in server-rendered text** cannot see the saved date style; the two places that render dates on the server use `DisplayDate`. A new server-rendered date must do the same.
 7. **Fixed booking windows.** Arrival windows, instant start times and consultation slots are fixed; Settings only decides which of them fit inside the saved hours.
 8. **The workspace is built for tablet width and up.** It is verified from 768 to 1440 px; below that the sidebar is not collapsed. The customer-facing previews are verified down to 390 px.

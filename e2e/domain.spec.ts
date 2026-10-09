@@ -2,24 +2,9 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "playwright/test";
 import { withAddedService, withUpdatedService } from "../src/components/services/service-state";
-import {
-  CUSTOMERS,
-  describeLastService,
-  formatPropertyAddress,
-  getCustomerById,
-  getEquipmentForCustomer,
-  getPrimaryProperty,
-  getPropertiesForCustomer,
-  getPropertyById,
-} from "../src/data/customers";
-import {
-  BOOKING_METHOD_LABEL,
-  SERVICES,
-  formatServicePrice,
-  getOnlineBookableServices,
-  getPublicActiveServices,
-  getServiceById,
-} from "../src/data/services";
+import { describeLastService, formatPropertyAddress, getCustomerById, getEquipmentForCustomer, getPrimaryProperty, getPropertiesForCustomer, getPropertyById } from "../src/data/customers";
+import { BOOKING_METHOD_LABEL, formatServicePrice, getOnlineBookableServices, getPublicActiveServices, getServiceById } from "../src/data/services";
+import { BOOK, CUSTOMERS, SERVICES } from "./apex-data";
 
 // Pure data/selector tests: no browser needed.
 
@@ -40,10 +25,10 @@ test.describe("canonical services", () => {
   });
 
   test("selectors read the same records", () => {
-    expect(getServiceById("ac-repair-diagnostics")?.name).toBe("AC Repair & Diagnostics");
-    expect(getServiceById("does-not-exist")).toBeUndefined();
-    expect(getPublicActiveServices()).toHaveLength(6);
-    expect(getOnlineBookableServices()).toHaveLength(6);
+    expect(getServiceById("ac-repair-diagnostics", SERVICES)?.name).toBe("AC Repair & Diagnostics");
+    expect(getServiceById("does-not-exist", SERVICES)).toBeUndefined();
+    expect(getPublicActiveServices(SERVICES)).toHaveLength(6);
+    expect(getOnlineBookableServices(SERVICES)).toHaveLength(6);
   });
 
   test("public/bookable selectors exclude inactive and internal services", () => {
@@ -67,26 +52,26 @@ test.describe("canonical services", () => {
 
 test.describe("canonical customers", () => {
   test("Sarah Mitchell has the approved contact details and a single Home property at 1402 Kinney Ave", () => {
-    const sarah = getCustomerById("sarah-mitchell");
+    const sarah = getCustomerById("sarah-mitchell", BOOK);
     expect(sarah).toMatchObject({ name: "Sarah Mitchell", phone: "(512) 555-0194", email: "sarah.m@gmail.com" });
 
-    const properties = getPropertiesForCustomer("sarah-mitchell");
+    const properties = getPropertiesForCustomer("sarah-mitchell", BOOK);
     expect(properties).toHaveLength(1);
     expect(properties[0].label).toBe("Home");
     expect(formatPropertyAddress(properties[0])).toBe("1402 Kinney Ave, Austin, TX 78704");
-    expect(getPrimaryProperty(sarah!)?.id).toBe(properties[0].id);
-    expect(getEquipmentForCustomer("sarah-mitchell")).toHaveLength(2);
+    expect(getPrimaryProperty(sarah!, BOOK)?.id).toBe(properties[0].id);
+    expect(getEquipmentForCustomer("sarah-mitchell", BOOK)).toHaveLength(2);
   });
 
   test("every customer's references resolve", () => {
     for (const customer of CUSTOMERS) {
       for (const propertyId of customer.propertyIds) {
-        expect(getPropertyById(propertyId)?.customerId, `${customer.name} → ${propertyId}`).toBe(customer.id);
+        expect(getPropertyById(propertyId, BOOK)?.customerId, `${customer.name} → ${propertyId}`).toBe(customer.id);
       }
-      if (customer.lastService?.serviceId) expect(getServiceById(customer.lastService.serviceId)).toBeDefined();
+      if (customer.lastService?.serviceId) expect(getServiceById(customer.lastService.serviceId, SERVICES)).toBeDefined();
     }
     // Service names shown for customers come from the service catalog, not copied text.
-    expect(describeLastService(getCustomerById("sarah-mitchell")!)).toBe(getServiceById("ac-repair-diagnostics")!.name);
+    expect(describeLastService(getCustomerById("sarah-mitchell", BOOK)!, SERVICES)).toBe(getServiceById("ac-repair-diagnostics", SERVICES)!.name);
   });
 });
 

@@ -19,12 +19,14 @@ import { ReplyModal } from "./ReplyModal";
 import { RequestReviewModal } from "./RequestReviewModal";
 import { useReviews } from "./ReviewsProvider";
 import { RelatedJobChip, ReviewStatusBadge, Stars, reviewerName } from "./review-ui";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 type View = "all" | "awaiting" | "responded";
 const VIEWS: View[] = ["all", "awaiting", "responded"];
 const ZERO = { total: 0, average: 0, awaiting: 0, responded: 0, requests: 0 };
 
 export function ReviewsView() {
+  const dir = useDirectory();
   const { data } = useReviews();
   const router = useRouter();
   const params = useSearchParams();
@@ -56,7 +58,7 @@ export function ReviewsView() {
   const visible = reviews.filter(
     (review) =>
       (view === "all" || getReviewStatus(review) === view) &&
-      `${reviewerName(review)} ${review.text}`.toLowerCase().includes(needle) &&
+      `${reviewerName(review, dir)} ${review.text}`.toLowerCase().includes(needle) &&
       (rating === "all" || review.rating === Number(rating)) &&
       (source === "all" || review.source === source),
   );
@@ -155,7 +157,7 @@ export function ReviewsView() {
                 <ul className="space-y-3">
                   {visible.map((review) => {
                     const awaiting = getReviewStatus(review) === "awaiting";
-                    const name = reviewerName(review);
+                    const name = reviewerName(review, dir);
                     return (
                       <li key={review.id}>
                         <article aria-label={`Review from ${name}`} className="rounded-card border border-line bg-surface p-5 shadow-card">

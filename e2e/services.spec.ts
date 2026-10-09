@@ -1,6 +1,7 @@
 import type { Page } from "playwright/test";
-import { BOOKING_METHOD_LABEL, SERVICES, formatServicePrice } from "../src/data/services";
+import { BOOKING_METHOD_LABEL, formatServicePrice } from "../src/data/services";
 import { expect, test } from "./fixtures";
+import { SERVICES } from "./apex-data";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
 const catalogRows = (page: Page) => page.getByRole("table", { name: "Services" }).locator("tbody tr");
@@ -166,7 +167,7 @@ test.describe("Service detail", () => {
     await expect(bar).toHaveCount(0);
     await expect(page.getByText("$109 diagnostic fee · 2 hours")).toBeVisible();
 
-    // Saved changes show in the catalog for this session.
+    // Saved changes show in the catalog.
     await page.getByRole("link", { name: "Back to Services" }).click();
     await expect(catalogRows(page).filter({ hasText: "Heat Pump Diagnostics & Repair" })).toContainText("$109 diagnostic fee");
 
@@ -177,9 +178,10 @@ test.describe("Service detail", () => {
     await expect(page.getByLabel("Service name")).toHaveValue("Heat Pump Diagnostics & Repair");
     await expect(page.getByRole("region", { name: "Unsaved changes" })).toHaveCount(0);
 
-    // A reload restores the canonical catalog.
+    // Discard saved nothing and Save is stored: a reload still shows the saved price and the original name.
     await page.goto("/services");
-    await expect(catalogRows(page).filter({ hasText: "Heat Pump Diagnostics & Repair" })).toContainText("$99 diagnostic fee");
+    await expect(catalogRows(page).filter({ hasText: "Heat Pump Diagnostics & Repair" })).toContainText("$109 diagnostic fee");
+    await expect(catalogRows(page).filter({ hasText: "Something else" })).toHaveCount(0);
   });
 
   test("saving is blocked with an accessible error when required fields are empty", async ({ page }) => {
@@ -216,15 +218,16 @@ test.describe("Service detail", () => {
     await expect(page.getByText("Active", { exact: true }).first()).toBeVisible();
   });
 
-  test("an unknown service id shows a not-found state in the shell", async ({ page }) => {
+  test("an unknown service id shows a not-found page inside the shell", async ({ page, consoleGuard }) => {
+    consoleGuard.allow(/status of 404/); // the real HTTP 404 for the missing record
     await page.goto("/services/not-a-service");
-    await expect(page.getByRole("heading", { name: "Service not found" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "We couldn't find that page" })).toBeVisible();
     await expect(primaryNav(page)).toBeVisible();
   });
 });
 
 test.describe("Add Service", () => {
-  test("validates each step, adds a service for this session only, and leaves the canonical six intact", async ({ page }) => {
+  test("validates each step, then stores the new service after the canonical six", async ({ page }) => {
     await page.goto("/services");
     await page.getByRole("button", { name: "Add service" }).click();
 
@@ -265,18 +268,18 @@ test.describe("Add Service", () => {
     await expect(catalogRows(page).last()).toContainText("Demo Ductwork Check");
     await expect(page.getByText("Showing 7 of 7 services")).toBeVisible();
 
-    // The new service can be opened this session.
+    // The new service can be opened.
     await page.getByRole("link", { name: "Demo Ductwork Check", exact: true }).click();
     await expect(page).toHaveURL("/services/demo-ductwork-check");
     await expect(page.getByLabel("Service name")).toHaveValue("Demo Ductwork Check");
 
-    // A full reload restores the canonical catalog: the fixtures were never touched.
+    // A full reload shows it still, after the canonical six, which are untouched.
     await page.goto("/services");
-    await expect(catalogRows(page)).toHaveCount(6);
-    await expect(page.getByText("Demo Ductwork Check")).toHaveCount(0);
+    await expect(catalogRows(page)).toHaveCount(7);
     for (const [index, service] of SERVICES.entries()) {
       await expect(catalogRows(page).nth(index)).toContainText(service.name);
     }
+    await expect(catalogRows(page).last()).toContainText("Demo Ductwork Check");
   });
 
   test("the wizard traps focus and closes with Escape", async ({ page }) => {

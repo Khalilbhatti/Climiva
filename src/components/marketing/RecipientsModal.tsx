@@ -2,8 +2,9 @@
 
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { CUSTOMERS, getCustomerById } from "@/data/customers";
+import { getCustomerById } from "@/data/customers";
 import { getAudience, type AudienceId, type CampaignChannel } from "@/data/marketing";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 type RecipientsModalProps = {
   channel: CampaignChannel;
@@ -19,8 +20,9 @@ type RecipientsModalProps = {
  * Customers records, as a sample. Email goes to the address on the customer record, SMS to the phone number.
  */
 export function RecipientsModal({ channel, audienceId, selectedCustomerIds = [], count, onClose }: RecipientsModalProps) {
+  const dir = useDirectory();
   const people =
-    audienceId === "selected" ? selectedCustomerIds.map((id) => getCustomerById(id)).filter((customer) => customer !== undefined) : [...CUSTOMERS];
+    audienceId === "selected" ? selectedCustomerIds.map((id) => getCustomerById(id, dir)).filter((customer) => customer !== undefined) : [...dir.customers];
 
   return (
     <Modal

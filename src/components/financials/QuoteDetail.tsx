@@ -25,6 +25,7 @@ import { CreateInvoiceModal } from "./CreateInvoiceModal";
 import { useFinancials } from "./FinancialProvider";
 import { InvoiceStatusBadge, QuoteStatusBadge } from "./StatusBadges";
 import { CustomerCard, PartyName, RelatedRecords, usd } from "./shared";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 export function QuoteDetail({ quoteId }: { quoteId: string }) {
   const { data } = useFinancials();
@@ -45,6 +46,7 @@ export function QuoteDetail({ quoteId }: { quoteId: string }) {
 }
 
 function QuotePage({ quote }: { quote: Quote }) {
+  const dir = useDirectory();
   const { data } = useFinancials();
   const [creating, setCreating] = useState(false);
 
@@ -71,7 +73,7 @@ function QuotePage({ quote }: { quote: Quote }) {
             )}
           </div>
           <p className="mt-1 text-sm text-ink-muted">
-            <PartyName record={quote} /> · {getRelatedWork(quote)}
+            <PartyName record={quote} /> · {getRelatedWork(quote, dir.services)}
           </p>
         </div>
         {canInvoice && (
@@ -93,7 +95,7 @@ function QuotePage({ quote }: { quote: Quote }) {
                 { label: "Customer", value: <PartyName record={quote} /> },
                 { label: "Created date", value: formatDate(quote.createdOn) },
                 { label: "Approval date", value: quote.approvedOn ? formatDate(quote.approvedOn) : "Not approved" },
-                { label: "Primary service", value: getRelatedWork(quote) },
+                { label: "Primary service", value: getRelatedWork(quote, dir.services) },
               ]}
             />
           </SectionCard>

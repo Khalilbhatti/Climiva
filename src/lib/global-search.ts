@@ -1,10 +1,12 @@
 /**
  * The top-bar search: finds Customers, Jobs, Bookings and Schedule entries by what a person would type to look them
  * up, from the same records the modules show, so it follows whatever has happened this session. It owns no records
- * and builds no index; it is a pure function of the data it is given.
+ * and builds no index; it is a pure function of the data it is given. A business that is not on the sample operations data
+ * has no Jobs, Bookings or Schedule to search; its Customers are searched in PostgreSQL by actions/customers.ts instead.
  */
 import type { AppHref } from "@/config/routes";
-import { CUSTOMERS, formatPropertyAddress, getPrimaryProperty, getPropertyById } from "@/data/customers";
+import { formatPropertyAddress, getPrimaryProperty, getPropertyById } from "@/data/customers";
+import type { Directory } from "@/data/directory";
 import {
   BOOKING_STATUS_LABEL,
   JOB_STATUS_LABEL,
@@ -35,14 +37,14 @@ function tokens(query: string): string[] {
 
 const matches = (haystack: string, words: string[]) => words.every((word) => haystack.includes(word));
 
-export function searchWorkspace(query: string, data: OperationsData): SearchResult[] {
+export function searchWorkspace(query: string, data: OperationsData, dir: Directory): SearchResult[] {
   if (query.trim().length < MIN_QUERY) return [];
   const words = tokens(query);
   if (words.length === 0) return [];
 
   const customers: SearchResult[] = [];
-  for (const customer of CUSTOMERS) {
-    const property = getPrimaryProperty(customer);
+  for (const customer of dir.customers) {
+    const property = getPrimaryProperty(customer, dir);
     const address = property ? formatPropertyAddress(property) : "";
     const haystack = [customer.name, customer.phone, digits(customer.phone), customer.email, address].join(" ").toLowerCase();
     if (matches(haystack, words)) {
@@ -52,31 +54,31 @@ export function searchWorkspace(query: string, data: OperationsData): SearchResu
 
   const jobs: SearchResult[] = [];
   for (const job of data.jobs) {
-    const party = getPartyName(job);
-    const street = getPropertyById(job.propertyId ?? "")?.street ?? "";
-    const haystack = [job.id, party, getServiceNameFor(job), street].join(" ").toLowerCase();
+    const party = getPartyName(job, dir);
+    const street = getPropertyById(job.propertyId ?? "", dir)?.street ?? "";
+    const haystack = [job.id, party, getServiceNameFor(job, dir), street].join(" ").toLowerCase();
     if (matches(haystack, words)) {
-      jobs.push({ id: job.id, group: "Jobs", title: `#${job.id} · ${party}`, detail: `${getServiceNameFor(job)} · ${formatMonthDay(job.date)} · ${JOB_STATUS_LABEL[job.status]}`, href: `/jobs/${job.id}` });
+      jobs.push({ id: job.id, group: "Jobs", title: `#${job.id} · ${party}`, detail: `${getServiceNameFor(job, dir)} · ${formatMonthDay(job.date)} · ${JOB_STATUS_LABEL[job.status]}`, href: `/jobs/${job.id}` });
     }
   }
 
   const bookings: SearchResult[] = [];
   for (const booking of data.bookings) {
-    const party = getPartyName(booking);
-    const street = getPropertyById(booking.propertyId ?? "")?.street ?? "";
-    const haystack = [booking.id, party, getServiceNameFor(booking), street].join(" ").toLowerCase();
+    const party = getPartyName(booking, dir);
+    const street = getPropertyById(booking.propertyId ?? "", dir)?.street ?? "";
+    const haystack = [booking.id, party, getServiceNameFor(booking, dir), street].join(" ").toLowerCase();
     if (matches(haystack, words)) {
-      bookings.push({ id: booking.id, group: "Bookings", title: `#${booking.id} · ${party}`, detail: `${getServiceNameFor(booking)} · ${formatMonthDay(booking.date)} · ${BOOKING_STATUS_LABEL[booking.status]}`, href: `/bookings?booking=${booking.id}` });
+      bookings.push({ id: booking.id, group: "Bookings", title: `#${booking.id} · ${party}`, detail: `${getServiceNameFor(booking, dir)} · ${formatMonthDay(booking.date)} · ${BOOKING_STATUS_LABEL[booking.status]}`, href: `/bookings?booking=${booking.id}` });
     }
   }
 
   // The schedule is searched by technician, by day and by blocked time; people and work are found in the groups above.
   const schedule: SearchResult[] = [];
   for (const event of getScheduleEvents(data)) {
-    const who = event.kind === "work" ? getAssigneeName(event) ?? "" : event.title;
+    const who = event.kind === "work" ? getAssigneeName(event, dir) ?? "" : event.title;
     const haystack = [who, formatWeekdayDate(event.date), formatMonthDay(event.date), event.date].join(" ").toLowerCase();
     if (!matches(haystack, words)) continue;
-    const what = event.kind === "work" ? `${getPartyName(event)} · ${getServiceNameFor(event)}` : event.title;
+    const what = event.kind === "work" ? `${getPartyName(event, dir)} · ${getServiceNameFor(event, dir)}` : event.title;
     schedule.push({
       id: event.id,
       group: "Schedule",

@@ -4,13 +4,15 @@ import { Star, Wrench } from "lucide-react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { jobHref } from "@/config/routes";
 import { getCustomerById } from "@/data/customers";
+import type { Directory } from "@/data/directory";
 import { getJobById, getServiceNameFor } from "@/data/operations";
 import { REVIEW_STATUS_LABEL, describeRating, getReviewStatus, type Review } from "@/data/reviews";
 import { cn } from "@/lib/cn";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 /** The person who wrote the review: their Customers record where there is one, otherwise the name on the review. */
-export const reviewerName = (review: Pick<Review, "customerId" | "contactName">) =>
-  (review.customerId ? getCustomerById(review.customerId)?.name : undefined) ?? review.contactName ?? "Customer";
+export const reviewerName = (review: Pick<Review, "customerId" | "contactName">, dir: Pick<Directory, "customers">) =>
+  (review.customerId ? getCustomerById(review.customerId, dir)?.name : undefined) ?? review.contactName ?? "Customer";
 
 /** Stars with a text equivalent: the rating is never stars alone. */
 export function Stars({ rating, className }: { rating: number; className?: string }) {
@@ -30,6 +32,7 @@ export function ReviewStatusBadge({ review }: { review: Pick<Review, "response">
 
 /** "#JB-204 · AC Repair & Diagnostics", a link to the Job record. */
 export function RelatedJobChip({ jobId, children }: { jobId: string; children?: ReactNode }) {
+  const dir = useDirectory();
   const job = getJobById(jobId);
   if (!job) return null;
   return (
@@ -40,7 +43,7 @@ export function RelatedJobChip({ jobId, children }: { jobId: string; children?: 
       <Wrench aria-hidden className="size-3.5" />
       {children ?? (
         <>
-          Job #{job.id} · {getServiceNameFor(job)}
+          Job #{job.id} · {getServiceNameFor(job, dir)}
         </>
       )}
     </Link>

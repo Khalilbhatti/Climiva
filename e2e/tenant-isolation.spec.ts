@@ -9,13 +9,13 @@
  * The seed's Apex and Northstar rows are only ever read here; the specs that change Settings use a worker's own copy.
  */
 import type { Page } from "playwright/test";
-import { CUSTOMERS } from "../src/data/customers";
 import { business } from "../src/data/fixtures";
 import { FINANCIALS } from "../src/data/financials";
 import { JOBS } from "../src/data/operations";
-import { TEAM } from "../src/data/team";
 import { expect, hydrated, ORIGIN, switchWorkspace, test, waitsForHydration, watchConsole } from "./saas";
 import { ROUTE_INVENTORY } from "./route-inventory";
+import { NORTHSTAR_CUSTOMERS, NORTHSTAR_ROLES, NORTHSTAR_SERVICES, NORTHSTAR_TEAM } from "../scripts/db/seed-data/northstar";
+import { CUSTOMERS, TEAM } from "./apex-data";
 
 /** Everything that belongs to the sample business and so must never appear for anyone else. */
 const APEX_ONLY = [
@@ -34,6 +34,21 @@ const NORTHSTAR = { name: "Northstar Heating & Cooling", phone: "(555) 410-7788"
 const asHtml = (value: string) => value.replace(/&/g, "&amp;").replace(/'/g, "&#x27;").replace(/"/g, "&quot;");
 const leaksIn = (text: string, forbidden: string[]) => forbidden.filter((value) => text.includes(value) || text.includes(asHtml(value)));
 const activeBusiness = (page: Page) => page.getByTitle("Switch workspace");
+
+/**
+ * What Taylor's request for one of the inventory's pages should answer. Customers, Services and the Team are Northstar's own
+ * records now: a reference Northstar has answers 200 with Northstar's record, any other (all of Apex's, which the inventory is
+ * built from) answers 404 exactly as a record that never existed does. Everything else is a page of the shell.
+ */
+function expectedStatusForTaylor(url: string): number {
+  const [, module, id, next] = url.split("/");
+  const known = (ids: readonly string[], reference: string) => (ids.includes(reference) ? 200 : 404);
+  if (module === "customers" && id) return known(NORTHSTAR_CUSTOMERS.map((customer) => customer.id), id);
+  if (module === "services" && id) return known(NORTHSTAR_SERVICES.map((service) => service.id), id);
+  if (module === "team" && id === "roles" && next && next !== "new") return known(NORTHSTAR_ROLES.map((role) => role.id), next);
+  if (module === "team" && id && id !== "roles") return known(NORTHSTAR_TEAM.map((member) => member.id), id);
+  return 200;
+}
 
 test.describe("the sample business belongs to Apex alone", () => {
   test("Alex sees Apex's sample data", async ({ openAs }) => {
@@ -60,10 +75,26 @@ test.describe("the sample business belongs to Apex alone", () => {
     expect(problems).toEqual([]);
   });
 
+  test("Taylor sees Northstar's own Customers, Services and Team, and none of Apex's", async ({ openAs }) => {
+    const { page, problems } = await openAs("taylor");
+    for (const [path, name, shown] of [
+      ["/customers", "Customers", NORTHSTAR_CUSTOMERS.map((customer) => customer.name)],
+      ["/services", "Services", NORTHSTAR_SERVICES.map((service) => service.name)],
+      ["/team", "Team", NORTHSTAR_TEAM.map((member) => member.name)],
+    ] as const) {
+      await page.goto(path);
+      await expect(page.getByRole("heading", { level: 1, name }), path).toBeVisible();
+      const text = await page.locator("body").innerText();
+      for (const value of shown) expect(text, `${path}: ${value}`).toContain(value);
+      expect(leaksIn(text, APEX_ONLY), path).toEqual([]);
+    }
+    expect(problems).toEqual([]);
+  });
+
   test("Taylor sees an unavailable state, not Apex's records, in every module that still runs on sample data", async ({ openAs }) => {
     const { page, problems } = await openAs("taylor");
     const modules: [string, string][] = [
-      ["/bookings", "Bookings"], ["/schedule", "Schedule"], ["/jobs", "Jobs"], ["/customers", "Customers"], ["/services", "Services"], ["/team", "Team"],
+      ["/bookings", "Bookings"], ["/schedule", "Schedule"], ["/jobs", "Jobs"],
       ["/quotes-invoices", "Quotes & Invoices"], ["/payments", "Payments"], ["/maintenance-plans", "Maintenance Plans"], ["/website", "Website"],
       ["/marketplace", "Marketplace"], ["/reviews", "Reviews"], ["/marketing", "Marketing"], ["/analytics", "Analytics"],
     ];
@@ -76,7 +107,7 @@ test.describe("the sample business belongs to Apex alone", () => {
     expect(problems).toEqual([]);
   });
 
-  test("every record page for Apex's customers, jobs, payments and people is unavailable to Taylor, in HTML and in client navigation", async ({ apiAs }) => {
+  test("every record page for Apex's customers, jobs, payments and people is unavailable (or not found) for Taylor, in HTML and in client navigation", async ({ apiAs }) => {
     const taylor = await apiAs("taylor");
     const urls = ROUTE_INVENTORY.filter((route) => route.shell && !["/", "/help"].includes(route.url) && !route.url.startsWith("/settings")).map((route) => route.url);
     expect(urls.length).toBeGreaterThan(100);
@@ -84,7 +115,10 @@ test.describe("the sample business belongs to Apex alone", () => {
     for (const url of urls) {
       for (const headers of [{}, { rsc: "1" }] as Record<string, string>[]) {
         const response = await taylor.get(url, { headers });
-        if (response.status() !== 200) leaks.push(`${url}: HTTP ${response.status()}`);
+        // A page load answers 404 for a record the business does not have. The client-navigation payload is a stream that
+        // carries the same "not found" inside a 200, so it may answer either; what matters in both is what it contains.
+        const acceptable = "rsc" in headers ? [200, expectedStatusForTaylor(url)] : [expectedStatusForTaylor(url)];
+        if (!acceptable.includes(response.status())) leaks.push(`${url}: HTTP ${response.status()}, expected ${acceptable.join(" or ")}`);
         const found = leaksIn(await response.text(), APEX_ONLY.filter((value) => !url.includes(value)));
         if (found.length > 0) leaks.push(`${url} (${"rsc" in headers ? "client navigation" : "html"}): ${found.slice(0, 3).join(", ")}`);
       }
@@ -210,7 +244,10 @@ test.describe("switching between two workspaces", () => {
     await expect(page.getByText(CUSTOMERS[0].name).first()).toBeVisible();
     await switchWorkspace(page, new RegExp(NORTHSTAR.name));
     await page.goto("/customers");
-    await expect(page.getByRole("heading", { level: 2, name: `Customers isn't available for ${NORTHSTAR.name} yet` })).toBeVisible();
+    await expect(page.getByText(NORTHSTAR_CUSTOMERS[0].name).first()).toBeVisible();
+    expect(leaksIn(await page.content(), APEX_ONLY)).toEqual([]);
+    await page.goto("/jobs");
+    await expect(page.getByRole("heading", { level: 2, name: `Jobs isn't available for ${NORTHSTAR.name} yet` })).toBeVisible();
     expect(leaksIn(await page.content(), APEX_ONLY)).toEqual([]);
   });
 

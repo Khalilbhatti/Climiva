@@ -70,11 +70,11 @@ export type MarketplaceState = { status: ListingStatus; config: ListingConfig };
 /** The one eligible Service the baseline listing leaves off. */
 export const BASELINE_EXCLUDED_SERVICE_ID = "emergency-no-heat-no-cool";
 
-/** Services a listing can show: the public, active ones in the catalog. */
-export const getEligibleServices = (): Service[] => getPublicActiveServices();
+/** Services a listing can show: the public, active ones in the business's catalog. */
+export const getEligibleServices = (services: readonly Service[]): Service[] => getPublicActiveServices(services);
 
-export function defaultListingConfig(): ListingConfig {
-  const eligible = getEligibleServices();
+export function defaultListingConfig(services: readonly Service[]): ListingConfig {
+  const eligible = getEligibleServices(services);
   return {
     description: DEFAULT_DESCRIPTION,
     cover: "teal-horizon",
@@ -86,13 +86,13 @@ export function defaultListingConfig(): ListingConfig {
 }
 
 /** The approved baseline: a published listing showing five of the six eligible Services. */
-export function initialMarketplaceState(): MarketplaceState {
-  return { status: "published", config: defaultListingConfig() };
+export function initialMarketplaceState(services: readonly Service[]): MarketplaceState {
+  return { status: "published", config: defaultListingConfig(services) };
 }
 
 /** The Services the listing shows, in listing order. Catalog data is read, never copied. */
-export function getListingServices(config: ListingConfig): Service[] {
-  const eligible = getEligibleServices();
+export function getListingServices(config: ListingConfig, services: readonly Service[]): Service[] {
+  const eligible = getEligibleServices(services);
   const byId = new Map(eligible.map((service) => [service.id, service]));
   const rank = (id: string) => {
     const index = config.order.indexOf(id);
@@ -105,8 +105,8 @@ export function getListingServices(config: ListingConfig): Service[] {
 }
 
 /** Every eligible Service in listing order, selected or not (for the editor's list). */
-export function getOrderedEligibleServices(config: ListingConfig): Service[] {
-  const eligible = getEligibleServices();
+export function getOrderedEligibleServices(config: ListingConfig, services: readonly Service[]): Service[] {
+  const eligible = getEligibleServices(services);
   const rank = (id: string) => {
     const index = config.order.indexOf(id);
     return index === -1 ? config.order.length : index;

@@ -30,11 +30,13 @@ import {
   type BookingSource,
   type BookingTabId,
 } from "@/data/operations";
-import { BOOKING_METHOD_LABEL, SERVICES, getServiceById } from "@/data/services";
+import { BOOKING_METHOD_LABEL, getServiceById } from "@/data/services";
 import { getPrimaryDomain, getWebsitePage } from "@/data/website";
 import { formatLocalDateTime, formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import { BookingDrawer } from "./BookingDrawer";
 import { CreateBookingModal } from "./CreateBookingModal";
+import type { Directory } from "@/data/directory";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 const EMPTY_COPY: Record<BookingTabId, string> = {
   requests: "No requests are waiting for confirmation.",
@@ -43,12 +45,12 @@ const EMPTY_COPY: Record<BookingTabId, string> = {
   cancelled: "No cancelled bookings.",
 };
 
-function matchesQuery(booking: Booking, query: string): boolean {
-  const customer = booking.customerId ? getCustomerById(booking.customerId) : undefined;
-  const property = getPropertyById(booking.propertyId ?? "");
+function matchesQuery(booking: Booking, query: string, dir: Directory): boolean {
+  const customer = booking.customerId ? getCustomerById(booking.customerId, dir) : undefined;
+  const property = getPropertyById(booking.propertyId ?? "", dir);
   const haystack = [
-    getPartyName(booking),
-    getServiceNameFor(booking),
+    getPartyName(booking, dir),
+    getServiceNameFor(booking, dir),
     customer?.phone ?? "",
     customer?.email ?? "",
     property ? formatPropertyAddress(property) : "",
@@ -61,6 +63,7 @@ function matchesQuery(booking: Booking, query: string): boolean {
 }
 
 export function BookingsView() {
+  const dir = useDirectory();
   const { data } = useOperations();
   const { data: plans } = useMaintenancePlans();
   const { toast } = useToast();
@@ -107,7 +110,7 @@ export function BookingsView() {
 
   const visible = tabBookings.filter(
     (booking) =>
-      matchesQuery(booking, query) &&
+      matchesQuery(booking, query, dir) &&
       (serviceFilter === "all" || booking.serviceId === serviceFilter) &&
       (sourceFilter === "all" || booking.source === sourceFilter),
   );
@@ -172,7 +175,7 @@ export function BookingsView() {
           <div className="w-52">
             <Select label="Service" hideLabel value={serviceFilter} onChange={(event) => setServiceFilter(event.target.value)}>
               <option value="all">Service: All</option>
-              {SERVICES.map((service) => (
+              {dir.services.map((service) => (
                 <option key={service.id} value={service.id}>
                   {service.name}
                 </option>
@@ -232,8 +235,8 @@ export function BookingsView() {
                   </tr>
                 ) : (
                   visible.map((booking) => {
-                    const name = getPartyName(booking);
-                    const service = getServiceById(booking.serviceId);
+                    const name = getPartyName(booking, dir);
+                    const service = getServiceById(booking.serviceId, dir.services);
                     const isSelected = booking.id === selectedId;
                     return (
                       <TableRow key={booking.id} className={isSelected ? "bg-primary-subtle/50" : undefined}>
@@ -244,7 +247,7 @@ export function BookingsView() {
                           </div>
                         </TableCell>
                         <TableCell className="max-w-56">
-                          <div className="font-medium">{getServiceNameFor(booking)}</div>
+                          <div className="font-medium">{getServiceNameFor(booking, dir)}</div>
                           {booking.note && <div className="text-xs text-ink-muted">{booking.note}</div>}
                           {(() => {
                             const included = getPlanVisitForBooking(booking, plans);

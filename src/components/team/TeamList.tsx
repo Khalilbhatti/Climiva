@@ -14,7 +14,6 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Select } from "@/components/ui/Select";
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/Table";
-import { useToast } from "@/components/ui/Toast";
 import { memberHref } from "@/config/routes";
 import {
   CLASSIFICATION_LABEL,
@@ -36,9 +35,8 @@ const AVAILABILITY_FILTERS: { id: AvailabilityMode; label: string }[] = [
 ];
 
 export function TeamList() {
-  const { data, resendInvitation } = useTeam();
+  const { data } = useTeam();
   const hoursRows = useHoursRows();
-  const { toast } = useToast();
   const router = useRouter();
   const params = useSearchParams();
   const adding = params.get("add") === "1";
@@ -259,19 +257,6 @@ export function TeamList() {
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-2">
                         <MemberStatusBadge status={member.status} />
-                        {member.status === "invited" && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              resendInvitation(member.id);
-                              toast(`Invitation resent to ${member.email}.`);
-                            }}
-                            aria-label={`Resend invitation to ${member.name}`}
-                            className="rounded-btn px-2 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary-subtle"
-                          >
-                            Resend
-                          </button>
-                        )}
                       </div>
                     </TableCell>
                     <TableCell className="text-right">

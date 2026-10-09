@@ -1,10 +1,11 @@
 /**
- * Pure state transitions for the Team module's in-memory demo. Like lib/operations-state, nothing here
- * mutates its input, so the fixtures in data/team.ts stay untouched. None of this is authorization: roles
- * and permissions are configuration shown on screen, nothing enforces them.
+ * Pure transitions of the Team. Nothing here mutates its input. The server runs them against the Team it just read from
+ * PostgreSQL and writes the difference (src/db/core-queries.persistTeamData), so what the screens show after a change is
+ * exactly what was stored. None of this is authorization: roles and permissions are configuration shown on screen, and the
+ * only authority over who may change the Team is the SaaS role in organization_memberships.
  *
- * Deactivating a member changes only the member. Jobs and bookings that name them are never rewritten,
- * and nothing is reassigned automatically.
+ * Deactivating a member changes only the Team record. Jobs and bookings that name them are never rewritten, nothing is
+ * reassigned automatically, and their Climvia login (if they have one) is not touched.
  */
 import { PROTOTYPE_NOW } from "@/data/fixtures";
 import {
@@ -21,18 +22,24 @@ import {
 } from "@/data/team";
 import { formatTime } from "./dates";
 
-/** Every demo change is recorded as made by the signed-in user. */
-const ACTOR_ID = "alex-morgan";
+/**
+ * Who made a change. `id` is the team member's id when the signed-in person has a team record in this business; many owners
+ * do, some admins do not, in which case the entry still carries their name in its text but no author link.
+ */
+export type Actor = { id?: string; name: string };
+
+/** The business hours (the saved Settings hours), the starting point of a new member's schedule. */
+export type BusinessHours = Readonly<Record<number, { open: string; close: string } | null>>;
 
 function mapMember(data: TeamData, id: string, change: (member: TeamMember) => TeamMember): TeamData {
   return { ...data, members: data.members.map((member) => (member.id === id ? change(member) : member)) };
 }
 
-function withActivity(member: TeamMember, entry: Pick<ActivityEntry, "category" | "title" | "detail">): TeamMember {
+function withActivity(member: TeamMember, actor: Actor, entry: Pick<ActivityEntry, "category" | "title" | "detail">): TeamMember {
   const activity: ActivityEntry = {
     id: `act-${member.id}-${member.activity.length + 1}`,
     at: PROTOTYPE_NOW,
-    byId: ACTOR_ID,
+    byId: actor.id,
     ...entry,
   };
   return { ...member, activity: [activity, ...member.activity] };
@@ -61,11 +68,14 @@ export type NewMemberInput = {
   availabilityMode: AvailabilityMode;
 };
 
-/** Adds a member whose invitation is pending. No email is sent; the invitation only exists in this session. */
-export function addInvitedMember(data: TeamData, input: NewMemberInput): { data: TeamData; member: TeamMember } {
+/**
+ * Adds a member who is pending (status "invited"). The Team record is real and stored; NO email is sent and NO sign-in is
+ * created: inviting someone to sign in to Climvia is a separate step that arrives with email.
+ */
+export function addInvitedMember(data: TeamData, input: NewMemberInput, actor: Actor, businessHours: BusinessHours): { data: TeamData; member: TeamMember } {
   const role = getRoleById(input.roleId, data);
   const member: TeamMember = {
-    id: uniqueId(slugify(input.name), data.members.map((item) => item.id)),
+    id: uniqueId(slugify(input.name).slice(0, 70).replace(/-+$/g, "") || "member", data.members.map((item) => item.id)),
     name: input.name.trim(),
     role: role?.name ?? "Team member",
     roleId: input.roleId,
@@ -73,42 +83,36 @@ export function addInvitedMember(data: TeamData, input: NewMemberInput): { data:
     phone: input.phone?.trim() || undefined,
     status: "invited",
     fieldAssignable: input.fieldAssignable,
-    availability: { mode: input.availabilityMode, weekly: weeklyFromBusinessHours(), unavailable: [] },
+    availability: { mode: input.availabilityMode, weekly: weeklyFromBusinessHours(businessHours), unavailable: [] },
     serviceMode: "all",
     serviceIds: [],
     activity: [],
   };
-  const invited = withActivity(member, {
+  const invited = withActivity(member, actor, {
     category: "access",
-    title: "Invitation sent",
-    detail: `Invited by Alex Morgan to Climvia Workspace as ${role?.name ?? "a team member"}`,
+    title: "Added to the team",
+    detail: `Added by ${actor.name} as ${role?.name ?? "a team member"}. No invitation email was sent.`,
   });
   return { data: { ...data, members: [...data.members, invited] }, member: invited };
 }
 
-export function resendInvitation(data: TeamData, memberId: string): TeamData {
-  return mapMember(data, memberId, (member) =>
-    member.status === "invited" ? withActivity(member, { category: "access", title: "Invitation resent" }) : member,
-  );
-}
-
 /** The owner stays active; anyone else becomes Inactive. History keeps showing their name. */
-export function deactivateMember(data: TeamData, memberId: string): TeamData {
+export function deactivateMember(data: TeamData, memberId: string, actor: Actor): TeamData {
   return mapMember(data, memberId, (member) => {
     if (member.roleId === "owner" || member.status === "inactive") return member;
-    return withActivity({ ...member, status: "inactive" }, {
+    return withActivity({ ...member, status: "inactive" }, actor, {
       category: "access",
-      title: "Account deactivated",
-      detail: "Climvia access removed. Historical Jobs and activity are preserved.",
+      title: "Team member deactivated",
+      detail: "No longer offered for new work. Historical Jobs and activity are preserved. Their sign-in, if any, is not changed.",
     });
   });
 }
 
-export function setFieldAssignable(data: TeamData, memberId: string, fieldAssignable: boolean): TeamData {
+export function setFieldAssignable(data: TeamData, memberId: string, fieldAssignable: boolean, actor: Actor): TeamData {
   return mapMember(data, memberId, (member) =>
     member.fieldAssignable === fieldAssignable
       ? member
-      : withActivity({ ...member, fieldAssignable }, {
+      : withActivity({ ...member, fieldAssignable }, actor, {
           category: "access",
           title: fieldAssignable ? "Assignable to Jobs enabled" : "Assignable to Jobs disabled",
         }),
@@ -116,10 +120,10 @@ export function setFieldAssignable(data: TeamData, memberId: string, fieldAssign
 }
 
 /** `override` undefined means "use the role's permissions". */
-export function setPermissionOverride(data: TeamData, memberId: string, override: Permissions | undefined): TeamData {
+export function setPermissionOverride(data: TeamData, memberId: string, override: Permissions | undefined, actor: Actor): TeamData {
   return mapMember(data, memberId, (member) => {
     const role = getRoleById(member.roleId, data);
-    return withActivity({ ...member, permissionOverride: override }, {
+    return withActivity({ ...member, permissionOverride: override }, actor, {
       category: "access",
       title: "Permissions updated",
       detail: override ? "Member-specific permissions set" : `Inheriting ${role?.name ?? "role"} role defaults`,
@@ -127,7 +131,7 @@ export function setPermissionOverride(data: TeamData, memberId: string, override
   });
 }
 
-export function setAvailability(data: TeamData, memberId: string, availability: Availability): TeamData {
+export function setAvailability(data: TeamData, memberId: string, availability: Availability, actor: Actor): TeamData {
   return mapMember(data, memberId, (member) => {
     const detail =
       availability.mode === "business-hours"
@@ -135,7 +139,7 @@ export function setAvailability(data: TeamData, memberId: string, availability: 
         : availability.mode === "custom"
           ? `Custom schedule: ${summarizeWeek(availability.weekly, formatTime)}`
           : "Availability not set";
-    return withActivity({ ...member, availability }, { category: "availability", title: "Availability updated", detail });
+    return withActivity({ ...member, availability }, actor, { category: "availability", title: "Availability updated", detail });
   });
 }
 
@@ -144,9 +148,10 @@ export function setServiceEligibility(
   memberId: string,
   mode: TeamMember["serviceMode"],
   serviceIds: readonly string[],
+  actor: Actor,
 ): TeamData {
   return mapMember(data, memberId, (member) =>
-    withActivity({ ...member, serviceMode: mode, serviceIds }, {
+    withActivity({ ...member, serviceMode: mode, serviceIds }, actor, {
       category: "services",
       title: "Assigned services updated",
       detail: mode === "all" ? "Eligible for all active services" : `${serviceIds.length} services selected`,
@@ -158,7 +163,7 @@ export type NewRoleInput = { name: string; description?: string; permissions: Pe
 
 export function createRole(data: TeamData, input: NewRoleInput): { data: TeamData; role: Role } {
   const role: Role = {
-    id: uniqueId(slugify(input.name), data.roles.map((item) => item.id)),
+    id: uniqueId(slugify(input.name).slice(0, 70).replace(/-+$/g, "") || "role", data.roles.map((item) => item.id)),
     name: input.name.trim(),
     description: input.description?.trim() || "Custom role.",
     kind: "custom",
@@ -168,7 +173,7 @@ export function createRole(data: TeamData, input: NewRoleInput): { data: TeamDat
 }
 
 /** Editing a role changes what its members inherit; the Owner role is protected. */
-export function updateRole(data: TeamData, roleId: string, patch: Partial<Pick<Role, "name" | "description" | "permissions">>): TeamData {
+export function updateRole(data: TeamData, roleId: string, patch: Partial<Pick<Role, "name" | "description" | "permissions">>, actor: Actor): TeamData {
   const role = data.roles.find((item) => item.id === roleId);
   if (!role || role.protected) return data;
 
@@ -184,7 +189,7 @@ export function updateRole(data: TeamData, roleId: string, patch: Partial<Pick<R
     if (member.roleId !== roleId) return member;
     const renamed = { ...member, role: member.role === role.name ? next.name : member.role };
     return changedPermissions && !member.permissionOverride
-      ? withActivity(renamed, { category: "access", title: "Permissions updated", detail: `Inheriting updated ${next.name} role defaults` })
+      ? withActivity(renamed, actor, { category: "access", title: "Permissions updated", detail: `Inheriting updated ${next.name} role defaults` })
       : renamed;
   });
   return { roles, members };

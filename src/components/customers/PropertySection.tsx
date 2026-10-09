@@ -1,11 +1,15 @@
+"use client";
+
 import { KeyRound, MapPin, Wrench } from "lucide-react";
 import { cardClasses } from "@/components/ui/Card";
 import { EquipmentCard } from "./EquipmentCard";
 import { formatPropertyCityLine, getEquipmentForProperty, type Property } from "@/data/customers";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 /** One property with its access notes and registered equipment (the Properties & equipment tab). */
 export function PropertySection({ property, primary }: { property: Property; primary: boolean }) {
-  const equipment = getEquipmentForProperty(property.id);
+  const dir = useDirectory();
+  const equipment = getEquipmentForProperty(property.id, dir);
 
   return (
     <section aria-labelledby={`${property.id}-heading`} className={`${cardClasses("lg")} space-y-5`}>

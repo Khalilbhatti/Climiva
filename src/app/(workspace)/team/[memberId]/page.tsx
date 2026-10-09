@@ -1,8 +1,7 @@
 import { MemberOverview } from "@/components/team/MemberOverview";
-import { fixtureGate } from "@/server/fixture-gate";
+import { requireWorkspaceContext } from "@/server/workspace";
 
 export default async function MemberOverviewPage() {
-  const gate = await fixtureGate("Team");
-  if (gate) return gate;
+  await requireWorkspaceContext();
   return <MemberOverview />;
 }

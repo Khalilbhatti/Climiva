@@ -37,7 +37,7 @@ import {
 import { PROTOTYPE_TODAY, overviewMetrics } from "@/data/fixtures";
 import { getPlanMetrics, type PlanMetrics, type PlansData } from "@/data/maintenance-plans";
 import type { Booking, Job, OperationsData } from "@/data/operations";
-import { getServiceById } from "@/data/services";
+import { getServiceById, type Service } from "@/data/services";
 import { formatMonthDay, isValidDate } from "./dates";
 import { getDisplayPreferences } from "./display-preferences";
 import { formatDate } from "./format";
@@ -83,7 +83,7 @@ function invoiceCounts(data: FinancialData): Record<InvoiceStatus, number> {
 
 const newestFirst = (a: string, b: string) => b.localeCompare(a);
 
-export function buildAnalytics(financial: FinancialData, plans: PlansData, operations: OperationsData): AnalyticsModel {
+export function buildAnalytics(financial: FinancialData, plans: PlansData, operations: OperationsData, services: readonly Service[]): AnalyticsModel {
   const invoices = invoiceCounts(financial);
   const quoteCounts: Record<QuoteStatus, number> = { ...QUOTE_BASELINE.counts };
   const bookingTotal = sum(Object.values(BOOKING_BREAKDOWN));
@@ -115,7 +115,7 @@ export function buildAnalytics(financial: FinancialData, plans: PlansData, opera
       )
       .slice(0, 3),
     weekly: WEEKLY_ACTIVITY,
-    services: SERVICE_ACTIVITY.map((row) => ({ ...row, name: getServiceById(row.serviceId)?.name ?? row.serviceId })),
+    services: SERVICE_ACTIVITY.map((row) => ({ ...row, name: getServiceById(row.serviceId, services)?.name ?? row.serviceId })),
     quotes: { count: sum(Object.values(quoteCounts)), totalValue: QUOTE_BASELINE.totalValue, approvedValue: QUOTE_BASELINE.approvedValue, counts: quoteCounts },
     invoices: { count: sum(Object.values(invoices)), total: getTotalInvoiced(financial), outstanding: getOutstandingBalance(financial), counts: invoices },
     payments: {

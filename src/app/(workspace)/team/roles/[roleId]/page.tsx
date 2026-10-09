@@ -1,18 +1,17 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { RoleDetail } from "@/components/team/RoleDetail";
-import { getRoleById } from "@/data/team";
-import { fixtureGate, hasSampleDataAccess } from "@/server/fixture-gate";
+import { getTeam } from "@/server/core-data";
 
-// The fixture roles are prerendered; a role created during a demo session is resolved on the client.
 export async function generateMetadata({ params }: PageProps<"/team/roles/[roleId]">): Promise<Metadata> {
-  if (!(await hasSampleDataAccess())) return { title: "Not available" };
   const { roleId } = await params;
-  return { title: getRoleById(roleId)?.name ?? "Role" };
+  const team = await getTeam();
+  return { title: team.roles.find((role) => role.id === roleId)?.name ?? "Role" };
 }
 
 export default async function RolePage({ params }: PageProps<"/team/roles/[roleId]">) {
-  const gate = await fixtureGate("Team");
-  if (gate) return gate;
   const { roleId } = await params;
+  const team = await getTeam();
+  if (!team.roles.some((role) => role.id === roleId)) notFound();
   return <RoleDetail roleId={roleId} />;
 }

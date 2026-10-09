@@ -36,6 +36,7 @@ import { getPrimaryDomain } from "@/data/website";
 import { moveService, toggleService } from "@/lib/marketplace-state";
 import { ListingView } from "./ListingView";
 import { useMarketplace } from "./MarketplaceProvider";
+import { useServices } from "@/components/services/ServicesProvider";
 
 const NO_COVER = "none";
 
@@ -59,8 +60,9 @@ export function ListingEditor() {
   const { guard } = useUnsavedGuard(dirty, "your edits to this listing");
 
   const domain = getPrimaryDomain(site.domain);
-  const eligible = getEligibleServices();
-  const ordered = getOrderedEligibleServices(working);
+  const { services: catalog } = useServices();
+  const eligible = getEligibleServices(catalog);
+  const ordered = getOrderedEligibleServices(working, catalog);
   const descriptionError = working.description.trim() === "" ? "Enter a description for your listing." : undefined;
   const servicesError = working.selected.length === 0 ? "Select at least one Service to show." : undefined;
   const invalid = Boolean(descriptionError || servicesError);

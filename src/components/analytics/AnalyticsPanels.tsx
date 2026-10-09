@@ -15,6 +15,8 @@ import { formatMonthDay, formatTime } from "@/lib/dates";
 import { formatUSD } from "@/lib/format";
 import type { AnalyticsModel } from "@/lib/analytics-state";
 import { OwnerLink, ServiceActivityTable, StatTile, WeeklyChart } from "./parts";
+import type { Directory } from "@/data/directory";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 type PanelProps = { model: AnalyticsModel };
 
@@ -94,12 +96,13 @@ function bookingHref(booking: Booking) {
   return `/bookings?tab=${tab}&booking=${booking.id}` as const;
 }
 
-function jobLocation(job: Job): string {
-  const property = job.propertyId ? getPropertyById(job.propertyId) : undefined;
+function jobLocation(job: Job, dir: Directory): string {
+  const property = job.propertyId ? getPropertyById(job.propertyId, dir) : undefined;
   return property ? formatPropertyAddress(property) : "No property on record";
 }
 
 export function BookingsJobsPanel({ model }: PanelProps) {
+  const dir = useDirectory();
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -140,8 +143,8 @@ export function BookingsJobsPanel({ model }: PanelProps) {
                       #{booking.id}
                     </Link>
                   </TableCell>
-                  <TableCell>{getPartyName(booking)}</TableCell>
-                  <TableCell>{getServiceNameFor(booking)}</TableCell>
+                  <TableCell>{getPartyName(booking, dir)}</TableCell>
+                  <TableCell>{getServiceNameFor(booking, dir)}</TableCell>
                   <TableCell className="whitespace-nowrap">
                     {formatMonthDay(booking.date)}, {formatTime(booking.start)}
                   </TableCell>
@@ -163,10 +166,10 @@ export function BookingsJobsPanel({ model }: PanelProps) {
                     <Link href={jobHref(job.id)} className="text-primary hover:underline">
                       #{job.id}
                     </Link>{" "}
-                    · {getServiceNameFor(job)}
+                    · {getServiceNameFor(job, dir)}
                   </p>
                   <p className="mt-0.5 text-xs text-ink-muted">
-                    {getPartyName(job)} — {jobLocation(job)}
+                    {getPartyName(job, dir)} — {jobLocation(job, dir)}
                   </p>
                 </div>
                 <div className="shrink-0 text-right">
@@ -185,6 +188,7 @@ export function BookingsJobsPanel({ model }: PanelProps) {
 /* ───────────────────────── Financial Records ───────────────────────── */
 
 export function FinancialPanel({ model, financial }: PanelProps & { financial: FinancialData }) {
+  const dir = useDirectory();
   const { quotes, invoices, payments } = model;
   return (
     <div className="space-y-6">
@@ -244,7 +248,7 @@ export function FinancialPanel({ model, financial }: PanelProps & { financial: F
                     <PaymentStatusBadge status={payment.status} />
                   </p>
                   <p className="mt-0.5 text-xs text-ink-muted">
-                    {invoice ? getPartyName(invoice) : "Unknown customer"} · {PAYMENT_METHOD_LABEL[payment.method]}
+                    {invoice ? getPartyName(invoice, dir) : "Unknown customer"} · {PAYMENT_METHOD_LABEL[payment.method]}
                   </p>
                 </div>
                 <div className="shrink-0 text-right">

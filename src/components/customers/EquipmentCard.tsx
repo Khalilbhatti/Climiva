@@ -1,3 +1,5 @@
+"use client";
+
 import { Fan, Thermometer } from "lucide-react";
 import { DisplayDate } from "@/components/ui/DisplayDate";
 import { KeyValueList } from "@/components/ui/KeyValueList";
@@ -5,15 +7,17 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { getServiceById } from "@/data/services";
 import type { Equipment } from "@/data/customers";
 import { formatMonthYear } from "@/lib/format";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 /**
  * A registered piece of equipment. A record of what is installed, never live status.
  * "summary" is the compact form used in the Overview snapshot; "full" adds location, filter and service notes.
  */
 export function EquipmentCard({ equipment, variant = "full" }: { equipment: Equipment; variant?: "full" | "summary" }) {
+  const dir = useDirectory();
   const Icon = equipment.kind.toLowerCase().includes("thermostat") ? Thermometer : Fan;
   const last = equipment.lastServiced;
-  const lastService = last?.serviceId ? getServiceById(last.serviceId)?.name : undefined;
+  const lastService = last?.serviceId ? getServiceById(last.serviceId, dir.services)?.name : undefined;
 
   const identity = [
     { label: "Manufacturer & model", value: `${equipment.manufacturer} ${equipment.model}` },

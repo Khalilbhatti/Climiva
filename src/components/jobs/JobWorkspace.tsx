@@ -28,6 +28,7 @@ import {
 import { getTeamMemberById } from "@/data/team";
 import { formatLocalDateTime, formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import { CompleteJobModal } from "./CompleteJobModal";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 /** The work-details fields a technician edits. Everything else on a job is read-only here. */
 export type EditableDetails = Pick<JobDetails, "technicianDiagnosis" | "workPerformed" | "customerSummary" | "internalNotes">;
@@ -77,6 +78,7 @@ export function JobWorkspace({ jobId, children }: { jobId: string; children: Rea
 }
 
 function JobEditor({ job, children }: { job: Job; children: ReactNode }) {
+  const dir = useDirectory();
   const { data, assign, startJob, updateJobDetails, completeJob } = useOperations();
   const { toast } = useToast();
 
@@ -88,9 +90,9 @@ function JobEditor({ job, children }: { job: Job; children: ReactNode }) {
   const dirty = EDITABLE_KEYS.some((key) => draft[key] !== saved[key]);
   const locked = job.status === "completed";
 
-  const customer = job.customerId ? getCustomerById(job.customerId) : undefined;
-  const property = getPropertyById(job.propertyId ?? "");
-  const assignee = getTeamMemberById(job.assigneeId);
+  const customer = job.customerId ? getCustomerById(job.customerId, dir) : undefined;
+  const property = getPropertyById(job.propertyId ?? "", dir);
+  const assignee = getTeamMemberById(job.assigneeId, dir.team);
   const booking = job.bookingId ? getBookingById(job.bookingId, data) : undefined;
   const bookingTab = BOOKING_TABS.find((tab) => tab.status === booking?.status)?.id ?? "upcoming";
 
@@ -105,10 +107,10 @@ function JobEditor({ job, children }: { job: Job; children: ReactNode }) {
           <span className="block text-xs font-normal text-ink-muted">{customer.phone}</span>
         </>
       ) : (
-        getPartyName(job)
+        getPartyName(job, dir)
       ),
     },
-    { label: "Service scope", value: getServiceNameFor(job) },
+    { label: "Service scope", value: getServiceNameFor(job, dir) },
     {
       label: "Appointment window",
       value: (
@@ -259,13 +261,13 @@ function JobEditor({ job, children }: { job: Job; children: ReactNode }) {
 
       {dialog === "assign" && (
         <AssignDialog
-          description={`${getServiceNameFor(job)} for ${getPartyName(job)} · ${formatWeekdayDate(job.date)}, ${formatTimeRange(job.start, job.end)}`}
+          description={`${getServiceNameFor(job, dir)} for ${getPartyName(job, dir)} · ${formatWeekdayDate(job.date)}, ${formatTimeRange(job.start, job.end)}`}
           currentAssigneeId={job.assigneeId}
           onClose={() => setDialog(null)}
           onAssign={(memberId) => {
             assign({ jobId: job.id }, memberId);
             setDialog(null);
-            toast(memberId ? `Job #${job.id} assigned to ${getAssigneeName({ assigneeId: memberId })}.` : `Job #${job.id} is unassigned.`);
+            toast(memberId ? `Job #${job.id} assigned to ${getAssigneeName({ assigneeId: memberId }, dir)}.` : `Job #${job.id} is unassigned.`);
           }}
         />
       )}

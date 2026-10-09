@@ -27,8 +27,8 @@ const OperationsContext = createContext<OperationsContextValue | null>(null);
  * data/operations.ts. Mounted once in the workspace layout so Bookings, Schedule, Jobs and the
  * Customers pages always agree on what has happened this session.
  */
-export function OperationsProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<OperationsData>(OPERATIONS);
+export function OperationsProvider({ initial = OPERATIONS, children }: { initial?: OperationsData; children: ReactNode }) {
+  const [data, setData] = useState<OperationsData>(initial);
   // The ref lets actions that return a value (createBooking) read the latest data synchronously.
   const latest = useRef(data);
 

@@ -41,6 +41,7 @@ import { CreatePlanModal } from "./CreatePlanModal";
 import { useMaintenancePlans } from "./MaintenancePlansProvider";
 import { ScheduleVisitModal } from "./ScheduleVisitModal";
 import { PlanCustomerName, PlanStatusBadge, dueText, planCustomerName, planProperty, visitTitle } from "./plan-ui";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 type View = "active" | "upcoming" | "all";
 const VIEWS: View[] = ["active", "upcoming", "all"];
@@ -54,6 +55,7 @@ function nextServiceText(plan: MaintenancePlan, visit: PlanVisit | undefined, op
 }
 
 export function MaintenancePlansView() {
+  const dir = useDirectory();
   const { data: stored } = useMaintenancePlans();
   const { data: ops } = useOperations();
   const router = useRouter();
@@ -86,7 +88,7 @@ export function MaintenancePlansView() {
 
   const needle = query.trim().toLowerCase();
   const matches = (plan: MaintenancePlan) =>
-    `${planCustomerName(plan)} ${plan.name} ${planProperty(plan).street}`.toLowerCase().includes(needle) &&
+    `${planCustomerName(plan, dir)} ${plan.name} ${planProperty(plan, dir).street}`.toLowerCase().includes(needle) &&
     (planName === "all" || plan.name === planName);
 
   const activePlans = data.plans.filter((plan) => plan.status === "active").filter(matches);
@@ -111,14 +113,14 @@ export function MaintenancePlansView() {
       </tr>
     ) : (
       plans.map((plan) => {
-        const property = planProperty(plan);
+        const property = planProperty(plan, dir);
         const next = getNextVisit(plan, ops);
         const completed = getCompletedVisitCount(plan, ops);
         return (
           <TableRow key={plan.id}>
             <TableCell>
               <div className="flex items-center gap-3">
-                <Avatar name={planCustomerName(plan)} />
+                <Avatar name={planCustomerName(plan, dir)} />
                 <span className="font-semibold whitespace-nowrap">
                   <PlanCustomerName plan={plan} />
                 </span>
@@ -151,7 +153,7 @@ export function MaintenancePlansView() {
             <TableCell className="text-right">
               <Link
                 href={`/maintenance-plans/${plan.id}`}
-                aria-label={`View plan: ${plan.name} for ${planCustomerName(plan)}`}
+                aria-label={`View plan: ${plan.name} for ${planCustomerName(plan, dir)}`}
                 className="rounded-btn px-2 py-1 text-sm font-semibold whitespace-nowrap text-primary transition-colors hover:bg-primary-subtle"
               >
                 View plan
@@ -304,14 +306,14 @@ export function MaintenancePlansView() {
                       </tr>
                     ) : (
                       upcoming.map(({ plan, visit }) => {
-                        const property = planProperty(plan);
+                        const property = planProperty(plan, dir);
                         const booking = getVisitBooking(visit, ops);
                         const state = getVisitState(visit, ops);
                         return (
                           <TableRow key={visit.id}>
                             <TableCell>
                               <div className="flex items-center gap-3">
-                                <Avatar name={planCustomerName(plan)} />
+                                <Avatar name={planCustomerName(plan, dir)} />
                                 <span className="font-semibold whitespace-nowrap">
                                   <PlanCustomerName plan={plan} />
                                 </span>
@@ -352,7 +354,7 @@ export function MaintenancePlansView() {
                                 <button
                                   type="button"
                                   onClick={() => setScheduling({ plan, visit })}
-                                  aria-label={`Schedule visit for ${planCustomerName(plan)}`}
+                                  aria-label={`Schedule visit for ${planCustomerName(plan, dir)}`}
                                   className="inline-flex items-center gap-1.5 rounded-btn px-2 py-1 text-sm font-semibold whitespace-nowrap text-primary hover:bg-primary-subtle"
                                 >
                                   <CalendarPlus aria-hidden className="size-4" />

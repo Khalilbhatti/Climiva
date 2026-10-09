@@ -1,70 +1,72 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import type { Availability, Permissions, Role, TeamData, TeamMember } from "@/data/team";
+import type { ActionResult } from "@/lib/action-result";
+import { send } from "@/lib/send-action";
+import type { NewMember } from "@/lib/team-rules";
 import {
-  TEAM_DATA,
-  type Availability,
-  type Permissions,
-  type Role,
-  type TeamData,
-  type TeamMember,
-} from "@/data/team";
-import * as state from "@/lib/team-state";
+  addMemberAction,
+  createRoleAction,
+  deactivateMemberAction,
+  setAvailabilityAction,
+  setFieldAssignableAction,
+  setPermissionOverrideAction,
+  setServiceEligibilityAction,
+  updateRoleAction,
+} from "@/server/actions/team";
+
+/** What every change resolves with: the Team as stored, or why it was refused. */
+type Done = Promise<ActionResult<{ team: TeamData }>>;
 
 type TeamContextValue = {
-  /** The working data: canonical fixtures plus any demo changes made in this session. */
+  /** The business's team and roles, as stored. */
   data: TeamData;
-  addMember: (input: state.NewMemberInput) => TeamMember;
-  resendInvitation: (memberId: string) => void;
-  deactivateMember: (memberId: string) => void;
-  setFieldAssignable: (memberId: string, value: boolean) => void;
-  setPermissionOverride: (memberId: string, override: Permissions | undefined) => void;
-  setAvailability: (memberId: string, availability: Availability) => void;
-  setServiceEligibility: (memberId: string, mode: TeamMember["serviceMode"], serviceIds: readonly string[]) => void;
-  createRole: (input: state.NewRoleInput) => Role;
-  updateRole: (roleId: string, patch: Partial<Pick<Role, "name" | "description" | "permissions">>) => void;
+  /** Adds a team member whose invitation is pending. Records the person only: no email is sent and no sign-in is created. */
+  addMember: (input: NewMember) => Promise<ActionResult<{ team: TeamData; member: TeamMember }>>;
+  /** Takes someone off the list of people who can be given work. Their sign-in, if they have one, is not touched. */
+  deactivateMember: (memberId: string) => Done;
+  setFieldAssignable: (memberId: string, value: boolean) => Done;
+  setPermissionOverride: (memberId: string, override: Permissions | undefined) => Done;
+  setAvailability: (memberId: string, availability: Availability) => Done;
+  setServiceEligibility: (memberId: string, mode: TeamMember["serviceMode"], serviceIds: readonly string[]) => Done;
+  createRole: (input: { name: string; description?: string; permissions: Permissions }) => Promise<ActionResult<{ team: TeamData; role: Role }>>;
+  updateRole: (roleId: string, patch: Partial<Pick<Role, "name" | "description" | "permissions">>) => Done;
 };
 
 const TeamContext = createContext<TeamContextValue | null>(null);
 
 /**
- * The demo copy of the team and its roles for the whole workspace. It starts as the canonical fixtures,
- * lives only in memory (a reload restores them) and never writes back to data/team.ts. It sits in the
- * workspace layout next to OperationsProvider so the assignment pickers on Bookings, Schedule and Jobs
- * see the same members, statuses and roles as the Team module.
+ * The business's team and its roles for the whole workspace. `initial` is what the server read from PostgreSQL for this page
+ * load. Every change goes to the server, which authorizes it (owner or admin), validates it, stores it and answers with the
+ * Team as stored; only then does the working copy change, so the screen is never ahead of the database. It sits in the
+ * workspace layout so the assignment pickers on Bookings, Schedule and Jobs see the same members, statuses and roles as the
+ * Team module.
+ *
+ * Nothing here is authorization over the workspace and nothing here creates or removes a sign-in.
  */
-export function TeamProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<TeamData>(TEAM_DATA);
-  // The ref lets actions that return a value (addMember, createRole) read the latest data synchronously.
-  const latest = useRef(data);
+export function TeamProvider({ initial, children }: { initial: TeamData; children: ReactNode }) {
+  const [data, setData] = useState<TeamData>(initial);
 
-  const commit = useCallback((next: TeamData) => {
-    latest.current = next;
-    setData(next);
+  /** Adopt the stored Team a successful change answered with. */
+  const adopt = useCallback(<T extends { team: TeamData }>(result: ActionResult<T>): ActionResult<T> => {
+    if (result.ok) setData(result.data.team);
+    return result;
   }, []);
 
   const value = useMemo<TeamContextValue>(
     () => ({
       data,
-      addMember: (input) => {
-        const result = state.addInvitedMember(latest.current, input);
-        commit(result.data);
-        return result.member;
-      },
-      resendInvitation: (id) => commit(state.resendInvitation(latest.current, id)),
-      deactivateMember: (id) => commit(state.deactivateMember(latest.current, id)),
-      setFieldAssignable: (id, enabled) => commit(state.setFieldAssignable(latest.current, id, enabled)),
-      setPermissionOverride: (id, override) => commit(state.setPermissionOverride(latest.current, id, override)),
-      setAvailability: (id, availability) => commit(state.setAvailability(latest.current, id, availability)),
-      setServiceEligibility: (id, mode, ids) => commit(state.setServiceEligibility(latest.current, id, mode, ids)),
-      createRole: (input) => {
-        const result = state.createRole(latest.current, input);
-        commit(result.data);
-        return result.role;
-      },
-      updateRole: (id, patch) => commit(state.updateRole(latest.current, id, patch)),
+      addMember: async (input) => adopt(await send(() => addMemberAction(input))),
+      deactivateMember: async (id) => adopt(await send(() => deactivateMemberAction(id))),
+      setFieldAssignable: async (id, enabled) => adopt(await send(() => setFieldAssignableAction(id, enabled))),
+      setPermissionOverride: async (id, override) => adopt(await send(() => setPermissionOverrideAction(id, override ?? null))),
+      setAvailability: async (id, availability) => adopt(await send(() => setAvailabilityAction(id, availability))),
+      setServiceEligibility: async (id, mode, ids) => adopt(await send(() => setServiceEligibilityAction(id, mode, ids))),
+      createRole: async (input) => adopt(await send(() => createRoleAction(input))),
+      updateRole: async (id, patch) => adopt(await send(() => updateRoleAction(id, patch))),
     }),
-    [data, commit],
+    [data, adopt],
   );
 
   return <TeamContext value={value}>{children}</TeamContext>;

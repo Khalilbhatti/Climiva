@@ -26,6 +26,7 @@ import {
   weekDates,
   weekdayIndex,
 } from "@/lib/dates";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 /** Left accent colour per status, matching the StatusBadge tones. */
 const STATUS_ACCENT: Record<ScheduleEventStatus, string> = {
@@ -86,6 +87,7 @@ export function WeekBoard({ date, events, selectedId, onSelect }: BoardProps & {
 }
 
 function WeekCard({ event, selected, onSelect }: { event: ScheduleEvent; selected: boolean; onSelect: (event: ScheduleEvent) => void }) {
+  const dir = useDirectory();
   if (event.kind === "block") {
     return (
       <button
@@ -108,7 +110,7 @@ function WeekCard({ event, selected, onSelect }: { event: ScheduleEvent; selecte
     );
   }
 
-  const assignee = getTeamMemberById(event.assigneeId);
+  const assignee = getTeamMemberById(event.assigneeId, dir.team);
   return (
     <button
       type="button"
@@ -125,8 +127,8 @@ function WeekCard({ event, selected, onSelect }: { event: ScheduleEvent; selecte
       <span className="mt-0.5 block">
         <EventStatusBadge status={event.status} />
       </span>
-      <span className="mt-1 block text-sm leading-tight font-semibold text-ink">{getPartyName(event)}</span>
-      <span className="mt-0.5 line-clamp-2 block text-xs text-ink-muted">{getServiceNameFor(event)}</span>
+      <span className="mt-1 block text-sm leading-tight font-semibold text-ink">{getPartyName(event, dir)}</span>
+      <span className="mt-0.5 line-clamp-2 block text-xs text-ink-muted">{getServiceNameFor(event, dir)}</span>
       <span className="mt-1.5 flex items-center gap-1.5 text-mini text-ink-muted">
         {assignee ? (
           <>
@@ -253,6 +255,7 @@ function TimelineBlock({
   onSelect: (event: ScheduleEvent) => void;
   style: React.CSSProperties;
 }) {
+  const dir = useDirectory();
   const common = "absolute overflow-hidden rounded-btn border px-2 py-1 text-left transition-colors";
 
   if (event.kind === "block") {
@@ -280,7 +283,7 @@ function TimelineBlock({
       type="button"
       id={`event-${event.id}`}
       aria-pressed={selected}
-      title={`${getPartyName(event)} · ${getServiceNameFor(event)} · ${formatTimeRange(event.start, event.end)} · ${EVENT_STATUS_LABEL[event.status]}`}
+      title={`${getPartyName(event, dir)} · ${getServiceNameFor(event, dir)} · ${formatTimeRange(event.start, event.end)} · ${EVENT_STATUS_LABEL[event.status]}`}
       onClick={() => onSelect(event)}
       style={style}
       className={cn(
@@ -291,8 +294,8 @@ function TimelineBlock({
         selected && "border-primary bg-surface ring-1 ring-primary",
       )}
     >
-      <span className="block truncate text-xs font-semibold text-ink">{getPartyName(event)}</span>
-      <span className="block truncate text-mini text-ink-muted">{getServiceNameFor(event)}</span>
+      <span className="block truncate text-xs font-semibold text-ink">{getPartyName(event, dir)}</span>
+      <span className="block truncate text-mini text-ink-muted">{getServiceNameFor(event, dir)}</span>
       <span className="flex items-center gap-1 truncate text-mini text-ink-muted">
         <Clock aria-hidden className="size-3 shrink-0" />
         {formatTimeRange(event.start, event.end)}
@@ -307,6 +310,7 @@ type UnassignedProps = { events: WorkEvent[]; onAssign: (event: WorkEvent) => vo
 
 /** Confirmed work that still needs a technician. Assigning is a button, not a drag. */
 export function UnassignedPanel({ events, onAssign }: UnassignedProps) {
+  const dir = useDirectory();
   return (
     <section aria-labelledby="unassigned-heading" className="rounded-card border border-line bg-surface p-4">
       <h2 id="unassigned-heading" className="flex items-center gap-2 text-base font-semibold text-ink">
@@ -321,17 +325,17 @@ export function UnassignedPanel({ events, onAssign }: UnassignedProps) {
           {events.map((event) => (
             <li key={event.id} className="rounded-btn bg-surface-low p-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold text-ink">{getPartyName(event)}</span>
+                <span className="text-xs font-semibold text-ink">{getPartyName(event, dir)}</span>
                 <span className="rounded bg-surface px-1.5 py-0.5 text-mini font-medium text-ink-muted">
                   {formatWeekdayDate(event.date)}
                 </span>
               </div>
-              <p className="mt-1 text-sm font-semibold text-primary">{getServiceNameFor(event)}</p>
+              <p className="mt-1 text-sm font-semibold text-primary">{getServiceNameFor(event, dir)}</p>
               <p className="mt-0.5 flex items-center gap-1 text-xs text-ink-muted">
                 <Clock aria-hidden className="size-3" />
                 {formatTimeRange(event.start, event.end)}
               </p>
-              <Button size="sm" className="mt-2" onClick={() => onAssign(event)} aria-label={`Assign technician to ${getPartyName(event)}`}>
+              <Button size="sm" className="mt-2" onClick={() => onAssign(event)} aria-label={`Assign technician to ${getPartyName(event, dir)}`}>
                 Assign
               </Button>
             </li>
@@ -343,6 +347,7 @@ export function UnassignedPanel({ events, onAssign }: UnassignedProps) {
 }
 
 export function UnassignedBanner({ events, onAssign }: UnassignedProps) {
+  const dir = useDirectory();
   if (events.length === 0) return null;
   return (
     <section
@@ -355,9 +360,9 @@ export function UnassignedBanner({ events, onAssign }: UnassignedProps) {
         {events.map((event) => (
           <li key={event.id} className="flex items-center gap-2 rounded-btn bg-surface-low py-1 pr-1 pl-3 text-sm">
             <span className="text-ink">
-              {getPartyName(event)} <span className="text-ink-muted">({formatMonthDay(event.date)})</span>
+              {getPartyName(event, dir)} <span className="text-ink-muted">({formatMonthDay(event.date)})</span>
             </span>
-            <Button size="sm" onClick={() => onAssign(event)} aria-label={`Assign technician to ${getPartyName(event)}`}>
+            <Button size="sm" onClick={() => onAssign(event)} aria-label={`Assign technician to ${getPartyName(event, dir)}`}>
               Assign
             </Button>
           </li>

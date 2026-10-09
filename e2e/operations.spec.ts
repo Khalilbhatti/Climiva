@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "playwright/test";
-import { CUSTOMERS, formatPropertyAddress, getCustomerById, getPropertyById } from "../src/data/customers";
+import { formatPropertyAddress, getCustomerById, getPropertyById } from "../src/data/customers";
 import {
   BOOKINGS,
   BOOKING_TABS,
@@ -22,7 +22,7 @@ import {
 } from "../src/data/operations";
 import { PROTOTYPE_NOW, PROTOTYPE_TODAY, BUSINESS_TIME_ZONE, business, businessHoursByWeekday, overviewMetrics } from "../src/data/fixtures";
 import { getServiceById } from "../src/data/services";
-import { TEAM, getTeamMemberById } from "../src/data/team";
+import { getTeamMemberById } from "../src/data/team";
 import { getSlotGroup } from "../src/lib/booking-slots";
 import { addDays, formatLongDate, formatTime, formatTimeRange, startOfWeek, weekDates, weekdayIndex } from "../src/lib/dates";
 import {
@@ -38,6 +38,7 @@ import {
   startJob,
   updateJobDetails,
 } from "../src/lib/operations-state";
+import { BOOK, CUSTOMERS, DIR, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
 
 // Pure data/selector/state tests: no browser needed.
 
@@ -49,12 +50,12 @@ test.describe("operational fixtures reference the shared records", () => {
       const label = `${booking.id}`;
       // Exactly one of customerId / contactName.
       expect(Boolean(booking.customerId) !== Boolean(booking.contactName), `${label}: customerId xor contactName`).toBe(true);
-      if (booking.customerId) expect(getCustomerById(booking.customerId), `${label}: customer`).toBeDefined();
+      if (booking.customerId) expect(getCustomerById(booking.customerId, BOOK), `${label}: customer`).toBeDefined();
       if (booking.propertyId) {
-        expect(getPropertyById(booking.propertyId)?.customerId, `${label}: property belongs to the customer`).toBe(booking.customerId);
+        expect(getPropertyById(booking.propertyId, BOOK)?.customerId, `${label}: property belongs to the customer`).toBe(booking.customerId);
       }
-      expect(getServiceById(booking.serviceId), `${label}: service`).toBeDefined();
-      if (booking.assigneeId) expect(getTeamMemberById(booking.assigneeId), `${label}: assignee`).toBeDefined();
+      expect(getServiceById(booking.serviceId, SERVICES), `${label}: service`).toBeDefined();
+      if (booking.assigneeId) expect(getTeamMemberById(booking.assigneeId, TEAM_DATA), `${label}: assignee`).toBeDefined();
       expect(booking.start < booking.end, `${label}: start before end`).toBe(true);
     }
   });
@@ -62,10 +63,10 @@ test.describe("operational fixtures reference the shared records", () => {
   test("every job resolves its references and agrees with its booking", () => {
     for (const job of JOBS) {
       expect(Boolean(job.customerId) !== Boolean(job.contactName), `${job.id}: customerId xor contactName`).toBe(true);
-      if (job.customerId) expect(getCustomerById(job.customerId), `${job.id}: customer`).toBeDefined();
-      if (job.propertyId) expect(getPropertyById(job.propertyId)?.customerId, `${job.id}: property`).toBe(job.customerId);
-      expect(getServiceById(job.serviceId), `${job.id}: service`).toBeDefined();
-      if (job.assigneeId) expect(getTeamMemberById(job.assigneeId), `${job.id}: assignee`).toBeDefined();
+      if (job.customerId) expect(getCustomerById(job.customerId, BOOK), `${job.id}: customer`).toBeDefined();
+      if (job.propertyId) expect(getPropertyById(job.propertyId, BOOK)?.customerId, `${job.id}: property`).toBe(job.customerId);
+      expect(getServiceById(job.serviceId, SERVICES), `${job.id}: service`).toBeDefined();
+      if (job.assigneeId) expect(getTeamMemberById(job.assigneeId, TEAM_DATA), `${job.id}: assignee`).toBeDefined();
 
       if (!job.bookingId) continue;
       const booking = getBookingById(job.bookingId);
@@ -99,9 +100,9 @@ test.describe("operational fixtures reference the shared records", () => {
 
   test("JB-204 belongs to Sarah Mitchell, AC Repair & Diagnostics, 1402 Kinney Ave", () => {
     const job = getJobById("JB-204")!;
-    expect(getPartyName(job)).toBe("Sarah Mitchell");
-    expect(getServiceNameFor(job)).toBe("AC Repair & Diagnostics");
-    expect(formatPropertyAddress(getPropertyById(job.propertyId!)!)).toBe("1402 Kinney Ave, Austin, TX 78704");
+    expect(getPartyName(job, DIR)).toBe("Sarah Mitchell");
+    expect(getServiceNameFor(job, DIR)).toBe("AC Repair & Diagnostics");
+    expect(formatPropertyAddress(getPropertyById(job.propertyId!, BOOK)!)).toBe("1402 Kinney Ave, Austin, TX 78704");
     expect(job.bookingId).toBe("BK-1042");
     expect(job.status).toBe("completed");
     expect(job.completion?.at).toBe(PROTOTYPE_NOW);
@@ -110,9 +111,9 @@ test.describe("operational fixtures reference the shared records", () => {
   });
 
   test("Elena Rodriguez is canonical; the stale name appears nowhere", () => {
-    expect(getCustomerById("elena-rodriguez")?.name).toBe("Elena Rodriguez");
-    expect(getPartyName(getBookingById("BK-1035")!)).toBe("Elena Rodriguez");
-    expect(getPartyName(getJobById("JB-198")!)).toBe("Elena Rodriguez");
+    expect(getCustomerById("elena-rodriguez", BOOK)?.name).toBe("Elena Rodriguez");
+    expect(getPartyName(getBookingById("BK-1035")!, DIR)).toBe("Elena Rodriguez");
+    expect(getPartyName(getJobById("JB-198")!, DIR)).toBe("Elena Rodriguez");
     expect(JSON.stringify({ CUSTOMERS, BOOKINGS, JOBS })).not.toContain("Rostova");
   });
 
@@ -131,23 +132,23 @@ test.describe("operational fixtures reference the shared records", () => {
       expect(match, `${customer.name}: confirmed booking at ${customer.upcoming!.at}`).toBeDefined();
     }
     // Sarah's last service is a real job.
-    expect(getJobById(getCustomerById("sarah-mitchell")!.lastService!.jobId!)?.customerId).toBe("sarah-mitchell");
+    expect(getJobById(getCustomerById("sarah-mitchell", BOOK)!.lastService!.jobId!)?.customerId).toBe("sarah-mitchell");
   });
 
   test("selectors group records by customer; jobs are newest first", () => {
     expect(getBookingsForCustomer("sarah-mitchell").map((booking) => booking.id)).toEqual(["BK-1042"]);
     expect(getJobsForCustomer("sarah-mitchell").map((job) => job.id)).toEqual(["JB-204", "JB-142"]);
     expect(getJobsForCustomer("david-chen").map((job) => job.id)).toEqual(["JB-201", "JB-178"]);
-    expect(getAssigneeName(getJobById("JB-204")!)).toBe("Alex Morgan");
-    expect(getAssigneeName(getJobById("JB-198")!)).toBeUndefined();
+    expect(getAssigneeName(getJobById("JB-204")!, DIR)).toBe("Alex Morgan");
+    expect(getAssigneeName(getJobById("JB-198")!, DIR)).toBeUndefined();
   });
 });
 
 test.describe("team", () => {
   test("Marcus Vance is a Technician and the team has three members", () => {
     expect(TEAM.map((member) => member.name)).toEqual(["Alex Morgan", "Marcus Vance", "Samira Patel"]);
-    expect(getTeamMemberById("marcus-vance")).toMatchObject({ name: "Marcus Vance", role: "Technician" });
-    expect(getTeamMemberById("alex-morgan")).toMatchObject({ role: "Operations Lead" });
+    expect(getTeamMemberById("marcus-vance", TEAM_DATA)).toMatchObject({ name: "Marcus Vance", role: "Technician" });
+    expect(getTeamMemberById("alex-morgan", TEAM_DATA)).toMatchObject({ role: "Operations Lead" });
   });
 });
 

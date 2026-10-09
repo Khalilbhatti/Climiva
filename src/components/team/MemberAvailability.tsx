@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { CalendarOff, Coffee, Copy, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { useOperations } from "@/components/operations/OperationsProvider";
 import { useSettings } from "@/components/settings/SettingsProvider";
 import { Button } from "@/components/ui/Button";
@@ -12,6 +13,7 @@ import { Modal } from "@/components/ui/Modal";
 import { OptionCard, OptionGroup } from "@/components/ui/OptionCard";
 import { Select } from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { jobHref } from "@/config/routes";
 import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import { getScheduleEvents, type WorkEvent } from "@/data/operations";
@@ -63,7 +65,13 @@ const MODES: { id: AvailabilityMode; title: string; description: string }[] = [
 
 const breakId = (day: DayHours) => (day.breakStart && day.breakEnd ? `${day.breakStart}-${day.breakEnd}` : "none");
 
-const sameAvailability = (a: Availability, b: Availability) => JSON.stringify(a) === JSON.stringify(b);
+/** Compared by value, whatever order the keys came in (what was stored comes back in its own order). */
+const canonical = (value: unknown): string =>
+  JSON.stringify(value, (_key, item) =>
+    item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item,
+  );
+
+const sameAvailability = (a: Availability, b: Availability) => canonical(a) === canonical(b);
 
 const REASONS = ["Time off", "Training", "Other"] as const;
 
@@ -72,11 +80,14 @@ export function MemberAvailability() {
   const { setAvailability } = useTeam();
   const { data: operations } = useOperations();
   const { toast } = useToast();
+  const canManage = useCan("team:manage");
   const { hours: businessHours, preferences } = useSettings().settings;
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
 
   const [draft, setDraft] = useState<Availability>(member.availability);
   const [adding, setAdding] = useState(false);
-  const locked = member.status === "inactive";
+  const locked = member.status === "inactive" || !canManage;
   const dirty = !sameAvailability(draft, member.availability);
 
   const upcoming = getScheduleEvents(operations).filter(
@@ -334,18 +345,31 @@ export function MemberAvailability() {
         </p>
       </section>
 
+      {problem && <FormAlert>{problem}</FormAlert>}
+      {!canManage && <p className="text-sm text-ink-muted">Only an owner or admin can change availability.</p>}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-line bg-surface p-4">
         <p className="text-sm text-ink-muted" aria-live="polite">
           {dirty ? <span className="font-semibold text-ink">Unsaved changes</span> : "All availability changes are saved."}
         </p>
         <div className="flex items-center gap-3">
-          <Button variant="secondary" onClick={() => setDraft(member.availability)} disabled={!dirty}>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setDraft(member.availability);
+              setProblem(undefined);
+            }}
+            disabled={!dirty}
+          >
             Discard changes
           </Button>
           <Button
-            disabled={!dirty || invalid || locked}
-            onClick={() => {
-              setAvailability(member.id, draft);
+            disabled={!dirty || invalid || locked || saving}
+            onClick={async () => {
+              setSaving(true);
+              setProblem(undefined);
+              const result = await setAvailability(member.id, draft);
+              setSaving(false);
+              if (!result.ok) return setProblem(result.error);
               toast(`Availability for ${member.name} saved.`);
             }}
           >

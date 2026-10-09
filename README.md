@@ -68,9 +68,9 @@ All use the `SEED_PASSWORD` from your `.env`.
 
 | Email | Workspaces |
 | --- | --- |
-| `alex.morgan@apex.test` | Apex Climate Heating & Air, owner (has the sample data) |
+| `alex.morgan@apex.test` | Apex Climate Heating & Air, owner (has the sample operations data, and the canonical customers, Services and team) |
 | `jamie.rivera@apex.test` | Apex, member (can view Settings, not change them) |
-| `taylor.brooks@northstar.test` | Northstar Heating & Cooling, owner (no sample data) |
+| `taylor.brooks@northstar.test` | Northstar Heating & Cooling, owner (a small set of its own customers, Services and team; none of Apex's, and no sample operations data) |
 | `casey.nguyen@climvia.test` | admin in **both** (use the workspace switcher) |
 
 Or sign up with a new email and the setup flow creates a business of your own.
@@ -108,13 +108,13 @@ src/
     layout.tsx      fonts, global styles, and the providers for the signed-in workspace
   components/       one folder per module, plus auth/, shell/ (layout), workspace/ and ui/ (shared primitives)
   config/           navigation (the sidebar) and typed route helpers
-  data/             the sample records and the selectors that read them, one file per module
+  data/             types and selectors per module; the sample operations records (customers, Services and the team are read from PostgreSQL)
   db/               the PostgreSQL schema (Drizzle), the connection, and the tenant-context helpers
   lib/              auth setup, validation, state transitions, date and display helpers
   server/           server-only code: session, active workspace, organizations, Server Actions, the sample-data gate
   proxy.ts          the early "no session cookie" redirect (not the security boundary)
 drizzle/            SQL migrations, including the Row Level Security policies
-scripts/db/         migrate, seed, reset and test-database preparation
+scripts/db/         migrate, seed (and seed-data/, the canonical Apex and the Northstar records), reset and test-database preparation
 e2e/                Playwright specs and their helpers
 docs/               SaaS architecture, design map, visual audit, production handoff
 ```
@@ -163,7 +163,7 @@ See [docs/production-handoff.md](docs/production-handoff.md#testing-status) for 
 
 Nothing is deployed from this repository yet. The app is built so that one Ubuntu server (EC2) can run it later:
 a `Dockerfile` builds the app and a one-off `tools` image that applies migrations; configuration is environment
-variables only. See [docs/saas-architecture.md](docs/saas-architecture.md#16-deployment-and-the-future-aws-topology)
+variables only. See [docs/saas-architecture.md](docs/saas-architecture.md#17-deployment-and-the-future-aws-topology)
 for the commands, the environment, the backup plan and the AWS layout.
 
 ## More

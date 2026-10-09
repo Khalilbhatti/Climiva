@@ -22,7 +22,7 @@
  */
 import { addDays } from "@/lib/dates";
 import { overviewMetrics } from "./fixtures";
-import { getServiceById } from "./services";
+import { getServiceById, type Service } from "./services";
 
 /* ───────────────────────── types ───────────────────────── */
 
@@ -316,6 +316,9 @@ export const PAYMENTS: readonly Payment[] = [
 
 export const FINANCIALS: FinancialData = { quotes: QUOTES, invoices: INVOICES, payments: PAYMENTS };
 
+/** What a business that is not the sample one has: no quotes, invoices or payments. */
+export const EMPTY_FINANCIALS: FinancialData = { quotes: [], invoices: [], payments: [] };
+
 /* ───────────────────────── derived values ─────────────────────────
  * Each selector takes optional data so the canonical fixtures and the in-memory demo state share logic. */
 
@@ -393,8 +396,8 @@ export function getTotalInvoiced(data: FinancialData = FINANCIALS): number {
 }
 
 /** The service named by a record, or its first line item when the record has none. */
-export function getRelatedWork(record: { serviceId?: string; lineItems: readonly LineItem[] }): string {
-  return (record.serviceId && getServiceById(record.serviceId)?.name) || record.lineItems[0]?.description || "—";
+export function getRelatedWork(record: { serviceId?: string; lineItems: readonly LineItem[] }, services: readonly Service[]): string {
+  return (record.serviceId && getServiceById(record.serviceId, services)?.name) || record.lineItems[0]?.description || "—";
 }
 
 /** "Due on receipt", or "Net 15 · due 2024-11-09" (the caller formats the date). */

@@ -9,6 +9,7 @@ import { RESPONSE_MAX, type Review } from "@/data/reviews";
 import { formatDate } from "@/lib/format";
 import { useReviews } from "./ReviewsProvider";
 import { Stars, reviewerName } from "./review-ui";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 type ReplyModalProps = {
   review: Review;
@@ -20,9 +21,10 @@ type ReplyModalProps = {
 
 /** Reply to a review, or edit the reply. Either way the review has one response. */
 export function ReplyModal({ review, mode, onClose, onDone }: ReplyModalProps) {
+  const dir = useDirectory();
   const { postResponse, editResponse } = useReviews();
   const { toast } = useToast();
-  const name = reviewerName(review);
+  const name = reviewerName(review, dir);
   const [body, setBody] = useState(mode === "edit" ? (review.response?.body ?? "") : (review.replyDraft ?? ""));
   const [showError, setShowError] = useState(false);
   const error = body.trim() === "" ? "Write a response before posting." : undefined;

@@ -15,7 +15,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/components/ui/Toast";
 import { useUnsavedGuard } from "@/components/ui/UnsavedGuard";
-import { CUSTOMERS, getCustomerById } from "@/data/customers";
+import { getCustomerById } from "@/data/customers";
 import { PROTOTYPE_NOW, PROTOTYPE_TODAY } from "@/data/fixtures";
 import {
   AUDIENCES,
@@ -40,6 +40,7 @@ import {
 import type { CampaignInput } from "@/lib/marketing-state";
 import { useMarketing } from "./MarketingProvider";
 import { RecipientsModal } from "./RecipientsModal";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 type Form = { name: string; channel: CampaignChannel; audienceId: AudienceId; selectedCustomerIds: string[]; subject: string; message: string };
 type Timing = { mode: "now" | "later"; date: string; time: string };
@@ -98,6 +99,7 @@ export function CampaignBuilder({ campaignId }: { campaignId?: string }) {
 }
 
 function BuilderForm({ existing }: { existing?: Campaign }) {
+  const dir = useDirectory();
   const { createDraft, updateCampaign, saveAsDraft, scheduleCampaign, sendCampaign } = useMarketing();
   const router = useRouter();
   const { toast } = useToast();
@@ -120,7 +122,7 @@ function BuilderForm({ existing }: { existing?: Campaign }) {
   const email = form.channel === "email";
   const audience = getAudience(form.audienceId);
   const recipients = getAudienceCount(form.audienceId, form.selectedCustomerIds);
-  const sample = getCustomerById(form.selectedCustomerIds[0] ?? "") ?? CUSTOMERS[0];
+  const sample = getCustomerById(form.selectedCustomerIds[0] ?? "", dir) ?? dir.customers[0];
   const destinationNote = email ? "Customers without an email address will not receive this campaign." : "Customers without a phone number will not receive this campaign.";
 
   const patch = (change: Partial<Form>) => setForm((current) => ({ ...current, ...change }));
@@ -318,7 +320,7 @@ function BuilderForm({ existing }: { existing?: Campaign }) {
                 <fieldset className="rounded-card bg-surface-low p-4">
                   <legend className="px-1 text-xs font-medium text-ink">Choose customers</legend>
                   <ul className="space-y-2">
-                    {CUSTOMERS.map((customer) => (
+                    {dir.customers.map((customer) => (
                       <li key={customer.id}>
                         <label className="flex cursor-pointer items-center gap-3 text-sm text-ink">
                           <input

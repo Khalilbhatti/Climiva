@@ -20,16 +20,17 @@ Read [production-handoff.md](production-handoff.md) for the front end, which thi
 10. [Database isolation (Row Level Security)](#10-database-isolation-row-level-security)
 11. [Settings migration](#11-settings-migration)
 12. [Transitional fixtures](#12-transitional-fixtures)
-13. [Organization → many Sites](#13-organization--many-sites)
-14. [The future Website Builder](#14-the-future-website-builder)
-15. [Local development](#15-local-development)
-16. [Deployment and the future AWS topology](#16-deployment-and-the-future-aws-topology)
-17. [Backups](#17-backups)
-18. [SaaS billing vs. business-customer payments](#18-saas-billing-vs-business-customer-payments)
-19. [Future domain routing](#19-future-domain-routing)
-20. [Deferred domain migrations](#20-deferred-domain-migrations)
-21. [Testing](#21-testing)
-22. [Known limitations](#22-known-limitations)
+13. [Core business data: customers, services, team](#13-core-business-data-customers-services-team)
+14. [Organization → many Sites](#14-organization--many-sites)
+15. [The future Website Builder](#15-the-future-website-builder)
+16. [Local development](#16-local-development)
+17. [Deployment and the future AWS topology](#17-deployment-and-the-future-aws-topology)
+18. [Backups](#18-backups)
+19. [SaaS billing vs. business-customer payments](#19-saas-billing-vs-business-customer-payments)
+20. [Future domain routing](#20-future-domain-routing)
+21. [Deferred domain migrations](#21-deferred-domain-migrations)
+22. [Testing](#22-testing)
+23. [Known limitations](#23-known-limitations)
 
 ## 1. Status and scope
 
@@ -41,8 +42,9 @@ reload. Now:
 | Real sign-up, log-in, log-out (Better Auth, sessions in PostgreSQL) | Email verification, password reset, invitations by email (no mail service yet) |
 | Organizations, memberships, owner / admin / member roles | A UI to invite or remove members, or to change roles |
 | Many people ↔ many businesses; a workspace switcher | Billing for Climvia itself |
-| New-business onboarding in one transaction | Customers, services, jobs, bookings, payments, quotes, invoices, team (still sample data, see §12) |
+| New-business onboarding in one transaction | Jobs, bookings, payments, quotes, invoices and the other operational modules (still sample data, see §12) |
 | Business information, Business hours, Workspace preferences and the profile name stored in PostgreSQL | Logo / branding / avatar storage (needs object storage) |
+| Customers, properties, equipment, Services, the team and its roles stored in PostgreSQL per organization (§13) | A flow to add or edit a customer, email invitations for team members |
 | Strict tenant isolation: server authorization **and** PostgreSQL Row Level Security | The visual Website Builder, templates, domains |
 | `sites` table: one organization owns many sites | Deployment to AWS |
 
@@ -55,7 +57,7 @@ reload. Now:
 | ORM and migrations | Drizzle ORM + drizzle-kit (SQL migrations in `drizzle/`), `pg` driver |
 | Auth | Better Auth (email + password), Drizzle adapter |
 | Local services | Docker Compose, PostgreSQL only; the app runs on the host |
-| Hosting (later) | A single Ubuntu EC2 instance, see §16 |
+| Hosting (later) | A single Ubuntu EC2 instance, see §17 |
 
 Not used, on purpose: Supabase, Firebase, Clerk, Auth0 or any other backend-as-a-service; any AWS SDK; Redis; a queue.
 
@@ -106,7 +108,7 @@ An **organization** is a business workspace (`organizations`). Everything a busi
   the transitional `fixture_set` (§12). Constraints enforce the formats.
 - Nothing in the schema or code knows a business by name. Apex Climate Heating & Air is a row the **development seed** inserts, exactly like a production sign-up would.
 - **Creating one** (`createOrganizationForUser`, `src/server/organizations.ts`), in **one transaction**: the organization, the creator's `owner` membership, seven
-  `organization_business_hours` rows and a first draft **site** (§13). If any step fails nothing is kept. It creates no customers, services, jobs, bookings or financial records.
+  `organization_business_hours` rows, a first draft **site** (§14), the six standard team roles and a team record for the creator (§13). If any step fails nothing is kept. It creates no customers, Services, jobs, bookings or financial records.
   The slug is derived from the name and made unique with a random suffix on collision (a savepoint per attempt).
 - **Onboarding** (`/onboarding`, `OnboardingFlow`): Business → Contact & location → Preferences (time zone, currency) → Hours → Review & create. Reachable at `/onboarding?new=1` to add another business.
 - Organizations are never deleted through the app.
@@ -131,6 +133,8 @@ business's own employees and stay product data.
 | Enter and use the workspace | ✓ | ✓ | ✓ |
 | Read Business information, hours, preferences | ✓ | ✓ | ✓ |
 | Change Business information, hours, preferences | ✓ | ✓ | ✗ |
+| Add, edit or deactivate a Service; change the team, its roles, availability and assigned Services (§13) | ✓ | ✓ | ✗ |
+| Read customers, Services and the team | ✓ | ✓ | ✓ |
 | Change their own profile name | ✓ | ✓ | ✓ |
 | Invite admins / members (database-level; no UI yet) | ✓ | ✓ | ✗ |
 | Change a member's role (database-level; no UI yet) | ✓ | ✗ | ✗ |
@@ -201,11 +205,16 @@ verified the session and membership, as bound parameters.
 | `organization_memberships` | your own rows and your co-members | creator becomes first owner; owner/admin may invite; **changes only via the `app_*` functions** |
 | `organization_business_hours`, `sites` | members of the active org | owner/admin of the active org |
 | `profiles` | only your own row | only your own row |
+| `customers`, `customer_notes`, `customer_properties`, `equipment` | members of the active org | **nobody**: the runtime role has no write privilege (§13) |
+| `services`, `team_roles`, `team_members`, `team_activity` | members of the active org | owner/admin of the active org (INSERT, column-limited UPDATE; no DELETE) |
+| `team_member_services`, `team_member_availability`, `team_member_unavailable_periods` | members of the active org | owner/admin of the active org |
 | `auth_*` | Better Auth manages these before anyone is signed in | |
 
 **Least privilege.** Column-level grants mean the runtime role cannot set `fixture_set` or rewrite ids; it has no DELETE on organizations, no UPDATE/DELETE on memberships.
 
-**Verified by tests** (`e2e/database-isolation.spec.ts`), connecting as `climvia_app` to a freshly migrated database: no context → no rows; user A sees only A's organization; user B only B's; a forged
+The core business tables (`0003_core_data_rls.sql`, §13) use the same helpers; their composite `(organization_id, id)` foreign keys make a cross-organization reference impossible, and two triggers guard a team member's login and the protected Owner role.
+
+**Verified by tests** (`e2e/database-isolation.spec.ts`, and `e2e/core-data-isolation.spec.ts` for the core tables), connecting as `climvia_app` to a freshly migrated database: no context → no rows; user A sees only A's organization; user B only B's; a forged
 `app.org_id` for an organization the user is not in → no rows; cross-tenant INSERT / UPDATE / DELETE blocked; the last owner cannot be removed; the runtime role cannot change `fixture_set`.
 
 What RLS does **not** protect against: a database superuser or the owner role (keep their credentials out of the app and the browser), and a mistake that grants a new table to `climvia_app` without a policy.
@@ -230,19 +239,136 @@ after hydration, which remounts the tree once. The first render is always the de
 
 ## 12. Transitional fixtures
 
-Customers, Services, Team, Bookings, Schedule, Jobs, Quotes & Invoices, Payments, Maintenance Plans, Website, Marketplace, Reviews, Marketing, Analytics and the customer-facing previews still run on
-the sample dataset in `src/data/*`, held in React state for the visit.
+Bookings, Schedule, Jobs, Quotes & Invoices, Payments, Maintenance Plans, Website, Marketplace, Reviews, Marketing, Analytics and the customer-facing previews still run on
+the sample dataset in `src/data/*`, held in React state for the visit. (Customers, Services and Team moved to PostgreSQL in §13 and are not gated.)
 
 - That dataset belongs to **one** business. An organization flagged `fixture_set = 'apex-demo'` sees it; **any other organization sees "isn't available for *Name* yet"**. The flag is set by the seed only
   (the runtime role has no column grant to set it).
 - Every page and layout of those modules calls `await fixtureGate("Module")` first (`src/server/fixture-gate.tsx`) and returns the replacement if it is not the sample business.
   The public previews use `publicGate()`; metadata uses `hasSampleDataAccess()`. A test fails if a fixture-backed page forgets it.
-- Overview shows a plain "Your workspace is ready" state with the real business card for any other workspace; sidebar counts and global search are sample-business only.
+- Overview shows a plain "Your workspace is ready" state with the real business card for any other workspace; sidebar counts are sample-business only, and global search finds the active business's own customers (§13).
 - **No silent fallback.** If sign-in, the database, the organization or the membership fails, the app redirects to Log in, shows an error, or shows the unavailable state. It never falls back to
   showing the Apex sample.
-- The sample dataset is compiled into the browser JavaScript (it is static, fictional demo data, not tenant data). It is removed module by module as each moves to PostgreSQL (§20).
+- The operational sample dataset is compiled into the browser JavaScript (it is static, fictional demo data, not tenant data). It is removed module by module as each moves to PostgreSQL (§21). The *foundations* it
+  points at (customers, Services, team) are not compiled in: they are read from PostgreSQL and reach the browser only for the business that owns them (§13, "Fixture compatibility bridge").
 
-## 13. Organization → many Sites
+## 13. Core business data: customers, services, team
+
+Phase 10 moved the foundations of a business, the records every other module points at, from the sample dataset to PostgreSQL. Everything below belongs to exactly one organization.
+
+| Domain | Tables | Written by | Read by |
+| --- | --- | --- | --- |
+| Customers | `customers`, `customer_notes`, `customer_properties`, `equipment` | the seed only (no flow writes them yet) | every member of the active organization |
+| Services | `services` | owner, admin | every member |
+| Team | `team_roles`, `team_members`, `team_member_services`, `team_member_availability`, `team_member_unavailable_periods`, `team_activity` | owner, admin | every member |
+
+Migrations: `0002_core_data.sql` (tables, constraints, indexes; generated by drizzle-kit from `src/db/schema/{customers,services,team}.ts`) and `0003_core_data_rls.sql` (policies, grants,
+triggers; hand-written, like `0001`, and built from the same context and `SECURITY DEFINER` helpers, not a second pattern).
+
+### Rules every table follows
+
+- `organization_id` is a real, `NOT NULL` column on **every** table, not inherited through a parent.
+- A child reaches its parent through a composite foreign key `(organization_id, parent_id)` onto the parent's `UNIQUE (organization_id, id)`. A property cannot belong to another business's customer, equipment cannot sit at another
+  business's property, a team member cannot be given another business's role or Service: the database refuses the row, whoever is writing and whatever the application did. (PostgreSQL's referential checks run outside Row Level
+  Security, so they hold even for the restricted role.)
+- Row Level Security is enabled on each table: a member of the **active** organization may read it; the write policies below add the SaaS role check.
+- `id` is an internal uuid. The public reference is a `slug`, unique **within** the organization (`/customers/sarah-mitchell`, `/services/ac-repair-diagnostics`, `/team/marcus-vance`). Lookups are always
+  `(organization_id, slug)`, so a slug or uuid that belongs to another business is simply not found, indistinguishable from one that never existed. Two businesses may use the same slug for unrelated rows (the Northstar seed does, on purpose).
+
+### Customers, properties and equipment
+
+```
+organization ──< customers ──< customer_properties ──< equipment
+                    └──< customer_notes
+```
+
+A **property** is a service location, owned by one customer (one is `is_primary`; a partial unique index allows at most one per customer). **Equipment** is installed at a property, never at a customer directly, so it follows the
+property if the customer record is ever merged. There are no scores, lifetime-value, health or telemetry fields, and no flow to add a customer, send a message or edit history: the product does not have those yet, so the runtime role has
+**no INSERT/UPDATE/DELETE privilege** on these four tables (a write fails with `permission denied` before RLS is even consulted). When an Add Customer flow ships, its migration adds the grant and an owner/admin policy together.
+
+`customers.maintenance_plan`, `last_service` and `upcoming` are small JSONB display summaries, kept only because Maintenance Plans, Jobs and Bookings are not on the database yet; they go when those modules move. Equipment's
+`last_serviced` is likewise a small document, not a foreign key to a job that does not exist in PostgreSQL.
+
+### Services
+
+A Service is a row in `services`. The five detail areas of the Service screen are columns where the shape is stable and a document where it is configuration:
+
+| Area | Stored as |
+| --- | --- |
+| Overview | `name`, `category`, `audience[]`, `description`, `internal_description`, `duration_minutes` |
+| Pricing | `pricing_model` (`diagnostic-fee`, `fixed-price`, `free-assessment`), `price_amount numeric(10,2)`, `price_label`; a CHECK ties the three together |
+| Booking settings | `booking_method` (`instant`, `request-appointment`, `request-quote`) |
+| Customer intake | `intake jsonb`: an array of `{ id, prompt, type: "single-select" \| "photo-upload", required, options?, helper? }`, `checklist text[]` |
+| Availability & visibility | `is_active`, `visibility` (`public-booking`, `public-only`, `internal`), `display_order` |
+
+A name is unique per business, case-insensitively. Services are **deactivated, never deleted** (the runtime role has no DELETE), so a booking that named a Service keeps resolving. A Maintenance Plan's coverage labels ("Cooling maintenance") are plan
+internals and are not Services; the Apex catalog is exactly the six approved services.
+
+**Save, Discard, Add and Deactivate** go through server actions (`src/server/actions/services.ts`). The screen changes only after the server answers with the row as stored, so what is shown is never ahead of what is saved; Discard never calls
+the server; a refresh shows what is in the database. A new business starts with **zero** Services and a proper empty state. There is deliberately no "load starter services" for a real business yet: starter templates are the planned seam
+(a server function that inserts a template's Services for the active organization), and the Add Service flow is the way in until then.
+
+### Team is not organization membership
+
+| | `organization_memberships` | `team_members` |
+| --- | --- | --- |
+| Answers | Who may sign in to this business and what may they do to the *workspace*? | Who works here, and how are they scheduled and assigned? |
+| Authority | The only authority; enforced by Row Level Security | None. It is business data |
+| Login | Always a Climvia login | `user_id` is **nullable**: most technicians never sign in |
+| Roles | `owner`, `admin`, `member` (SaaS) | `team_roles` (Owner, Technician, Bookkeeper …) with a permission matrix: product configuration, **not** the security boundary |
+
+Consequences: not every technician is a Better Auth user; not every organization member is a technician; the owner who signs up gets a team record **and** a membership but the two are not coupled (editing Alex's Team record does not touch Alex's
+Profile, and the reverse). `user_id` may link a team member to a login of the **same** organization (a trigger refuses any other), is unique per business, and cannot be changed through the runtime role. **Deactivating** a team member changes their
+record only: they leave the assignment pickers, history keeps their name, and their login and membership are untouched. Adding a team member records the person and sends nothing: no email, no sign-in is created.
+
+Availability is a team member's own working pattern (seven rows, `team_member_availability`, plus time off in `team_member_unavailable_periods`). It is distinct from the business hours in §11 and from Schedule events. `team_activity` is a plain
+per-member history list; it is not an audit log or an event bus.
+
+### Authorization for the foundations
+
+`src/lib/policy.ts` is the one place the answer lives:
+
+| Capability | Owner | Admin | Member |
+| --- | :-: | :-: | :-: |
+| Read customers, properties, equipment, Services, team, roles | ✓ | ✓ | ✓ |
+| `services:manage` (add, edit, activate, deactivate a Service) | ✓ | ✓ | ✗ |
+| `team:manage` (add, edit, deactivate a team member; edit roles, availability, assigned services) | ✓ | ✓ | ✗ |
+| `settings:manage` (Phase 9) | ✓ | ✓ | ✗ |
+
+Every mutation runs the same pipeline: **authenticated user → active organization (verified, never taken from the request) → active membership → capability → validation → tenant transaction → safe error**. A hidden or tampered organization id
+in a request is never read; the organization is the one the server resolved. The same rule is enforced three times: the control is disabled for a member (`useCan`), the action refuses (`NOT_ALLOWED_*`), and the RLS write policy denies. Column-level
+`UPDATE` grants mean ids and `organization_id` cannot be rewritten. The Owner role is protected by a trigger as well as by the code.
+
+### Fixture compatibility bridge
+
+Bookings, Schedule, Jobs, Quotes & Invoices, Payments, Maintenance Plans, Reviews, Marketing, Analytics and the Website still run on the sample dataset (§12), and they reference customers, Services and team members by id. The bridge:
+
+- Those ids are the **slugs**, and the Apex seed writes the same slugs, with deterministic UUIDv5 primary keys (`src/db/stable-id.ts`: `stableId(organization, kind, slug)`), so a booking that names `sarah-mitchell` and `ac-repair-diagnostics`
+  resolves to the same people and Services after a re-seed.
+- The directory of the active business (customers, properties, equipment, Services, team) is loaded **on the server** and given to the browser by `DirectoryProvider`, which `useDirectory()` reads. The selectors in `src/data/{customers,services,team}.ts`
+  take that data as an argument: there is **no module-level registry** to fill, because one server process serves many businesses and a shared registry would be a cross-tenant leak.
+- Only the sample business (`fixture_set = 'apex-demo'`) is given the customer book to the browser, because only its sample Jobs and Bookings point at customers. Every other business starts the not-yet-migrated modules **empty**
+  (`EMPTY_OPERATIONS`, `EMPTY_FINANCIALS`, …), so a Northstar or a brand-new workspace can never match another business's sample jobs, and none of the Apex sample is sent to its browser as data. The Customers pages load their own book on the server.
+- The seed data for all of this lives in `scripts/db/seed-data` (seed and test infrastructure); `src/` does not import it.
+
+### A new organization
+
+Onboarding creates, in the same transaction as before, the six system roles and one team member for the owner. It creates no customers, no Services and none of Apex's records. Customers and Services show proper empty states; Team shows the owner;
+Bookings, Jobs and the other fixture-backed modules still say "isn't available for *Name* yet" (§12).
+
+### Global search and the public previews
+
+Global search is the active business's: the sample business searches its customers, Jobs, Bookings and Schedule in the browser; any other business searches its own customers on the server (`searchCustomersAction`, scoped to the verified active
+organization, no Jobs or Bookings yet). The Website and Marketplace read the active business's **Services** from PostgreSQL and handle an empty list; their other content is still session data. Booking slot logic is given the business's
+Services and hours.
+
+### Tests
+
+`e2e/core-data-isolation.spec.ts` connects as `climvia_app` and proves, per domain, that SELECT sees only the active organization, that the customer tables refuse INSERT/UPDATE/DELETE, that a member cannot write Services or the team, that an
+owner cannot write into another business, that ids and `organization_id` cannot be rewritten, that nothing here can be deleted, and that cross-organization references fail (property → customer, equipment → property, team member → Service, role,
+availability, author, login). `e2e/{customers,services,team}-db.spec.ts` and `e2e/cross-domain-isolation.spec.ts` drive the real application: persistence after reload, the seeds, empty states, switching business, back/forward, logout and a tampered cookie.
+
+## 14. Organization → many Sites
 
 `sites` belongs to an organization (`ON DELETE RESTRICT`): **one organization, many sites**. Columns: `name`, `slug` (unique within the organization), `status`
 (`draft | published | archived`), `selected_template_id` (reserved, plain text for now), `primary_domain` (reserved; unique across all sites once set, lower-case). Onboarding creates one draft site
@@ -250,7 +376,7 @@ named after the business.
 
 There is deliberately no pages, sections, templates or domain infrastructure, and no "website" field on the organization.
 
-## 14. The future Website Builder
+## 15. The future Website Builder
 
 The ownership chain is fixed so the builder adds tables without changing anything above it:
 
@@ -258,13 +384,13 @@ The ownership chain is fixed so the builder adds tables without changing anythin
 Organization ──< Site ──< Page ──< Section
                   │
                   ├── selected template (a preset the builder will define)
-                  └── primary domain + additional domains (§19)
+                  └── primary domain + additional domains (§20)
 ```
 
 The builder will add `site_pages`, `site_sections` (and a template table), each carrying `organization_id` with the same policies and grants as `sites`, so they inherit §9 and §10 unchanged.
 The current Website module (page editors, preview, booking journey) is the product design the builder will be built from.
 
-## 15. Local development
+## 16. Local development
 
 ```bash
 cp .env.example .env            # then replace every placeholder (openssl rand -base64 32 for secrets)
@@ -300,7 +426,7 @@ Seed data: two businesses that differ in every setting the app shows, so any lea
 
 `.test` is a reserved domain that can never receive mail. Seed data is development tooling: nothing in `src/` imports it and the app never falls back to it.
 
-## 16. Deployment and the future AWS topology
+## 17. Deployment and the future AWS topology
 
 Nothing is deployed in this phase. The app is built so that one Ubuntu EC2 instance can run it later.
 
@@ -344,9 +470,10 @@ Internet ── 443 ──> Caddy or nginx (TLS, sets X-Forwarded-For)
 
 > **Verification note.** Docker was not available in the environment this phase was developed in, so `docker-compose.yml`, the `Dockerfile` and `.dockerignore` were written to the documented behaviour of
 > Docker and Next.js but **not executed there**. PostgreSQL behaviour (migrations, roles, RLS) was verified on a real PostgreSQL 17 server, not through Docker. Run `docker compose up -d postgres` and
-> `docker build .` once on a machine with Docker before relying on them.
+> `docker build .` once on a machine with Docker before relying on them. The Phase 10 migrations (`0002_core_data.sql`, `0003_core_data_rls.sql`) were verified the same way, on PostgreSQL directly.
+> **Docker verification is still required before AWS deployment.**
 
-## 17. Backups
+## 18. Backups
 
 Not implemented; this is the plan.
 
@@ -359,7 +486,7 @@ Not implemented; this is the plan.
 
 No AWS SDK is in the application; backups are an operations concern, outside the app.
 
-## 18. SaaS billing vs. business-customer payments
+## 19. SaaS billing vs. business-customer payments
 
 Two different money flows. They must never share tables, code or credentials.
 
@@ -372,7 +499,7 @@ Two different money flows. They must never share tables, code or credentials.
 
 Billing will hang off the organization (`organizations.id`), never off a user, because the business is the customer. Gating features by plan will be a check beside the role check in §9.
 
-## 19. Future domain routing
+## 20. Future domain routing
 
 Not built. The intended design: a request's host name selects the **site**, and the site selects the organization.
 
@@ -382,27 +509,33 @@ Not built. The intended design: a request's host name selects the **site**, and 
 - A `<slug>.climvia.app`-style subdomain for every site plus customer-owned custom domains (with DNS verification and certificates) is the likely shape.
 - The authenticated app stays on its own host so cookies and CSRF origins stay separate from public sites.
 
-## 20. Deferred domain migrations
+## 21. Deferred domain migrations
 
 Each of these moves from sample data to PostgreSQL in its own phase, with `organization_id`, RLS and tests as in §9–§10. When a module moves, its `fixtureGate` call is deleted and it works for every organization.
 
-Suggested order (dependencies first): Services → Customers (+ properties, equipment) → Team (staff, roles) → Bookings → Schedule → Jobs → Quotes & Invoices → Payments → Maintenance Plans → Reviews →
+Done: Services, Customers (+ properties, equipment), Team (staff, roles) (§13). Suggested order for the rest (dependencies first): Bookings → Schedule → Jobs → Quotes & Invoices → Payments → Maintenance Plans → Reviews →
 Marketing → Website (then the Builder) → Marketplace → Analytics (derived last). Also pending: branding / logo / avatar storage, invitations and member management, email.
 
-## 21. Testing
+## 22. Testing
 
 The Playwright suite runs against a **production build** and a **separate database** (`climvia_test`), recreated, migrated and seeded from nothing on each `npm run test:e2e`: which is also the clean-database migration and seed check.
 
-- Each worker signs in over HTTP as the owner of its **own copy of the Apex workspace**, restored to the canonical record before every test (Settings is stored now, so tests cannot share one).
+- Each worker signs in over HTTP as the owner of its **own copy of the Apex workspace**, restored to the canonical record before every test (Settings, Services, customers and the team are stored now, so tests cannot share one;
+  the reset rewrites the core data only when a fingerprint of it changed, and always on a worker's first test).
 - Every test gets its own client address (`X-Forwarded-For`), so login rate limiting does not couple tests together.
 - Specs: authentication, onboarding, workspace switching, tenant isolation (HTTP and page level), database isolation (SQL as `climvia_app`), Settings persistence, server boundaries, plus the existing front-end suite.
+- Core data (§13): `core-data-isolation.spec.ts` (SQL as `climvia_app`: reads, writes, grants, composite foreign keys, triggers), `core-data-roundtrip.spec.ts` (what the seed wrote is what the application reads, and stable ids),
+  `customers-db.spec.ts`, `services-db.spec.ts`, `team-db.spec.ts` (the numbered required tests 1–37) and `cross-domain-isolation.spec.ts` (38–46: switching, back/forward, reload, logout, forged cookies). The canonical Apex records
+  that the pure-data specs read live in the seed (`scripts/db/seed-data`, re-exported for tests by `e2e/apex-data.ts`), not in `src/`.
 
-## 22. Known limitations
+## 23. Known limitations
 
 - Email verification, password reset, invitations and member management have no UI: they need a mail service and are the next SaaS work.
 - Branding, logo and avatar are session-only until object storage exists.
-- The sample dataset ships in the browser bundle (fictional, public, not tenant data) until its modules migrate.
-- Docker artifacts are authored but were not executed in the development environment (see §16).
+- The operational sample dataset (bookings, jobs, money …) ships in the browser bundle (fictional, public, not tenant data) until its modules migrate. Customers, Services and the team do not.
+- Customers, properties and equipment can be read but not yet added or edited (no flow exists, so the database grants none). Team members are added without an email or a sign-in; there is no resend and no invitation.
+- A business has zero Services until its owner adds them: there are no starter templates yet.
+- Docker artifacts are authored but were not executed in the development environment (see §17).
 - `AUTH_TRUSTED_PROXIES` must be set correctly in production or login rate limiting degrades to one shared bucket.
 - The four `auth_*` identity tables have no Row Level Security: Better Auth must read them before anyone is signed in, they hold no tenant data (a test asserts none of them has an `organization_id`), and only Better Auth
   touches them.

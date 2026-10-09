@@ -22,8 +22,8 @@ const FinancialContext = createContext<FinancialContextValue | null>(null);
  * data/financials.ts. It sits in the workspace layout so Payments, Quotes & Invoices and the Overview
  * always agree on what has been recorded this session, however the user navigates between them.
  */
-export function FinancialProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<FinancialData>(FINANCIALS);
+export function FinancialProvider({ initial = FINANCIALS, children }: { initial?: FinancialData; children: ReactNode }) {
+  const [data, setData] = useState<FinancialData>(initial);
   // The ref lets actions that return a value read the latest data synchronously.
   const latest = useRef(data);
 

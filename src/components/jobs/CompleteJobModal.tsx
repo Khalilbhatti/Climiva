@@ -5,8 +5,8 @@ import { Camera, Fan, Thermometer } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Textarea } from "@/components/ui/Textarea";
-import { EQUIPMENT } from "@/data/customers";
 import { getAssigneeName, getPartyName, getServiceNameFor, type Job } from "@/data/operations";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 type CompleteJobModalProps = {
   job: Job;
@@ -19,10 +19,11 @@ type CompleteJobModalProps = {
  * the photos the customer will see. Completing a job does not create a quote, invoice or payment.
  */
 export function CompleteJobModal({ job, onClose, onComplete }: CompleteJobModalProps) {
+  const dir = useDirectory();
   const [notes, setNotes] = useState(job.details.customerSummary ?? "");
   const [showError, setShowError] = useState(false);
 
-  const equipment = EQUIPMENT.find((item) => item.id === job.equipmentId);
+  const equipment = dir.equipment.find((item) => item.id === job.equipmentId);
   const customerPhotos = job.files.filter((file) => file.visibility === "customer");
   const error = showError && !notes.trim() ? "Enter the resolution notes." : undefined;
   const EquipmentIcon = equipment?.kind.toLowerCase().includes("thermostat") ? Thermometer : Fan;
@@ -33,7 +34,7 @@ export function CompleteJobModal({ job, onClose, onComplete }: CompleteJobModalP
       onClose={onClose}
       size="lg"
       title={`Complete job #${job.id}`}
-      description={`${getPartyName(job)} · ${getServiceNameFor(job)} · Technician: ${getAssigneeName(job) ?? "Unassigned"}`}
+      description={`${getPartyName(job, dir)} · ${getServiceNameFor(job, dir)} · Technician: ${getAssigneeName(job, dir) ?? "Unassigned"}`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>

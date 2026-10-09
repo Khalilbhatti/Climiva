@@ -15,13 +15,14 @@ import { StepList } from "@/components/ui/StepList";
 import { Textarea } from "@/components/ui/Textarea";
 import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import { COVERAGE, PLAN_STATUS_LABEL, type MaintenancePlan, type PlanVisit } from "@/data/maintenance-plans";
-import { SERVICES, getServiceById } from "@/data/services";
+import { getServiceById } from "@/data/services";
 import { getAssignableMembers, getAssignedServiceIds, getTeamMemberById } from "@/data/team";
 import { getSlotGroup } from "@/lib/booking-slots";
 import { formatLongDate, formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import { formatDate, formatMonthYear } from "@/lib/format";
 import { useMaintenancePlans } from "./MaintenancePlansProvider";
 import { planCustomerName, planFullAddress, visitTitle } from "./plan-ui";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 const STEPS = [
   { id: "service", label: "Service" },
@@ -46,6 +47,7 @@ type ScheduleVisitModalProps = {
  * Payment: the visit is included in the plan.
  */
 export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalProps) {
+  const dir = useDirectory();
   const { createBooking } = useOperations();
   const { data: team } = useTeam();
   const { hours } = useSettings().settings;
@@ -64,11 +66,11 @@ export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalP
   const firstRender = useRef(true);
 
   const step = STEPS[stepIndex];
-  const service = serviceId ? getServiceById(serviceId) : undefined;
+  const service = serviceId ? getServiceById(serviceId, dir.services) : undefined;
   const earliest = visit.windowStart && visit.windowStart > PROTOTYPE_TODAY ? visit.windowStart : PROTOTYPE_TODAY;
   const slotGroup = date && service ? getSlotGroup("request-appointment", date, service.durationMinutes, hours) : undefined;
   const slot = slotGroup?.slots.find((candidate) => candidate.id === slotId && candidate.available);
-  const members = getAssignableMembers(team).filter((member) => !serviceId || getAssignedServiceIds(member, SERVICES.map((item) => item.id)).includes(serviceId));
+  const members = getAssignableMembers(team).filter((member) => !serviceId || getAssignedServiceIds(member, dir.services.map((item) => item.id)).includes(serviceId));
 
   const errors: { service?: string; date?: string; slot?: string } = {};
   if (!service) errors.service = "Select the service this visit is booked as.";
@@ -122,7 +124,7 @@ export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalP
   }
 
   const title = visitTitle(plan, visit);
-  const technician = getTeamMemberById(assignee === LATER ? undefined : assignee);
+  const technician = getTeamMemberById(assignee === LATER ? undefined : assignee, dir.team);
 
   /* ───────── scheduled ───────── */
   if (bookingId && slot) {
@@ -131,7 +133,7 @@ export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalP
         open
         onClose={onClose}
         title="Maintenance visit scheduled"
-        description={`${visit.label} has been scheduled for ${planCustomerName(plan)} under the ${plan.name} plan.`}
+        description={`${visit.label} has been scheduled for ${planCustomerName(plan, dir)} under the ${plan.name} plan.`}
         footer={
           <>
             <Button variant="tertiary" onClick={onClose} className="mr-auto">
@@ -151,8 +153,8 @@ export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalP
           <KeyValueList
             className="rounded-card border border-line bg-surface-low p-4"
             items={[
-              { label: "Customer", value: planCustomerName(plan) },
-              { label: "Property", value: planFullAddress(plan) },
+              { label: "Customer", value: planCustomerName(plan, dir) },
+              { label: "Property", value: planFullAddress(plan, dir) },
               { label: "Maintenance plan", value: plan.name },
               { label: "Service", value: visit.label },
               { label: "Visit", value: `${visit.sequence} of ${plan.visitsPerYear}` },
@@ -218,8 +220,8 @@ export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalP
               className="mt-3"
               items={[
                 { label: "Maintenance plan", value: `${plan.name} (${PLAN_STATUS_LABEL[plan.status]})` },
-                { label: "Customer", value: planCustomerName(plan) },
-                { label: "Service property", value: planFullAddress(plan) },
+                { label: "Customer", value: planCustomerName(plan, dir) },
+                { label: "Service property", value: planFullAddress(plan, dir) },
                 {
                   label: "Target window",
                   value: visit.windowStart ? `Due ${formatMonthYear(visit.windowStart.slice(0, 7))}` : "No target window",
@@ -243,7 +245,7 @@ export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalP
               <option value="">Select a service...</option>
               {MAINTENANCE_SERVICE_IDS.map((id) => (
                 <option key={id} value={id}>
-                  {getServiceById(id)?.name}
+                  {getServiceById(id, dir.services)?.name}
                 </option>
               ))}
             </Select>
@@ -338,8 +340,8 @@ export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalP
             items={[
               { label: "Maintenance plan", value: `${plan.name} · ${title}` },
               { label: "Service", value: `${visit.label} (booked as ${service.name})` },
-              { label: "Customer", value: planCustomerName(plan) },
-              { label: "Property", value: planFullAddress(plan) },
+              { label: "Customer", value: planCustomerName(plan, dir) },
+              { label: "Property", value: planFullAddress(plan, dir) },
               { label: "Date & arrival window", value: `${formatWeekdayDate(date)}, ${formatDate(date)} · ${formatTimeRange(slot.start, slot.end)}` },
               { label: "Technician", value: technician ? `${technician.name} (${technician.role})` : "Assign later" },
               ...(notes.trim() ? [{ label: "Internal notes", value: notes.trim() }] : []),

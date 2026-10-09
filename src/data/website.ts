@@ -244,15 +244,16 @@ export function defaultPageContent(page: PageId): PageContent {
   );
 }
 
-export function defaultSiteContent(): SiteContent {
+export function defaultSiteContent(services: readonly Service[]): SiteContent {
   return {
     pages: Object.fromEntries(WEBSITE_PAGES.map((page) => [page.id, defaultPageContent(page.id)])) as Record<PageId, PageContent>,
-    services: { order: getPublicActiveServices().map((service) => service.id), hidden: [] },
+    services: { order: getPublicActiveServices(services).map((service) => service.id), hidden: [] },
   };
 }
 
-/** The services the site shows: public and active in the catalog, minus the hidden ones, in site order. */
-export function getShownServices(display: ServiceDisplay, catalog: readonly Service[] = getPublicActiveServices()): Service[] {
+/** The services the site shows: public and active in the business's catalog, minus the hidden ones, in site order. */
+export function getShownServices(display: ServiceDisplay, services: readonly Service[]): Service[] {
+  const catalog = getPublicActiveServices(services);
   const rank = (id: string) => {
     const index = display.order.indexOf(id);
     return index === -1 ? display.order.length : index;
@@ -284,8 +285,8 @@ export type WebsiteState = {
   domain: DomainState;
 };
 
-export function initialWebsiteState(): WebsiteState {
-  const content = defaultSiteContent();
+export function initialWebsiteState(services: readonly Service[]): WebsiteState {
+  const content = defaultSiteContent(services);
   return {
     published: true,
     draft: content,

@@ -36,10 +36,11 @@ import {
   getReviewMetrics,
   getReviewStatus,
 } from "../src/data/reviews";
-import { SERVICES, getPublicActiveServices } from "../src/data/services";
+import { getPublicActiveServices } from "../src/data/services";
 import { cancelSchedule, createDraft, duplicateCampaign, saveAsDraft, scheduleCampaign, sendCampaign, updateCampaign } from "../src/lib/marketing-state";
 import { hideListing, moveService, publishListing, saveListing, setUpListing, toggleService } from "../src/lib/marketplace-state";
 import { addReviewRequest, editResponse, postResponse } from "../src/lib/reviews-state";
+import { SERVICES } from "./apex-data";
 
 // Pure data/selector/state tests: no browser needed.
 
@@ -47,12 +48,12 @@ const EMERGENCY = "emergency-no-heat-no-cool";
 
 test.describe("marketplace data", () => {
   test("the baseline is a published listing showing exactly 5 of the 6 canonical Services", () => {
-    const state = initialMarketplaceState();
+    const state = initialMarketplaceState(SERVICES);
     expect(state.status).toBe("published");
-    expect(getEligibleServices()).toHaveLength(6);
-    expect(getEligibleServices().map((service) => service.id)).toEqual(SERVICES.map((service) => service.id));
+    expect(getEligibleServices(SERVICES)).toHaveLength(6);
+    expect(getEligibleServices(SERVICES).map((service) => service.id)).toEqual(SERVICES.map((service) => service.id));
     expect(state.config.selected).toHaveLength(5);
-    expect(getListingServices(state.config).map((service) => service.name)).toEqual([
+    expect(getListingServices(state.config, SERVICES).map((service) => service.name)).toEqual([
       "AC Repair & Diagnostics",
       "Annual Cooling Tune-Up & Maintenance",
       "Heat Pump Diagnostics & Repair",
@@ -62,17 +63,17 @@ test.describe("marketplace data", () => {
   });
 
   test("Emergency No-Heat / No-Cool Service is not selected, and is neither deleted nor deactivated", () => {
-    const config = initialMarketplaceState().config;
+    const config = initialMarketplaceState(SERVICES).config;
     expect(BASELINE_EXCLUDED_SERVICE_ID).toBe(EMERGENCY);
     expect(config.selected).not.toContain(EMERGENCY);
     expect(config.order).toContain(EMERGENCY);
     const emergency = SERVICES.find((service) => service.id === EMERGENCY)!;
     expect(emergency).toMatchObject({ name: "Emergency No-Heat / No-Cool Service", active: true, visibility: "public-booking" });
-    expect(getPublicActiveServices().map((service) => service.id)).toContain(EMERGENCY);
+    expect(getPublicActiveServices(SERVICES).map((service) => service.id)).toContain(EMERGENCY);
   });
 
   test("the listing owns no business or Service data, only its own configuration", () => {
-    const text = JSON.stringify(initialMarketplaceState());
+    const text = JSON.stringify(initialMarketplaceState(SERVICES));
     for (const value of [business.name, business.phone, business.email, business.address.street, business.hours[0].hours, business.website]) {
       expect(text, value).not.toContain(value);
     }
@@ -81,26 +82,26 @@ test.describe("marketplace data", () => {
       expect(text).not.toContain(service.description);
     }
     // Services are held as ids only.
-    expect(Object.keys(initialMarketplaceState().config).sort()).toEqual(["actions", "contact", "cover", "description", "order", "selected"]);
+    expect(Object.keys(initialMarketplaceState(SERVICES).config).sort()).toEqual(["actions", "contact", "cover", "description", "order", "selected"]);
   });
 
   test("reordering and selecting Services never mutates the Services themselves", () => {
     const before = JSON.stringify(SERVICES);
-    const config = defaultListingConfig();
+    const config = defaultListingConfig(SERVICES);
     const moved = moveService(config, "annual-cooling-tune-up", -1);
-    expect(getOrderedEligibleServices(moved)[0].id).toBe("annual-cooling-tune-up");
-    expect(getListingServices(moved)[0].id).toBe("annual-cooling-tune-up");
+    expect(getOrderedEligibleServices(moved, SERVICES)[0].id).toBe("annual-cooling-tune-up");
+    expect(getListingServices(moved, SERVICES)[0].id).toBe("annual-cooling-tune-up");
     expect(config.order[0]).toBe("ac-repair-diagnostics");
     // Ends are left alone.
     expect(moveService(config, config.order[0], -1)).toBe(config);
     const withEmergency = toggleService(config, EMERGENCY, true);
-    expect(getListingServices(withEmergency)).toHaveLength(6);
-    expect(getListingServices(toggleService(withEmergency, EMERGENCY, false))).toHaveLength(5);
+    expect(getListingServices(withEmergency, SERVICES)).toHaveLength(6);
+    expect(getListingServices(toggleService(withEmergency, EMERGENCY, false), SERVICES)).toHaveLength(5);
     expect(JSON.stringify(SERVICES)).toBe(before);
   });
 
   test("hiding keeps the saved configuration; publishing restores it; edits save without changing the status", () => {
-    const state = initialMarketplaceState();
+    const state = initialMarketplaceState(SERVICES);
     const edited = saveListing(state, { ...state.config, description: "A new description.", contact: { ...state.config.contact, phone: false } });
     expect(edited.status).toBe("published");
     const hidden = hideListing(edited);
@@ -116,7 +117,7 @@ test.describe("marketplace data", () => {
   });
 
   test("first-time setup saves and publishes in one step", () => {
-    const state = { status: "not-set-up" as const, config: defaultListingConfig() };
+    const state = { status: "not-set-up" as const, config: defaultListingConfig(SERVICES) };
     const result = setUpListing(state, { ...state.config, description: "Our listing." });
     expect(result.status).toBe("published");
     expect(result.config.description).toBe("Our listing.");
@@ -381,7 +382,7 @@ test.describe("Phase 6 source", () => {
   });
 
   test("the Marketplace, Reviews and Marketing data never copy Service, business or customer details", () => {
-    const text = JSON.stringify([initialMarketplaceState(), REVIEWS_DATA, MARKETING_DATA]);
+    const text = JSON.stringify([initialMarketplaceState(SERVICES), REVIEWS_DATA, MARKETING_DATA]);
     for (const service of SERVICES) expect(text).not.toContain(service.description);
     for (const value of [business.phone, business.email, business.address.street]) expect(text).not.toContain(value);
     expect(text).not.toContain("sarah.m@gmail.com");

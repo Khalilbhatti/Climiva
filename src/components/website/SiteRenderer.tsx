@@ -20,6 +20,7 @@ import { defaultPageContent, getShownServices, type PageId, type SiteContent } f
 import { cn } from "@/lib/cn";
 import { toTelHref } from "@/lib/format";
 import { previewHref } from "./site-links";
+import { useServices } from "@/components/services/ServicesProvider";
 
 /**
  * The customer-facing website, drawn from the saved content plus the shared records it is connected to:
@@ -152,7 +153,8 @@ function ServiceCard({ service, live, full }: { service: Service; live?: boolean
 }
 
 function ServiceGrid({ content, live, full }: { content: SiteContent; live?: boolean; full?: boolean }) {
-  const shown = getShownServices(content.services);
+  const { services: catalog } = useServices();
+  const shown = getShownServices(content.services, catalog);
   if (shown.length === 0) {
     return <p className="rounded-card bg-surface-low p-4 text-sm text-ink-muted">No services are shown on the website right now.</p>;
   }
@@ -311,6 +313,7 @@ function ContactForm() {
 
 export function SiteRenderer({ page, content, live, activeSection, embedded }: Props) {
   const business = useBusiness();
+  const { services: catalog } = useServices();
   const Title: "h1" | "h2" = embedded ? "h2" : "h1";
   const section = useSectionValues(content, page);
   const sections = content.pages[page];
@@ -481,7 +484,7 @@ export function SiteRenderer({ page, content, live, activeSection, embedded }: P
 
   const intro = section("intro");
   const alt = section("alternative");
-  const shown = getShownServices(content.services);
+  const shown = getShownServices(content.services, catalog);
   return (
     <>
       {show("intro") && (

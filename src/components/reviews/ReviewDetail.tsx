@@ -17,8 +17,10 @@ import { formatDate } from "@/lib/format";
 import { ReplyModal } from "./ReplyModal";
 import { useReviews } from "./ReviewsProvider";
 import { ReviewStatusBadge, Stars, reviewerName } from "./review-ui";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 export function ReviewDetail({ reviewId }: { reviewId: string }) {
+  const dir = useDirectory();
   const { data } = useReviews();
   const review = getReviewById(reviewId, data);
   const [dialog, setDialog] = useState<"reply" | "edit" | null>(null);
@@ -36,9 +38,9 @@ export function ReviewDetail({ reviewId }: { reviewId: string }) {
     );
   }
 
-  const name = reviewerName(review);
+  const name = reviewerName(review, dir);
   const status = getReviewStatus(review);
-  const customer = review.customerId ? getCustomerById(review.customerId) : undefined;
+  const customer = review.customerId ? getCustomerById(review.customerId, dir) : undefined;
   const job = review.relatedJobId ? getJobById(review.relatedJobId) : undefined;
   const response = review.response;
 
@@ -132,7 +134,7 @@ export function ReviewDetail({ reviewId }: { reviewId: string }) {
                 <li>
                   <p className="text-micro font-bold tracking-wider text-ink-muted uppercase">Job #{job.id}</p>
                   <Link href={jobHref(job.id)} className="mt-1 flex items-center justify-between gap-2 rounded-btn bg-surface-low p-3 font-medium text-ink hover:text-primary">
-                    #{job.id} · {getServiceNameFor(job)}
+                    #{job.id} · {getServiceNameFor(job, dir)}
                     <span className="inline-flex items-center gap-1 text-xs font-semibold text-primary">
                       View job
                       <ArrowRight aria-hidden className="size-3.5" />

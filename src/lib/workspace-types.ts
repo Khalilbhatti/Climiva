@@ -6,18 +6,17 @@
  * active member of, and the settings of the one that is active. Never an id the server did not verify.
  */
 import type { SettingsData } from "@/data/settings";
+import type { Capability } from "./policy";
 
 export type OrganizationRole = "owner" | "admin" | "member";
 
 export const ROLE_LABEL: Record<OrganizationRole, string> = { owner: "Owner", admin: "Admin", member: "Member" };
 
-/** Roles that may change the workspace itself (Business information, hours, preferences). */
-export const MANAGER_ROLES: readonly OrganizationRole[] = ["owner", "admin"];
-export const canManage = (role: OrganizationRole) => MANAGER_ROLES.includes(role);
-
 /**
  * The transitional switch (see docs/saas-architecture.md): organizations flagged with this value still see the sample
- * content of modules that have not moved to PostgreSQL. Any other organization sees those modules as not yet available.
+ * content of modules that have not moved to PostgreSQL (Bookings, Schedule, Jobs, the money modules, Reviews, Marketing,
+ * Analytics, Website, Marketplace). Any other organization sees those modules as not yet available. Customers, Services
+ * and Team are on PostgreSQL and are NOT behind this switch.
  */
 export const SAMPLE_DATA_SET = "apex-demo";
 
@@ -32,5 +31,7 @@ export type WorkspaceSnapshot = {
   hasSampleData: boolean;
   /** Whether this person may edit the workspace's settings. */
   canEditSettings: boolean;
+  /** Everything this person may change in the active workspace (see lib/policy). The server decides again on every write. */
+  capabilities: Capability[];
   settings: SettingsData;
 };

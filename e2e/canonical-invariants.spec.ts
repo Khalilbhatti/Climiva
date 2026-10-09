@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { expect, test } from "playwright/test";
 import { buildAnalytics } from "../src/lib/analytics-state";
 import { recordPayment } from "../src/lib/financial-state";
-import { CUSTOMERS, getCustomerById, getPropertiesForCustomer, getPropertyById } from "../src/data/customers";
+import { getCustomerById, getPropertiesForCustomer, getPropertyById } from "../src/data/customers";
 import {
   BOOKING_BREAKDOWN,
   JOB_BREAKDOWN,
@@ -35,10 +35,11 @@ import { CAMPAIGN_BASELINE, MARKETING_DATA, getCampaignMetrics } from "../src/da
 import { BASELINE_EXCLUDED_SERVICE_ID, getEligibleServices, getListingServices, initialMarketplaceState } from "../src/data/marketplace";
 import { BOOKINGS, JOBS, OPERATIONS, SCHEDULE_BLOCKS, RESERVED_BOOKING_NUMBERS, getBookingById, getJobById } from "../src/data/operations";
 import { REVIEWS, REVIEWS_DATA, REVIEW_BASELINE, getReviewById, getReviewMetrics } from "../src/data/reviews";
-import { SERVICES, getPublicActiveServices } from "../src/data/services";
+import { getPublicActiveServices } from "../src/data/services";
 import { initialSettings } from "../src/data/settings";
-import { ROLES, TEAM, getTeamMemberById } from "../src/data/team";
+import { getTeamMemberById } from "../src/data/team";
 import { WEBSITE_PAGES, defaultSiteContent, getShownServices } from "../src/data/website";
+import { BOOK, CUSTOMERS, ROLES, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
 
 const SIX_SERVICES = [
   "AC Repair & Diagnostics",
@@ -84,7 +85,7 @@ test.describe("the business", () => {
   test("the current user is Alex Morgan, Operations Lead, with no invented email, and is a Team member", () => {
     expect(currentUser).toEqual({ name: "Alex Morgan", role: "Operations Lead" });
     expect(initialSettings.profile).toEqual({ name: "Alex Morgan", role: "Operations Lead" });
-    const member = getTeamMemberById("alex-morgan");
+    const member = getTeamMemberById("alex-morgan", TEAM_DATA);
     expect(member).toMatchObject({ name: "Alex Morgan", role: "Operations Lead", roleId: "owner" });
     expect(member?.email).toBeUndefined();
   });
@@ -131,16 +132,16 @@ test.describe("people", () => {
   });
 
   test("Sarah Mitchell has exactly one property: Home, 1402 Kinney Ave, Austin, TX 78704", () => {
-    const properties = getPropertiesForCustomer("sarah-mitchell");
+    const properties = getPropertiesForCustomer("sarah-mitchell", BOOK);
     expect(properties).toHaveLength(1);
     expect(properties[0]).toMatchObject({ id: "prop-sarah-home", label: "Home", street: "1402 Kinney Ave", city: "Austin", state: "TX", postalCode: "78704" });
-    expect(getCustomerById("sarah-mitchell")?.name).toBe("Sarah Mitchell");
+    expect(getCustomerById("sarah-mitchell", BOOK)?.name).toBe("Sarah Mitchell");
   });
 });
 
 test.describe("the Services", () => {
   test("six public Services, with the approved names, and the plan labels are not Services", () => {
-    const services = getPublicActiveServices();
+    const services = getPublicActiveServices(SERVICES);
     expect(services.map((service) => service.name)).toEqual(SIX_SERVICES);
     expect(SERVICES.map((service) => service.name)).toEqual(SIX_SERVICES);
     const names = SERVICES.map((service) => service.name.toLowerCase());
@@ -150,17 +151,17 @@ test.describe("the Services", () => {
   });
 
   test("the Website and the Marketplace read that same list", () => {
-    expect(getShownServices(defaultSiteContent().services).map((service) => service.id)).toEqual(getPublicActiveServices().map((service) => service.id));
-    expect(getEligibleServices().map((service) => service.id)).toEqual(getPublicActiveServices().map((service) => service.id));
+    expect(getShownServices(defaultSiteContent(SERVICES).services, SERVICES).map((service) => service.id)).toEqual(getPublicActiveServices(SERVICES).map((service) => service.id));
+    expect(getEligibleServices(SERVICES).map((service) => service.id)).toEqual(getPublicActiveServices(SERVICES).map((service) => service.id));
     expect(WEBSITE_PAGES.map((page) => page.id)).toEqual(["home", "services", "about", "contact", "booking"]);
   });
 
   test("the Marketplace opens with five of the six; Emergency No-Heat / No-Cool is the one not selected", () => {
-    const listed = getListingServices(initialMarketplaceState().config);
+    const listed = getListingServices(initialMarketplaceState(SERVICES).config, SERVICES);
     expect(listed).toHaveLength(5);
     expect(listed.map((service) => service.id)).not.toContain(BASELINE_EXCLUDED_SERVICE_ID);
     expect(SERVICES.find((service) => service.id === BASELINE_EXCLUDED_SERVICE_ID)?.name).toBe("Emergency No-Heat / No-Cool Service");
-    expect(initialMarketplaceState().status).toBe("published");
+    expect(initialMarketplaceState(SERVICES).status).toBe("published");
   });
 });
 
@@ -168,13 +169,13 @@ test.describe("Job #JB-204 and Sarah's record", () => {
   test("JB-204 is Sarah Mitchell's AC Repair & Diagnostics at her one property, Completed, from BK-1042", () => {
     const job = getJobById("JB-204")!;
     expect(job).toMatchObject({ customerId: "sarah-mitchell", serviceId: "ac-repair-diagnostics", propertyId: "prop-sarah-home", status: "completed", bookingId: "BK-1042" });
-    expect(getPropertyById(job.propertyId!)?.street).toBe("1402 Kinney Ave");
+    expect(getPropertyById(job.propertyId!, BOOK)?.street).toBe("1402 Kinney Ave");
     expect(getBookingById("BK-1042")).toMatchObject({ customerId: "sarah-mitchell", status: "completed", jobId: "JB-204" });
   });
 
   test("Sarah's review points at JB-204, and her last service is JB-204", () => {
     expect(getReviewById("rev-sarah-mitchell")).toMatchObject({ customerId: "sarah-mitchell", relatedJobId: "JB-204", rating: 5 });
-    expect(getCustomerById("sarah-mitchell")?.lastService?.jobId).toBe("JB-204");
+    expect(getCustomerById("sarah-mitchell", BOOK)?.lastService?.jobId).toBe("JB-204");
   });
 
   test("her Comfort Care plan is $189 a year, two visits, May 14 2024 to May 14 2025, and BK-1048 is held for its cooling visit", () => {
@@ -236,7 +237,7 @@ test.describe("Growth and Insights baselines", () => {
   });
 
   test("Analytics: 24 Bookings, 18 Completed Jobs, $4,820 quoted, $6,240 invoiced, $2,130 received, all from the same sources", () => {
-    const model = buildAnalytics(FINANCIALS, PLANS_DATA, OPERATIONS);
+    const model = buildAnalytics(FINANCIALS, PLANS_DATA, OPERATIONS, SERVICES);
     expect(model.kpis).toEqual({ bookings: 24, completedJobs: 18, quoteValue: 4820, invoiced: 6240, paymentsReceived: 2130 });
     expect(model.bookings.total).toBe(24);
     expect(model.jobs.completed).toBe(18);

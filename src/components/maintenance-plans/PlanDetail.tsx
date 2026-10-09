@@ -34,6 +34,7 @@ import { formatDate, formatMonthYear, toTelHref } from "@/lib/format";
 import { useMaintenancePlans } from "./MaintenancePlansProvider";
 import { ScheduleVisitModal } from "./ScheduleVisitModal";
 import { PlanCustomerName, PlanStatusBadge, planCustomerName, planProperty, visitTitle } from "./plan-ui";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 export function PlanDetail({ planId }: { planId: string }) {
   const { data } = useMaintenancePlans();
@@ -54,12 +55,13 @@ export function PlanDetail({ planId }: { planId: string }) {
 }
 
 function PlanPage({ plan }: { plan: MaintenancePlan }) {
+  const dir = useDirectory();
   const { data: ops } = useOperations();
   const [scheduling, setScheduling] = useState<PlanVisit | null>(null);
 
-  const customer = plan.customerId ? getCustomerById(plan.customerId) : undefined;
-  const property = planProperty(plan);
-  const name = planCustomerName(plan);
+  const customer = plan.customerId ? getCustomerById(plan.customerId, dir) : undefined;
+  const property = planProperty(plan, dir);
+  const name = planCustomerName(plan, dir);
   const next = getNextVisit(plan, ops);
   const completed = getCompletedVisitCount(plan, ops);
   const percent = plan.visitsPerYear > 0 ? Math.round((completed / plan.visitsPerYear) * 100) : 0;
@@ -336,6 +338,7 @@ function PlanPage({ plan }: { plan: MaintenancePlan }) {
 }
 
 function UpcomingVisit({ plan, visit, onSchedule }: { plan: MaintenancePlan; visit: PlanVisit; onSchedule?: () => void }) {
+  const dir = useDirectory();
   const { data: ops } = useOperations();
   const booking = getVisitBooking(visit, ops);
   const state = getVisitState(visit, ops);
@@ -357,7 +360,7 @@ function UpcomingVisit({ plan, visit, onSchedule }: { plan: MaintenancePlan; vis
           <p className="mt-1">
             {formatWeekdayDate(booking.date)}, {formatDate(booking.date)} · {formatTimeRange(booking.start, booking.end)}
           </p>
-          <p className="text-xs text-ink-muted">Technician: {getAssigneeName(booking) ?? "Unassigned"}</p>
+          <p className="text-xs text-ink-muted">Technician: {getAssigneeName(booking, dir) ?? "Unassigned"}</p>
           <Link
             href={`/bookings?tab=upcoming&booking=${booking.id}`}
             className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"

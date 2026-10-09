@@ -4,3 +4,6 @@ export * from "./memberships";
 export * from "./profiles";
 export * from "./business-hours";
 export * from "./sites";
+export * from "./customers";
+export * from "./services";
+export * from "./team";

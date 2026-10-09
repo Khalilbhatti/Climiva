@@ -24,12 +24,14 @@ import { getPartyName } from "@/data/operations";
 import { useFinancials } from "./FinancialProvider";
 import { InvoiceStatusBadge } from "./StatusBadges";
 import { usd } from "./shared";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 /**
  * Void a recorded payment. It stays in the invoice's history as Voided and stops counting toward the balance;
  * related quote, job and booking are not changed. This is separate from Record payment: it never creates a payment.
  */
 export function VoidPaymentModal({ payment, onClose }: { payment: Payment; onClose: () => void }) {
+  const dir = useDirectory();
   const { data, voidPayment } = useFinancials();
   const invoice = getInvoiceById(payment.invoiceId, data) as Invoice;
 
@@ -130,7 +132,7 @@ export function VoidPaymentModal({ payment, onClose }: { payment: Payment; onClo
             #{payment.id} · {usd(payment.amount)}
           </p>
           <p className="text-xs text-ink-muted">
-            {getPartyName(invoice)} · Method: {PAYMENT_METHOD_LABEL[payment.method]}
+            {getPartyName(invoice, dir)} · Method: {PAYMENT_METHOD_LABEL[payment.method]}
           </p>
           <p className="mt-2 flex items-center gap-2 text-xs text-ink">
             Status: Recorded <ArrowRight aria-hidden className="size-3.5" /> Voided

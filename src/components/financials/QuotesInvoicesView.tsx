@@ -28,13 +28,13 @@ import {
   type QuoteStatus,
 } from "@/data/financials";
 import { getPartyName } from "@/data/operations";
-import { SERVICES } from "@/data/services";
 import { formatMonthDay } from "@/lib/dates";
 import { cn } from "@/lib/cn";
 import { formatDate } from "@/lib/format";
 import { useFinancials } from "./FinancialProvider";
 import { InvoiceStatusBadge, QuoteStatusBadge } from "./StatusBadges";
 import { PartyName, usd } from "./shared";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 type TabId = "quotes" | "invoices";
 
@@ -76,6 +76,7 @@ function StatusFilter<T extends string>({
 }
 
 export function QuotesInvoicesView() {
+  const dir = useDirectory();
   const { data } = useFinancials();
   const router = useRouter();
   const params = useSearchParams();
@@ -93,15 +94,15 @@ export function QuotesInvoicesView() {
 
   const needle = query.trim().toLowerCase();
   const matches = (record: Quote | Invoice) =>
-    `${record.id} ${getPartyName(record)} ${getRelatedWork(record)}`.toLowerCase().includes(needle) &&
-    (customer === "all" || getPartyName(record) === customer) &&
+    `${record.id} ${getPartyName(record, dir)} ${getRelatedWork(record, dir.services)}`.toLowerCase().includes(needle) &&
+    (customer === "all" || getPartyName(record, dir) === customer) &&
     (service === "all" || record.serviceId === service);
 
   const visibleQuotes = quotes.filter((quote) => matches(quote) && (quoteStatus === "all" || quote.status === quoteStatus));
   const visibleInvoices = invoices.filter((invoice) => matches(invoice) && (invoiceStatus === "all" || statusOf(invoice.id) === invoiceStatus));
   const filtering = needle !== "" || customer !== "all" || service !== "all" || (tabId === "quotes" ? quoteStatus !== "all" : invoiceStatus !== "all");
 
-  const customerNames = [...new Set([...quotes, ...invoices].map((record) => getPartyName(record)))].sort();
+  const customerNames = [...new Set([...quotes, ...invoices].map((record) => getPartyName(record, dir)))].sort();
   const quoteCounts = Object.fromEntries([
     ["all", quotes.length],
     ...QUOTE_STATUSES.map((status) => [status, quotes.filter((quote) => quote.status === status).length]),
@@ -188,7 +189,7 @@ export function QuotesInvoicesView() {
             <div className="w-56">
               <Select label="Service" hideLabel value={service} onChange={(event) => setService(event.target.value)}>
                 <option value="all">Service: All</option>
-                {SERVICES.map((item) => (
+                {dir.services.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
                   </option>
@@ -237,7 +238,7 @@ export function QuotesInvoicesView() {
                           <PartyName record={quote} />
                         </TableCell>
                         <TableCell className="max-w-56">
-                          <div>{getRelatedWork(quote)}</div>
+                          <div>{getRelatedWork(quote, dir.services)}</div>
                           {quote.jobId && <div className="text-xs text-ink-muted">Job #{quote.jobId}</div>}
                         </TableCell>
                         <TableCell className="text-right font-semibold whitespace-nowrap">{usd(getQuoteTotal(quote))}</TableCell>
@@ -299,7 +300,7 @@ export function QuotesInvoicesView() {
                           <PartyName record={invoice} />
                         </TableCell>
                         <TableCell className="max-w-56">
-                          <div>{getRelatedWork(invoice)}</div>
+                          <div>{getRelatedWork(invoice, dir.services)}</div>
                           {invoice.jobId && <div className="text-xs text-ink-muted">Job #{invoice.jobId}</div>}
                         </TableCell>
                         <TableCell className="text-right font-semibold whitespace-nowrap">{usd(getInvoiceTotal(invoice))}</TableCell>

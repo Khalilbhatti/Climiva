@@ -3,6 +3,7 @@
  * seven days of hours and a first site, in one transaction, and nothing else).
  */
 import { randomBytes } from "node:crypto";
+import { SYSTEM_ROLES } from "../src/data/team";
 import { completeOnboarding, expect, expectAccessible, NOT_SIGNED_IN, openForm, signUp, switcher, test, waitsForHydration } from "./saas";
 
 /** A business name no earlier run can have used, so the stored address is predictable on a database that is being reused. */
@@ -163,8 +164,8 @@ test.describe("creating the workspace", () => {
     expect((await db.query("select full_name from profiles where user_id = $1", [user.id])).rows[0].full_name).toBe("Dana Founder");
   });
 
-  test("the new workspace is empty: no customers, services, jobs, bookings or money, and no sample data", async ({ page }) => {
-    await signUp(page);
+  test("the new workspace is empty: no customers, services, jobs, bookings or money, and no sample data", async ({ page, db }) => {
+    const owner = await signUp(page, { name: "Dana Founder" });
     await completeOnboarding(page, { name: "Blank Slate Cooling" });
     await expect(page.getByText("Your workspace is ready")).toBeVisible();
     await expect(page.getByRole("region", { name: "Key metrics" })).toHaveCount(0);
@@ -173,11 +174,38 @@ test.describe("creating the workspace", () => {
     await expect(switcher(page)).toContainText("Blank Slate Cooling");
     // Sidebar counts belong to the sample business.
     await expect(page.getByRole("navigation", { name: "Primary" }).locator("a span.font-mono")).toHaveCount(0);
-    for (const [path, name] of [["/customers", "Customers"], ["/jobs", "Jobs"], ["/payments", "Payments"], ["/bookings", "Bookings"], ["/services", "Services"], ["/quotes-invoices", "Quotes & Invoices"]]) {
+    // The modules that still run on sample data say so.
+    for (const [path, name] of [["/jobs", "Jobs"], ["/payments", "Payments"], ["/bookings", "Bookings"], ["/quotes-invoices", "Quotes & Invoices"]]) {
       await page.goto(path);
       await expect(page.getByRole("heading", { level: 2, name: `${name} isn't available for Blank Slate Cooling yet` })).toBeVisible();
       await expect(page.getByText("Sarah Mitchell")).toHaveCount(0);
     }
+    // Customers and Services are the business's own now, and it has none yet.
+    await page.goto("/customers");
+    await expect(page.getByRole("heading", { name: "No customers yet" })).toBeVisible();
+    await page.goto("/services");
+    await expect(page.getByRole("heading", { name: "No services configured yet" })).toBeVisible();
+    await expect(page.getByText("Sarah Mitchell")).toHaveCount(0);
+    await expect(page.getByText("AC Repair & Diagnostics")).toHaveCount(0);
+    // The team is the owner alone.
+    await page.goto("/team");
+    const members = page.getByRole("table", { name: "Team members" }).locator("tbody tr");
+    await expect(members).toHaveCount(1);
+    await expect(members.first()).toContainText("Dana Founder");
+    await expect(members.first()).toContainText("Owner");
+
+    // What was stored: the owner's team record and the standard roles, and no customers or Services.
+    const counts = await db.query<{ roles: number; members: number; customers: number; services: number; properties: number; equipment: number }>(
+      `select (select count(*)::int from team_roles where organization_id = o.id) as roles,
+              (select count(*)::int from team_members where organization_id = o.id) as members,
+              (select count(*)::int from customers where organization_id = o.id) as customers,
+              (select count(*)::int from services where organization_id = o.id) as services,
+              (select count(*)::int from customer_properties where organization_id = o.id) as properties,
+              (select count(*)::int from equipment where organization_id = o.id) as equipment
+       from organizations o join organization_memberships m on m.organization_id = o.id join auth_user u on u.id = m.user_id where u.email = $1`,
+      [owner],
+    );
+    expect(counts.rows).toEqual([{ roles: SYSTEM_ROLES.length, members: 1, customers: 0, services: 0, properties: 0, equipment: 0 }]);
   });
 
   test("the person is the owner, and Business information, hours and preferences are real and theirs", async ({ page }) => {

@@ -14,9 +14,13 @@
  *   taylor.brooks@northstar.test Northstar owner                                     -> Northstar only   (User B)
  *   casey.nguyen@climvia.test    admin in BOTH                                       -> Apex + Northstar (User C)
  *
+ * Each business also gets its core data: customers with their properties and equipment, Services, and the team with its
+ * roles. Apex has the full approved set (scripts/db/seed-data); Northstar has a few clearly different records. The records
+ * are written through the SAME functions the application uses (src/db/core-queries.ts), with stable ids.
+ *
  * Every function is idempotent: running the seed twice changes nothing the second time.
  */
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { business, businessHoursByWeekday, currentUser, BUSINESS_TIME_ZONE } from "../../src/data/fixtures";
@@ -27,10 +31,25 @@ import {
   DEFAULT_COUNTRY,
 } from "../../src/db/settings-mappers";
 import * as schema from "../../src/db/schema";
+import type { CustomerBook } from "../../src/data/customers";
+import type { Service } from "../../src/data/services";
+import { EMPTY_TEAM, type TeamData } from "../../src/data/team";
+import { clearCoreData, insertCustomerBook, insertServices, persistTeamData } from "../../src/db/core-queries";
 import { createAuth, type Auth } from "../../src/lib/auth";
 import { adminDb, adminUrl, appUrl, requireEnv } from "./lib";
+import { CUSTOMERS, EQUIPMENT, PROPERTIES } from "./seed-data/customers";
+import {
+  NORTHSTAR_CUSTOMERS,
+  NORTHSTAR_EQUIPMENT,
+  NORTHSTAR_PROPERTIES,
+  NORTHSTAR_ROLES,
+  NORTHSTAR_SERVICES,
+  NORTHSTAR_TEAM,
+} from "./seed-data/northstar";
+import { SERVICES } from "./seed-data/services";
+import { ROLES, TEAM } from "./seed-data/team";
 
-const { authUser, organizationBusinessHours, organizationMemberships, organizations, profiles, sites } = schema;
+const { authUser, organizationBusinessHours, organizationMemberships, organizations, profiles, services, sites, teamMembers } = schema;
 
 type AdminDb = ReturnType<typeof adminDb>["db"];
 
@@ -96,6 +115,30 @@ export const NORTHSTAR: OrganizationSpec = {
   },
   fixtureSet: null,
   sites: [{ name: "Northstar Heating & Cooling", slug: "main" }],
+};
+
+/** A business's core records: what the Customers, Services and Team modules show. */
+export type CoreDataset = {
+  book: CustomerBook;
+  services: readonly Service[];
+  team: TeamData;
+  /** Team members (by slug) who have a Climvia login in the seed, by seed user key. */
+  logins: Readonly<Record<string, keyof typeof SEED_USERS>>;
+};
+
+/** The approved canonical Apex records. Alex Morgan's team record is linked to Alex's login; the other two have none. */
+export const APEX_CORE: CoreDataset = {
+  book: { customers: CUSTOMERS, properties: PROPERTIES, equipment: EQUIPMENT },
+  services: SERVICES,
+  team: { members: TEAM, roles: ROLES },
+  logins: { "alex-morgan": "alex" },
+};
+
+export const NORTHSTAR_CORE: CoreDataset = {
+  book: { customers: NORTHSTAR_CUSTOMERS, properties: NORTHSTAR_PROPERTIES, equipment: NORTHSTAR_EQUIPMENT },
+  services: NORTHSTAR_SERVICES,
+  team: { members: NORTHSTAR_TEAM, roles: NORTHSTAR_ROLES },
+  logins: { "taylor-brooks": "taylor" },
 };
 
 export const SEED_USERS = {
@@ -173,6 +216,26 @@ export async function setProfileName(admin: AdminDb, userId: string, fullName: s
   await admin.update(profiles).set({ fullName }).where(eq(profiles.userId, userId));
 }
 
+type AdminTx = Parameters<Parameters<AdminDb["transaction"]>[0]>[0];
+
+/** Write a business's core records inside a transaction. `userIds` links team members (by slug) to logins. */
+export async function writeCoreData(tx: AdminTx, organizationId: string, core: CoreDataset, userIds: Readonly<Record<string, string>> = {}): Promise<void> {
+  // The database layer is typed against the application's transaction; the owner connection runs the same statements.
+  const db = tx as never;
+  await insertServices(db, organizationId, core.services, { stableIds: true });
+  await insertCustomerBook(db, organizationId, core.book, { stableIds: true });
+  await persistTeamData(db, organizationId, EMPTY_TEAM, core.team, { stableIds: true, userIds });
+}
+
+/** Give a business its core records unless it already has them. Returns true when it wrote them. */
+export async function ensureCoreData(db: AdminDb, organizationId: string, core: CoreDataset, userIds: Readonly<Record<string, string>> = {}): Promise<boolean> {
+  const existing = await db.select({ id: services.id }).from(services).where(eq(services.organizationId, organizationId)).limit(1);
+  const members = await db.select({ id: teamMembers.id }).from(teamMembers).where(eq(teamMembers.organizationId, organizationId)).limit(1);
+  if (existing.length > 0 || members.length > 0) return false;
+  await db.transaction((tx) => writeCoreData(tx, organizationId, core, userIds));
+  return true;
+}
+
 export type SeedResult = { apexId: string; northstarId: string; users: Record<keyof typeof SEED_USERS, string> };
 
 /** The standing development data: two businesses and four people. */
@@ -196,6 +259,10 @@ export async function seedDevelopmentData(database?: string): Promise<SeedResult
     await ensureMembership(db, { organizationId: apexId, userId: users.casey, role: "admin" });
     await ensureMembership(db, { organizationId: northstarId, userId: users.taylor, role: "owner" });
     await ensureMembership(db, { organizationId: northstarId, userId: users.casey, role: "admin" });
+
+    const loginIds = (core: CoreDataset) => Object.fromEntries(Object.entries(core.logins).map(([member, key]) => [member, users[key]]));
+    await ensureCoreData(db, apexId, APEX_CORE, loginIds(APEX_CORE));
+    await ensureCoreData(db, northstarId, NORTHSTAR_CORE, loginIds(NORTHSTAR_CORE));
     return { apexId, northstarId, users };
   } finally {
     await close();
@@ -225,12 +292,36 @@ export async function ensureTestTenant(
     const userId = await ensureUser(auth, db, { email, name: currentUser.name }, password);
     const organizationId = await ensureOrganization(db, { ...APEX, slug: `apex-e2e-${index}` });
     await ensureMembership(db, { organizationId, userId, role: "owner", jobTitle: currentUser.role });
+    await ensureCoreData(db, organizationId, APEX_CORE, { "alex-morgan": userId });
     return { userId, organizationId, email, password };
   } finally {
     await close();
     await pool.end();
   }
 }
+
+/**
+ * A cheap fingerprint of a business's core records: how many there are and when the newest of each was changed. Every write
+ * the application makes to Services or the Team changes one of these (an update moves `updated_at`, an addition changes a
+ * count, and every Team write adds an activity entry), and so does an edit made directly to a customer, property or piece of
+ * equipment, so an unchanged fingerprint means the records are as they were seeded.
+ */
+export async function coreFingerprint(db: AdminDb, organizationId: string): Promise<string> {
+  const result = await db.execute<{ fingerprint: string }>(sql`
+    select concat_ws('|',
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') from customers where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') from customer_properties where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') from equipment where organization_id = ${organizationId}),
+      (select count(*) from customer_notes where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') from services where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') from team_members where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') from team_roles where organization_id = ${organizationId}),
+      (select count(*) from team_activity where organization_id = ${organizationId})
+    ) as fingerprint`);
+  return result.rows[0].fingerprint;
+}
+
+const seededFingerprints = new Map<string, string>();
 
 /** Put a test tenant back to the canonical Apex record: settings, hours, profile and the owner membership. */
 export async function resetTestTenant(db: AdminDb, tenant: { userId: string; organizationId: string }): Promise<void> {
@@ -262,4 +353,15 @@ export async function resetTestTenant(db: AdminDb, tenant: { userId: string; org
       .set({ role: "owner", status: "active", jobTitle: currentUser.role })
       .where(and(eq(organizationMemberships.organizationId, tenant.organizationId), eq(organizationMemberships.userId, tenant.userId)));
   });
+
+  // Services and the team are stored too now. Put them back only when a test changed them. The first reset in a worker always
+  // writes them: a worker that was replaced after a failing test finds the previous one's changes, and must not take them as the baseline.
+  const seeded = seededFingerprints.get(tenant.organizationId);
+  if (seeded === undefined || seeded !== (await coreFingerprint(db, tenant.organizationId))) {
+    await db.transaction(async (tx) => {
+      await clearCoreData(tx as never, tenant.organizationId);
+      await writeCoreData(tx, tenant.organizationId, APEX_CORE, { "alex-morgan": tenant.userId });
+    });
+    seededFingerprints.set(tenant.organizationId, await coreFingerprint(db, tenant.organizationId));
+  }
 }

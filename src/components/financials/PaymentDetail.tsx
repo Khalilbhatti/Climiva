@@ -26,6 +26,7 @@ import { useFinancials } from "./FinancialProvider";
 import { PaymentStatusBadge } from "./StatusBadges";
 import { CustomerCard, PartyName, RelatedRecords, usd } from "./shared";
 import { VoidPaymentModal } from "./VoidPaymentModal";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 export function PaymentDetail({ paymentId }: { paymentId: string }) {
   const { data } = useFinancials();
@@ -47,14 +48,15 @@ export function PaymentDetail({ paymentId }: { paymentId: string }) {
 }
 
 function PaymentPage({ payment, invoice }: { payment: Payment; invoice: Invoice }) {
+  const dir = useDirectory();
   const business = useBusiness();
   const { data } = useFinancials();
   const [voiding, setVoiding] = useState(false);
 
   const voided = payment.status === "voided";
   const remaining = getInvoiceBalance(invoice, data);
-  const recordedBy = getTeamMemberById(payment.recordedBy)?.name ?? "Team member";
-  const voidedBy = payment.void ? (getTeamMemberById(payment.void.by)?.name ?? "Team member") : undefined;
+  const recordedBy = getTeamMemberById(payment.recordedBy, dir.team)?.name ?? "Team member";
+  const voidedBy = payment.void ? (getTeamMemberById(payment.void.by, dir.team)?.name ?? "Team member") : undefined;
 
   return (
     <>
@@ -67,7 +69,7 @@ function PaymentPage({ payment, invoice }: { payment: Payment; invoice: Invoice 
             <PaymentStatusBadge status={payment.status} />
           </div>
           <p className="mt-1 text-sm text-ink-muted">
-            <PartyName record={invoice} /> · Invoice #{invoice.id} · {getRelatedWork(invoice)}
+            <PartyName record={invoice} /> · Invoice #{invoice.id} · {getRelatedWork(invoice, dir.services)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

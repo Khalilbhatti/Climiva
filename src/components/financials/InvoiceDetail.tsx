@@ -31,6 +31,7 @@ import { useFinancials } from "./FinancialProvider";
 import { RecordPaymentModal } from "./RecordPaymentModal";
 import { InvoiceStatusBadge, PaymentStatusBadge } from "./StatusBadges";
 import { CustomerCard, PartyName, RelatedRecords, usd } from "./shared";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 export function InvoiceDetail({ invoiceId }: { invoiceId: string }) {
   const { data } = useFinancials();
@@ -51,6 +52,7 @@ export function InvoiceDetail({ invoiceId }: { invoiceId: string }) {
 }
 
 function InvoicePage({ invoice }: { invoice: Invoice }) {
+  const dir = useDirectory();
   const business = useBusiness();
   const { data } = useFinancials();
   const [recording, setRecording] = useState(false);
@@ -63,7 +65,7 @@ function InvoicePage({ invoice }: { invoice: Invoice }) {
   const lastVoided = payments.find((payment) => payment.status === "voided");
   const reopened = balance > 0 && lastVoided !== undefined;
   const due = getInvoiceDue(invoice);
-  const work = getRelatedWork(invoice);
+  const work = getRelatedWork(invoice, dir.services);
 
   return (
     <>

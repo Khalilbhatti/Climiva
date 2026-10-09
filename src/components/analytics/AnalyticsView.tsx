@@ -7,6 +7,7 @@ import { CalendarDays, CalendarX, ChevronDown, Download, RotateCcw } from "lucid
 import { useFinancials } from "@/components/financials/FinancialProvider";
 import { useMaintenancePlans } from "@/components/maintenance-plans/MaintenancePlansProvider";
 import { useOperations } from "@/components/operations/OperationsProvider";
+import { useServices } from "@/components/services/ServicesProvider";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -43,6 +44,7 @@ export function AnalyticsView() {
   const { data: financial } = useFinancials();
   const { data: plans } = useMaintenancePlans();
   const { data: operations } = useOperations();
+  const { services } = useServices();
   const router = useRouter();
   const params = useSearchParams();
 
@@ -50,7 +52,7 @@ export function AnalyticsView() {
   const range = resolveRange(params.get("range"), params.get("from"), params.get("to"));
   const active = hasActivity(range);
 
-  const model = useMemo(() => buildAnalytics(financial, plans, operations), [financial, plans, operations]);
+  const model = useMemo(() => buildAnalytics(financial, plans, operations, services), [financial, plans, operations, services]);
 
   const [picking, setPicking] = useState(false);
   const [exporting, setExporting] = useState(false);

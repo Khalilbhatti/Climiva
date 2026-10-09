@@ -25,16 +25,20 @@ import { cn } from "@/lib/cn";
 import { formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import { useMember } from "./MemberWorkspace";
 import { useTeam } from "./TeamProvider";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 
 const ACCESS_SUMMARY: ModuleId[] = ["jobs", "schedule", "customers", "quotes-invoices", "payments", "team", "settings"];
 const DAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 const LEVEL_LABEL = Object.fromEntries(PERMISSION_LEVELS.map((level) => [level.id, level.label]));
 
 export function MemberOverview() {
+  const dir = useDirectory();
   const member = useMember();
   const { data: team, setFieldAssignable } = useTeam();
   const { data: operations } = useOperations();
   const { toast } = useToast();
+  const canManage = useCan("team:manage");
   const { settings } = useSettings();
   const hoursRows = useHoursRows();
 
@@ -81,10 +85,11 @@ export function MemberOverview() {
               aria-checked={member.fieldAssignable}
               aria-labelledby="assignable-label"
               aria-describedby="assignable-hint"
-              disabled={inactive}
-              onClick={() => {
-                setFieldAssignable(member.id, !member.fieldAssignable);
-                toast(member.fieldAssignable ? `${member.name} is no longer assignable to Jobs.` : `${member.name} is now assignable to Jobs.`);
+              disabled={inactive || !canManage}
+              onClick={async () => {
+                const turningOn = !member.fieldAssignable;
+                const result = await setFieldAssignable(member.id, turningOn);
+                toast(result.ok ? (turningOn ? `${member.name} is now assignable to Jobs.` : `${member.name} is no longer assignable to Jobs.`) : result.error);
               }}
               className={cn(
                 "flex shrink-0 items-center gap-2 rounded-full px-1 py-1 pr-3 text-xs font-bold transition-colors disabled:opacity-50",
@@ -124,7 +129,7 @@ export function MemberOverview() {
                       <EventStatusBadge status={event.status} />
                     </p>
                     <p className="mt-0.5 text-sm text-ink-muted">
-                      {getServiceNameFor(event)} · {getPartyName(event)}
+                      {getServiceNameFor(event, dir)} · {getPartyName(event, dir)}
                     </p>
                     <p className="text-xs text-ink-muted">
                       {event.date === PROTOTYPE_TODAY ? "Today" : formatWeekdayDate(event.date)}, {formatTimeRange(event.start, event.end)}

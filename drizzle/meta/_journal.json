@@ -15,6 +15,20 @@
       "when": 1791548780282,
       "tag": "0001_rls_policies_and_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791559753086,
+      "tag": "0002_core_data",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791559754803,
+      "tag": "0003_core_data_rls",
+      "breakpoints": true
     }
   ]
 }

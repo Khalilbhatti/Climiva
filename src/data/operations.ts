@@ -20,6 +20,7 @@
  * Fixtures are read-only. Demo edits live in components/operations/OperationsProvider and reset on reload.
  */
 import { getCustomerById } from "./customers";
+import type { Directory } from "./directory";
 import { getServiceById } from "./services";
 import { getTeamMemberById } from "./team";
 
@@ -605,6 +606,9 @@ export const SCHEDULE_BLOCKS: readonly ScheduleBlock[] = [
 
 export const OPERATIONS: OperationsData = { bookings: BOOKINGS, jobs: JOBS, blocks: SCHEDULE_BLOCKS };
 
+/** What a business that is not the sample one has: no bookings, jobs or blocked time (these modules are not on the database yet). */
+export const EMPTY_OPERATIONS: OperationsData = { bookings: [], jobs: [], blocks: [] };
+
 /* ───────────────────────── selectors ─────────────────────────
  * Each takes optional data so the in-memory demo state can reuse the same logic. With no
  * argument they read the canonical fixtures. */
@@ -631,16 +635,16 @@ export function getJobsForCustomer(customerId: string, data: OperationsData = OP
 }
 
 /** The party on a booking or job: a Customers record, or the snapshot name for someone without one. */
-export function getPartyName(record: Pick<Booking, "customerId" | "contactName">): string {
-  return (record.customerId && getCustomerById(record.customerId)?.name) || record.contactName || "Unknown customer";
+export function getPartyName(record: Pick<Booking, "customerId" | "contactName">, dir: Pick<Directory, "customers">): string {
+  return (record.customerId && getCustomerById(record.customerId, dir)?.name) || record.contactName || "Unknown customer";
 }
 
-export function getAssigneeName(record: { assigneeId?: string }): string | undefined {
-  return getTeamMemberById(record.assigneeId)?.name;
+export function getAssigneeName(record: { assigneeId?: string }, dir: Pick<Directory, "team">): string | undefined {
+  return getTeamMemberById(record.assigneeId, dir.team)?.name;
 }
 
-export function getServiceNameFor(record: { serviceId: string }): string {
-  return getServiceById(record.serviceId)?.name ?? "Unknown service";
+export function getServiceNameFor(record: { serviceId: string }, dir: Pick<Directory, "services">): string {
+  return getServiceById(record.serviceId, dir.services)?.name ?? "Unknown service";
 }
 
 /* ───────────────────────── schedule (derived) ───────────────────────── */

@@ -12,7 +12,7 @@ import {
   type WeeklyHours,
 } from "@/data/settings";
 import { DEFAULT_DISPLAY_PREFERENCES, setDisplayPreferences } from "@/lib/display-preferences";
-import type { ActionResult } from "@/lib/action-result";
+import { send } from "@/lib/send-action";
 import * as state from "@/lib/settings-state";
 import { saveBusinessAction, saveHoursAction, savePreferencesAction, saveProfileAction } from "@/server/actions/settings";
 
@@ -31,15 +31,6 @@ type SettingsContextValue = {
 };
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
-
-/** Runs a server action; if the server cannot be reached the person gets words to read, not an uncaught error. */
-async function send<T>(call: () => Promise<ActionResult<T>>): Promise<ActionResult<T>> {
-  try {
-    return await call();
-  } catch {
-    return { ok: false, error: "We couldn't reach the server, so nothing was saved. Check your connection and try again." };
-  }
-}
 
 /**
  * The one editable copy of the business identity and workspace preferences, for the active workspace.

@@ -3,10 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight, ShieldCheck } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { Button } from "@/components/ui/Button";
 import { cardClasses } from "@/components/ui/Card";
 import { OptionCard, OptionGroup } from "@/components/ui/OptionCard";
 import { useToast } from "@/components/ui/Toast";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { MODULE_IDS, buildPermissions, countAccessibleModules, getRoleById, type Permissions } from "@/data/team";
 import { PermissionMatrix } from "./PermissionMatrix";
 import { useMember } from "./MemberWorkspace";
@@ -15,18 +17,21 @@ import { useTeam } from "./TeamProvider";
 const samePermissions = (a: Permissions, b: Permissions) => MODULE_IDS.every((id) => a[id] === b[id]);
 
 /**
- * A member either inherits their role's permissions or has their own. This edits demo configuration only:
- * there is no sign-in or enforcement behind it.
+ * A member either inherits their role's permissions or has their own. This is the business's own configuration of its
+ * team: it is stored, but it is not what the server uses to decide who can sign in or change anything.
  */
 export function MemberPermissions() {
   const member = useMember();
   const { data, setPermissionOverride } = useTeam();
   const { toast } = useToast();
+  const canManage = useCan("team:manage");
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
 
   const role = getRoleById(member.roleId, data);
   const roleName = role?.name ?? member.role;
   const rolePermissions = role?.permissions ?? buildPermissions("none");
-  const locked = member.roleId === "owner" || member.status === "inactive";
+  const locked = member.roleId === "owner" || member.status === "inactive" || !canManage;
 
   const [custom, setCustom] = useState(Boolean(member.permissionOverride));
   const [draft, setDraft] = useState<Permissions>(member.permissionOverride ?? rolePermissions);
@@ -35,14 +40,20 @@ export function MemberPermissions() {
   const dirty = custom !== savedCustom || (custom && !samePermissions(draft, member.permissionOverride ?? rolePermissions));
   const effective = custom ? draft : rolePermissions;
 
-  function save() {
-    setPermissionOverride(member.id, custom ? draft : undefined);
+  async function save() {
+    if (saving) return;
+    setSaving(true);
+    setProblem(undefined);
+    const result = await setPermissionOverride(member.id, custom ? draft : undefined);
+    setSaving(false);
+    if (!result.ok) return setProblem(result.error);
     toast(`Permissions for ${member.name} updated successfully.`);
   }
 
   function reset() {
     setCustom(false);
     setDraft(rolePermissions);
+    setProblem(undefined);
   }
 
   return (
@@ -94,6 +105,8 @@ export function MemberPermissions() {
 
       <PermissionMatrix idPrefix="member-permission" value={effective} onChange={custom && !locked ? setDraft : undefined} />
 
+      {problem && <FormAlert>{problem}</FormAlert>}
+      {!canManage && <p className="text-sm text-ink-muted">Only an owner or admin can change permissions.</p>}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-line bg-surface p-4">
         <p className="text-sm text-ink-muted" aria-live="polite">
           {custom ? "Using custom permissions" : `Inheriting permissions from the ${roleName} role`} · access to{" "}
@@ -104,7 +117,7 @@ export function MemberPermissions() {
           <Button variant="secondary" onClick={reset} disabled={locked || (!custom && !dirty)}>
             Reset to {roleName} default
           </Button>
-          <Button onClick={save} disabled={locked || !dirty}>
+          <Button onClick={save} disabled={locked || !dirty || saving}>
             Save permissions
           </Button>
         </div>

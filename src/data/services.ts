@@ -1,17 +1,13 @@
 /**
- * Canonical Service catalog.
+ * Services: the types, the labels and the pure helpers.
  *
- * The six services below are the only HVAC offerings in the product. Website, Marketplace,
- * Bookings, Jobs, Customers and Analytics must read them through the selectors in this file;
- * never retype a name, price or booking method elsewhere.
+ * A business's Services live in PostgreSQL (the `services` table), per organization, and reach the browser through the
+ * workspace snapshot. Website, Marketplace, Bookings, Jobs, Customers and Analytics read them through the selectors in
+ * this file, always with the list they were given; never retype a name, price or booking method elsewhere. The six
+ * canonical Apex Climate Services are seed data (scripts/db/seed-data/services.ts) and ship to no browser.
  *
- * Sources: design-reference/stitch/ services_main_catalog + service_detail_* screens, with the
- * names, prices and booking methods locked by climvia_development_handoff and the audit board.
- * Stitch's other catalog rows (commercial rooftop maintenance, internal warranty callback) and
- * its emergency-handling wording are intentionally not carried over.
- *
- * Fixtures are read-only. Runtime edits (Add service, Save changes) live in React state in
- * components/services/ServicesProvider and reset on reload; they never touch these arrays.
+ * A new business starts with NO Services (a future starter-template step may offer presets; see
+ * docs/saas-architecture.md).
  */
 import { formatUSD } from "@/lib/format";
 
@@ -70,156 +66,24 @@ export type Service = {
   checklist?: readonly string[];
 };
 
-export const SERVICES: readonly Service[] = [
-  {
-    id: "ac-repair-diagnostics",
-    name: "AC Repair & Diagnostics",
-    category: "Cooling",
-    audience: ["residential", "commercial"],
-    description:
-      "Comprehensive inspection of your air conditioning system. Our technician checks electrical components, refrigerant levels, compressor operation, and airflow to identify the exact cause of cooling issues. You'll receive an upfront quote before any repairs begin.",
-    internalDescription:
-      "Standard cooling diagnostic fee covering up to 60 mins of electrical and mechanical testing. Parts and subsequent repair labor billed separately upon customer quote approval.",
-    durationMinutes: 90,
-    pricing: { model: "diagnostic-fee", amount: 89, label: "diagnostic fee" },
-    bookingMethod: "request-appointment",
-    visibility: "public-booking",
-    active: true,
-    displayOrder: 1,
-    intake: [
-      {
-        id: "primary-issue",
-        prompt: "What is your primary cooling issue?",
-        type: "single-select",
-        required: true,
-        options: [
-          "Blowing warm air",
-          "System will not turn on",
-          "Making unusual humming/buzzing",
-          "Water leaking from indoor unit",
-          "Thermostat error code",
-          "Other diagnostic symptom",
-        ],
-      },
-      {
-        id: "system-type",
-        prompt: "What type of cooling system do you have?",
-        type: "single-select",
-        required: false,
-        options: ["Central AC", "Heat Pump", "Mini-Split", "Unsure"],
-      },
-      {
-        id: "system-age",
-        prompt: "Approximate age of your system",
-        type: "single-select",
-        required: false,
-        options: ["Under 5 yrs", "5 - 10 yrs", "10 - 15 yrs", "Over 15 yrs", "Don't know"],
-      },
-      {
-        id: "unit-photo",
-        prompt: "Photo of unit or thermostat (optional)",
-        type: "photo-upload",
-        required: false,
-        helper: "Allows technician to inspect model plates or error codes prior to arrival.",
-      },
-    ],
-    checklist: [
-      "Subcooling & superheat test",
-      "Capacitor & contactor inspection",
-      "Condensate drain & p-trap check",
-    ],
-  },
-  {
-    id: "annual-cooling-tune-up",
-    name: "Annual Cooling Tune-Up & Maintenance",
-    category: "Maintenance",
-    audience: ["residential"],
-    description: "21-point comprehensive seasonal inspection, coil clean, and capacitor check",
-    durationMinutes: 60,
-    pricing: { model: "fixed-price", amount: 129 },
-    bookingMethod: "instant",
-    visibility: "public-booking",
-    active: true,
-    displayOrder: 2,
-    intake: [],
-  },
-  {
-    id: "heat-pump-diagnostics-repair",
-    name: "Heat Pump Diagnostics & Repair",
-    category: "Heat pumps",
-    audience: ["residential"],
-    description: "Specialized reversing valve, defrost board, and compressor inspection",
-    durationMinutes: 90,
-    pricing: { model: "diagnostic-fee", amount: 99, label: "diagnostic fee" },
-    bookingMethod: "request-appointment",
-    visibility: "public-booking",
-    active: true,
-    displayOrder: 3,
-    intake: [],
-  },
-  {
-    id: "emergency-no-heat-no-cool",
-    name: "Emergency No-Heat / No-Cool Service",
-    category: "Emergency",
-    audience: ["residential", "commercial"],
-    description: "Urgent on-site diagnosis and repair for heating or cooling system failures",
-    durationMinutes: 60,
-    pricing: { model: "diagnostic-fee", amount: 149, label: "call fee" },
-    bookingMethod: "request-appointment",
-    visibility: "public-booking",
-    active: true,
-    displayOrder: 4,
-    intake: [],
-  },
-  {
-    id: "ductless-mini-split-estimate",
-    name: "Ductless Mini-Split Installation & Estimate",
-    category: "Cooling",
-    audience: ["residential"],
-    description: "In-home site assessment for multi-zone mini-split configuration",
-    durationMinutes: 120,
-    pricing: { model: "free-assessment" },
-    bookingMethod: "request-quote",
-    visibility: "public-booking",
-    active: true,
-    displayOrder: 5,
-    intake: [],
-  },
-  {
-    id: "furnace-safety-inspection",
-    name: "Furnace Safety Inspection & Tune-Up",
-    category: "Heating",
-    audience: ["residential"],
-    description: "Heat exchanger safety check, burner cleaning, and carbon monoxide test",
-    durationMinutes: 60,
-    pricing: { model: "fixed-price", amount: 119 },
-    bookingMethod: "instant",
-    visibility: "public-booking",
-    active: true,
-    displayOrder: 6,
-    intake: [],
-  },
-];
-
 /* ───────────────────────── selectors ─────────────────────────
- * Each accepts an optional list so the in-memory demo catalog (ServicesProvider) can reuse
- * the same logic. With no argument they read the canonical fixtures. */
+ * Each takes the workspace's list of Services. */
 
-export function getServices(list: readonly Service[] = SERVICES): Service[] {
+export function getServices(list: readonly Service[]): Service[] {
   return [...list].sort((a, b) => a.displayOrder - b.displayOrder);
 }
 
-export function getServiceById(id: string, list: readonly Service[] = SERVICES): Service | undefined {
+export function getServiceById(id: string, list: readonly Service[]): Service | undefined {
   return list.find((service) => service.id === id);
 }
 
 /** Active services shown on the public website. (Website, Marketplace.) */
-export function getPublicActiveServices(list: readonly Service[] = SERVICES): Service[] {
+export function getPublicActiveServices(list: readonly Service[]): Service[] {
   return getServices(list).filter((service) => service.active && service.visibility !== "internal");
 }
 
 /** Active services a customer can book online without staff involvement first. (Booking widget.) */
-export function getOnlineBookableServices(list: readonly Service[] = SERVICES): Service[] {
+export function getOnlineBookableServices(list: readonly Service[]): Service[] {
   return getServices(list).filter((service) => service.active && service.visibility === "public-booking");
 }
 

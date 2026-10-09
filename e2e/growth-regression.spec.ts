@@ -1,7 +1,8 @@
 import type { Page } from "playwright/test";
 import { business } from "../src/data/fixtures";
-import { SERVICES, formatServicePrice } from "../src/data/services";
+import { formatServicePrice } from "../src/data/services";
 import { expect, test } from "./fixtures";
+import { SERVICES } from "./apex-data";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
 const main = (page: Page) => page.getByRole("main");

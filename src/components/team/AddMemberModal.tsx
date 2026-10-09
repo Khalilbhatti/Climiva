@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CircleCheck } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { KeyValueList } from "@/components/ui/KeyValueList";
@@ -39,8 +40,8 @@ type Draft = {
 };
 
 /**
- * Add team member: five steps, then an Invitation sent confirmation. Nothing is emailed; the invited person
- * only exists in this session's Team data (pending until a reload clears it).
+ * Add team member: five steps, then a confirmation. The person is saved to the business's team as a pending record. Nothing
+ * is emailed and no sign-in is created: email invitations are not part of this release, and a team member is not an account.
  */
 export function AddMemberModal({ onClose }: { onClose: () => void }) {
   const { data, addMember } = useTeam();
@@ -55,6 +56,8 @@ export function AddMemberModal({ onClose }: { onClose: () => void }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [showErrors, setShowErrors] = useState(false);
   const [sent, setSent] = useState<TeamMember | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
 
@@ -90,18 +93,21 @@ export function AddMemberModal({ onClose }: { onClose: () => void }) {
     setStepIndex((index) => index + 1);
   }
 
-  function send() {
-    if (errors.name || errors.email) return;
-    setSent(
-      addMember({
-        name: draft.name,
-        email: draft.email,
-        phone: draft.phone,
-        roleId: draft.roleId,
-        fieldAssignable: draft.fieldAssignable,
-        availabilityMode: draft.availabilityMode,
-      }),
-    );
+  async function save() {
+    if (errors.name || errors.email || saving) return;
+    setSaving(true);
+    setProblem(undefined);
+    const result = await addMember({
+      name: draft.name,
+      email: draft.email,
+      phone: draft.phone,
+      roleId: draft.roleId,
+      fieldAssignable: draft.fieldAssignable,
+      availabilityMode: draft.availabilityMode,
+    });
+    setSaving(false);
+    if (result.ok) setSent(result.data.member);
+    else setProblem(result.error);
   }
 
   /* ───────── invitation sent ───────── */
@@ -111,8 +117,8 @@ export function AddMemberModal({ onClose }: { onClose: () => void }) {
       <Modal
         open
         onClose={onClose}
-        title="Invitation sent"
-        description={`An invitation was sent to ${sent.email}. Their account will remain pending until they join the workspace.`}
+        title="Team member added"
+        description={`${sent.name} is on your team as pending. No email was sent and no account was created for ${sent.email}.`}
         footer={
           <>
             <Button variant="tertiary" onClick={onClose} className="mr-auto">
@@ -135,7 +141,7 @@ export function AddMemberModal({ onClose }: { onClose: () => void }) {
         <div role="status" className="space-y-4">
           <p className="flex items-center gap-2 text-base font-semibold text-positive">
             <CircleCheck aria-hidden className="size-5" />
-            {sent.name} · Invitation pending
+            {sent.name} · Pending
           </p>
           <KeyValueList
             className="rounded-card border border-line bg-surface-low p-4"
@@ -146,7 +152,9 @@ export function AddMemberModal({ onClose }: { onClose: () => void }) {
               { label: "Availability", value: AVAILABILITY_OPTIONS.find((item) => item.id === sent.availability.mode)?.title ?? "" },
             ]}
           />
-          <p className="text-xs text-ink-muted">You can resend the invitation at any time from the Team list.</p>
+          <p className="text-xs text-ink-muted">
+            Email invitations are not available yet. Their record is saved, and it stays pending until they have a sign-in.
+          </p>
         </div>
       </Modal>
     );
@@ -161,7 +169,7 @@ export function AddMemberModal({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       size="xl"
       title="Add team member"
-      description="Invite someone to your Climvia workspace and choose what they can do."
+      description="Add someone to your team and choose how they appear in your workspace."
       footer={
         <>
           <Button variant="tertiary" onClick={onClose} className="mr-auto">
@@ -178,7 +186,13 @@ export function AddMemberModal({ onClose }: { onClose: () => void }) {
               Back
             </Button>
           )}
-          {isLast ? <Button onClick={send}>Send invitation</Button> : <Button onClick={next}>Next: {STEPS[stepIndex + 1].label}</Button>}
+          {isLast ? (
+            <Button onClick={save} disabled={saving}>
+              {saving ? "Adding…" : "Add team member"}
+            </Button>
+          ) : (
+            <Button onClick={next}>Next: {STEPS[stepIndex + 1].label}</Button>
+          )}
         </>
       }
     >
@@ -189,7 +203,7 @@ export function AddMemberModal({ onClose }: { onClose: () => void }) {
         {step.id === "role" && "What role will they have?"}
         {step.id === "field" && "Can they be assigned to Jobs?"}
         {step.id === "availability" && "When are they available?"}
-        {step.id === "review" && "Review invitation"}
+        {step.id === "review" && "Review team member"}
         <span className="sr-only">
           , step {stepIndex + 1} of {STEPS.length}
         </span>
@@ -197,7 +211,7 @@ export function AddMemberModal({ onClose }: { onClose: () => void }) {
 
       {step.id === "person" && (
         <div className="space-y-4">
-          <p className="text-sm text-ink-muted">Enter their contact details so they can be invited to your Climvia workspace.</p>
+          <p className="text-sm text-ink-muted">Enter their contact details. This saves a team record; it does not send an email or create a sign-in.</p>
           <Input
             label="Name"
             required
@@ -212,7 +226,7 @@ export function AddMemberModal({ onClose }: { onClose: () => void }) {
             required
             autoComplete="off"
             value={draft.email}
-            hint="They'll receive an invitation to join your Climvia workspace."
+            hint="Saved on their team record. No email is sent."
             error={showErrors ? errors.email : undefined}
             onChange={(event) => update({ email: event.target.value })}
           />
@@ -281,7 +295,7 @@ export function AddMemberModal({ onClose }: { onClose: () => void }) {
 
       {step.id === "review" && (
         <div className="space-y-3">
-          <p className="text-sm text-ink-muted">Check the details before sending the invitation.</p>
+          <p className="text-sm text-ink-muted">Check the details before adding them to your team.</p>
           <KeyValueList
             className="rounded-card border border-line bg-surface-low p-4"
             items={[
@@ -293,7 +307,8 @@ export function AddMemberModal({ onClose }: { onClose: () => void }) {
               { label: "Availability", value: AVAILABILITY_OPTIONS.find((item) => item.id === draft.availabilityMode)?.title ?? "" },
             ]}
           />
-          <p className="text-xs text-ink-muted">They will appear in the Team list as Invitation pending until they join.</p>
+          <p className="text-xs text-ink-muted">They will appear in the Team list as Pending. No invitation email is sent.</p>
+          {problem && <FormAlert>{problem}</FormAlert>}
         </div>
       )}
     </Modal>

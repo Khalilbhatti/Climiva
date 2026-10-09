@@ -27,6 +27,7 @@ import {
 } from "@/data/marketing";
 import { formatTime } from "@/lib/dates";
 import { useMarketing } from "./MarketingProvider";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 import { CampaignStatusBadge, ChannelBadge, DeliveryBadge, audienceName, describeDelivery, recipientsText } from "./marketing-ui";
 
 /** The message with its first-name token marked, as the approved screens show it. */
@@ -56,6 +57,7 @@ function Tile({ label, value, hint }: { label: string; value: string | number; h
 }
 
 function SentDetail({ campaign }: { campaign: Campaign }) {
+  const dir = useDirectory();
   const [filter, setFilter] = useState<"all" | DeliveryStatus>("all");
   const delivery = campaign.delivery;
   const records = (delivery?.records ?? []).filter((record) => filter === "all" || record.status === filter);
@@ -125,7 +127,7 @@ function SentDetail({ campaign }: { campaign: Campaign }) {
                   </TableHead>
                   <TableBody>
                     {records.map((record, index) => {
-                      const who = describeDelivery(record, campaign.channel);
+                      const who = describeDelivery(record, campaign.channel, dir);
                       const [date, time] = record.at.split("T");
                       return (
                         <TableRow key={`${who.name}-${index}`}>

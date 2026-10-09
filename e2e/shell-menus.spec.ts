@@ -112,7 +112,14 @@ test.describe("the open menus are accessible", () => {
     await page.goto("/");
     await expect(page.getByText("Your workspace is ready")).toBeVisible();
     await expectAccessible(page);
-    await page.goto("/customers");
+    // Customers, Services and Team are the business's own data now: Northstar's pages are real, and pass the same checks.
+    for (const path of ["/customers", "/services", "/team"]) {
+      await page.goto(path);
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await expectAccessible(page);
+    }
+    // A module that still runs on sample data says so.
+    await page.goto("/jobs");
     await expect(page.getByRole("heading", { level: 2, name: /isn't available/ })).toBeVisible();
     await expectAccessible(page);
   });

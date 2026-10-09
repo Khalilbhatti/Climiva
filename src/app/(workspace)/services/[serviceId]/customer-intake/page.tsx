@@ -1,8 +1,7 @@
 import { CustomerIntakeTab } from "@/components/services/ServiceTabs";
-import { fixtureGate } from "@/server/fixture-gate";
+import { requireWorkspaceContext } from "@/server/workspace";
 
 export default async function ServiceCustomerIntakePage() {
-  const gate = await fixtureGate("Services");
-  if (gate) return gate;
+  await requireWorkspaceContext();
   return <CustomerIntakeTab />;
 }

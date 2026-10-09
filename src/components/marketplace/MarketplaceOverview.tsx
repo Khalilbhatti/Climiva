@@ -24,6 +24,7 @@ import { getPrimaryDomain } from "@/data/website";
 import { useWebsite } from "@/components/website/WebsiteProvider";
 import { ListingView } from "./ListingView";
 import { useMarketplace } from "./MarketplaceProvider";
+import { useServices } from "@/components/services/ServicesProvider";
 
 const STATUS_TONE: Record<ListingStatus, StatusTone> = { "not-set-up": "neutral", published: "positive", hidden: "neutral" };
 
@@ -37,8 +38,9 @@ export function MarketplaceOverview() {
 
   const { config } = listing;
   const domain = getPrimaryDomain(site.domain);
-  const eligible = getEligibleServices();
-  const shown = getListingServices(config);
+  const { services: catalog } = useServices();
+  const eligible = getEligibleServices(catalog);
+  const shown = getListingServices(config, catalog);
   const notSelected = eligible.filter((service) => !config.selected.includes(service.id));
   const configured = status !== "not-set-up";
 

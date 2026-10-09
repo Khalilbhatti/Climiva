@@ -1,8 +1,7 @@
 import { MemberPermissions } from "@/components/team/MemberPermissions";
-import { fixtureGate } from "@/server/fixture-gate";
+import { requireWorkspaceContext } from "@/server/workspace";
 
 export default async function MemberPermissionsPage() {
-  const gate = await fixtureGate("Team");
-  if (gate) return gate;
+  await requireWorkspaceContext();
   return <MemberPermissions />;
 }

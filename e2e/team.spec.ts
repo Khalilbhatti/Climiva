@@ -1,6 +1,6 @@
 import type { Page } from "playwright/test";
-import { SERVICES } from "../src/data/services";
 import { expect, test } from "./fixtures";
+import { SERVICES } from "./apex-data";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
 const memberRows = (page: Page) => page.getByRole("table", { name: "Team members" }).locator("tbody tr");
@@ -20,8 +20,8 @@ async function addMember(page: Page, name = "Jordan Reyes", email = "jordan.reye
   await wizard.getByRole("button", { name: /^Next: Field access/ }).click();
   await wizard.getByRole("button", { name: /^Next: Availability/ }).click();
   await wizard.getByRole("button", { name: /^Next: Review/ }).click();
-  await wizard.getByRole("button", { name: "Send invitation" }).click();
-  return page.getByRole("dialog", { name: "Invitation sent" });
+  await wizard.getByRole("button", { name: "Add team member" }).click();
+  return page.getByRole("dialog", { name: "Team member added" });
 }
 
 test.describe("Team list", () => {
@@ -157,10 +157,10 @@ test.describe("Team member detail", () => {
     expect(await page.evaluate(() => (document.querySelector("header") as unknown as { __tag?: string }).__tag)).toBe("mounted-once");
   });
 
-  test("an unknown member shows a not-found state inside the shell", async ({ page, consoleGuard }) => {
-    consoleGuard.allow(/status of 404/);
+  test("an unknown member shows a not-found page inside the shell", async ({ page, consoleGuard }) => {
+    consoleGuard.allow(/status of 404/); // the real HTTP 404 for the missing record
     await page.goto("/team/nobody-here");
-    await expect(page.getByText("Team member not found")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "We couldn't find that page" })).toBeVisible();
     await expect(primaryNav(page)).toBeVisible();
   });
 
@@ -247,7 +247,7 @@ test.describe("Permissions", () => {
     await expect(page.getByText(/security score|2FA|device|webhook/i)).toHaveCount(0);
   });
 
-  test("customizing, saving and resetting work in the session, without any sign-in or enforcement", async ({ page }) => {
+  test("customizing, saving and resetting are stored as configuration, without any sign-in or enforcement", async ({ page }) => {
     await page.goto("/team/marcus-vance/permissions");
     await page.getByRole("radio", { name: /^Customize permissions for Marcus Vance/ }).check();
     await chooseAccess(page, "Payments", "View");
@@ -256,7 +256,7 @@ test.describe("Permissions", () => {
     await page.getByRole("button", { name: "Save permissions" }).click();
     await expect(page.getByText("Permissions for Marcus Vance updated successfully.")).toBeVisible();
 
-    // The change survives navigating away and back (same session) and is logged on the member.
+    // The change survives navigating away and back and is logged on the member.
     await memberTabs(page, "Marcus Vance").getByRole("link", { name: "Activity" }).click();
     await expect(page.getByText("Member-specific permissions set")).toBeVisible();
     await memberTabs(page, "Marcus Vance").getByRole("link", { name: "Permissions" }).click();
@@ -264,13 +264,25 @@ test.describe("Permissions", () => {
     await expect(accessGroup(page, "Payments").getByRole("radio", { name: "View" })).toBeChecked();
 
     await page.getByRole("button", { name: "Reset to Technician default" }).click();
+    // The first save's message may still be on screen, so wait for the Server Action itself to answer.
+    const stored = page.waitForResponse((response) => response.request().method() === "POST" && "next-action" in response.request().headers());
     await page.getByRole("button", { name: "Save permissions" }).click();
+    await stored;
     await expect(page.getByRole("radio", { name: /^Use role permissions/ })).toBeChecked();
     await expect(accessGroup(page, "Payments").getByRole("radio", { name: "No access" })).toBeChecked();
 
-    // Reload restores the canonical team state.
+    // A reload shows what is stored: back on the role's permissions.
     await page.reload();
     await expect(page.getByRole("radio", { name: /^Use role permissions/ })).toBeChecked();
+
+    // And a saved customization is still there after a reload.
+    await page.getByRole("radio", { name: /^Customize permissions for Marcus Vance/ }).check();
+    await chooseAccess(page, "Payments", "View");
+    await page.getByRole("button", { name: "Save permissions" }).click();
+    await expect(page.getByText("Permissions for Marcus Vance updated successfully.")).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("radio", { name: /^Customize permissions for Marcus Vance/ })).toBeChecked();
+    await expect(accessGroup(page, "Payments").getByRole("radio", { name: "View" })).toBeChecked();
   });
 
   test("the Owner's permissions are full and locked", async ({ page }) => {
@@ -309,15 +321,17 @@ test.describe("Schedule & availability", () => {
     await page.getByRole("button", { name: "Save availability" }).click();
     await expect(page.getByText("Availability for Marcus Vance saved.")).toBeVisible();
 
-    await page.goto("/team/marcus-vance/availability"); // reload: session resets, so use client navigation instead
-    await expect(page.getByLabel("Monday end")).toHaveValue("16:30");
+    await page.goto("/team/marcus-vance/availability"); // a full reload: what was saved is stored, not remembered by the page
+    await expect(page.getByLabel("Monday end")).toHaveValue("17:00");
+    await expect(page.getByLabel("Thursday end")).toHaveValue("17:00");
   });
 
-  test("saved availability shows on Overview and in the Team list (client navigation keeps the session)", async ({ page }) => {
+  test("saved availability shows on Overview and in the Team list", async ({ page }) => {
     await page.goto("/team/marcus-vance/availability");
     await page.getByLabel("Monday end").selectOption("17:00");
     await page.getByRole("button", { name: "Copy Monday to all weekdays" }).click();
     await page.getByRole("button", { name: "Save availability" }).click();
+    await expect(page.getByText("Availability for Marcus Vance saved.")).toBeVisible();
 
     await memberTabs(page, "Marcus Vance").getByRole("link", { name: "Overview" }).click();
     await expect(page.getByRole("region", { name: "Weekly availability" })).toContainText("Mon–Fri, 8:00 AM – 5:00 PM");
@@ -420,11 +434,11 @@ test.describe("Add team member", () => {
     await expect(wizard.getByRole("radio", { name: /^Technician/ })).toBeChecked();
   });
 
-  test("sends an in-session invitation: pending in the list, resendable, and not assignable", async ({ page }) => {
+  test("adds a stored team member who is pending, not assignable, and gets no email and no account", async ({ page }) => {
     const sent = await addMember(page);
     await expect(sent).toBeVisible();
-    await expect(sent).toContainText("An invitation was sent to jordan.reyes@example.com.");
-    await expect(sent).toContainText("Jordan Reyes · Invitation pending");
+    await expect(sent).toContainText("No email was sent and no account was created for jordan.reyes@example.com.");
+    await expect(sent).toContainText("Jordan Reyes · Pending");
     await expect(sent).toContainText("Technician");
     await expect(sent).toContainText("Assignable to Jobs");
 
@@ -439,8 +453,8 @@ test.describe("Add team member", () => {
     await expect(row).toContainText("Invitation pending");
     await expect(summary(page)).toContainText("3 Active · 1 Pending invite");
     await expect(summary(page)).toContainText("Jordan Reyes");
-    await row.getByRole("button", { name: "Resend invitation to Jordan Reyes" }).click();
-    await expect(page.getByText("Invitation resent to jordan.reyes@example.com.")).toBeVisible();
+    // There is no email to send again: the list offers no Resend.
+    await expect(row.getByRole("button", { name: /Resend/ })).toHaveCount(0);
 
     // A pending invitation can't be given work yet.
     await primaryNav(page).getByRole("link", { name: "Jobs" }).click();
@@ -449,9 +463,10 @@ test.describe("Add team member", () => {
     await expect(assign.getByRole("radio", { name: /^Samira Patel/ })).toBeVisible();
     await expect(assign.getByRole("radio", { name: /^Jordan Reyes/ })).toHaveCount(0);
 
-    // Nothing was sent or stored: a reload clears it.
+    // The person is stored: a reload still lists them, still pending.
     await page.goto("/team");
-    await expect(memberRows(page)).toHaveCount(3);
+    await expect(memberRows(page)).toHaveCount(4);
+    await expect(memberRows(page).filter({ hasText: "Jordan Reyes" })).toContainText("Invitation pending");
   });
 
   test("Add another team member starts over, and Escape closes the wizard", async ({ page }) => {
@@ -470,8 +485,8 @@ test.describe("Deactivate member", () => {
     await page.goto("/team/marcus-vance");
     await page.getByRole("button", { name: "Deactivate member" }).click();
     const dialog = page.getByRole("dialog", { name: "Deactivate Marcus Vance?" });
-    await expect(dialog).toContainText("Climvia access");
-    await expect(dialog).toContainText("Removed");
+    await expect(dialog).toContainText("Sign-in & workspace access");
+    await expect(dialog).toContainText("Unchanged");
     await expect(dialog).toContainText("Historical Jobs & activity");
     await expect(dialog).toContainText("Preserved");
     await expect(dialog).toContainText("Marcus has 1 upcoming Job assignment");
@@ -587,7 +602,7 @@ test.describe("Roles", () => {
     await expect(page.getByRole("heading", { name: "Today (Oct 25)" })).toBeVisible();
   });
 
-  test("system role names are fixed, the Owner role is read-only, and unknown roles show a not-found state", async ({ page, consoleGuard }) => {
+  test("system role names are fixed, the Owner role is read-only, and unknown roles show a not-found page", async ({ page, consoleGuard }) => {
     await page.goto("/team/roles/technician");
     await expect(page.getByLabel("Role name")).toHaveAttribute("readonly", "");
 
@@ -598,7 +613,7 @@ test.describe("Roles", () => {
 
     consoleGuard.allow(/status of 404/);
     await page.goto("/team/roles/not-a-role");
-    await expect(page.getByText("Role not found")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "We couldn't find that page" })).toBeVisible();
   });
 
   test("Create role validates the name, copies a template's permissions and adds a custom role", async ({ page }) => {
@@ -636,7 +651,7 @@ test.describe("Roles", () => {
     await expect(accessGroup(page, "Jobs").getByRole("radio", { name: "Manage" })).toBeChecked();
   });
 
-  test("new members can be invited into a custom role", async ({ page }) => {
+  test("new members can be added with a custom role", async ({ page }) => {
     await page.goto("/team/roles/new");
     await page.getByLabel("Role name").fill("Parts Coordinator");
     await page.getByRole("button", { name: "Create role" }).click();

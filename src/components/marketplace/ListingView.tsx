@@ -12,6 +12,7 @@ import { getListingServices, type CoverId, type ListingConfig } from "@/data/mar
 import { BOOKING_METHOD_ACTION, formatDuration, formatServicePrice } from "@/data/services";
 import { cn } from "@/lib/cn";
 import { toTelHref } from "@/lib/format";
+import { useServices } from "@/components/services/ServicesProvider";
 
 const COVER_CLASS: Record<CoverId, string> = {
   "teal-horizon": "bg-gradient-to-br from-primary via-primary to-primary-hover text-white/25",
@@ -61,7 +62,8 @@ export function ListingView({ config, domain, variant, className }: ListingViewP
   const business = useBusiness();
   const brandStyle = useBrandStyle();
   const hoursLines = useHoursRows().map((row) => `${row.days} ${row.hours}`);
-  const services = getListingServices(config);
+  const { services: catalog } = useServices();
+  const services = getListingServices(config, catalog);
   const page = variant === "page";
   // On the public directory page the business name is the page's heading; the picture inside the workspace sits under its own.
   const Name: "h1" | "h2" = page ? "h1" : "h2";

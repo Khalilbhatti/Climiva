@@ -16,6 +16,7 @@ import {
 import { getShownServices } from "@/data/website";
 import { previewHref } from "./site-links";
 import { useWebsite } from "./WebsiteProvider";
+import { useServices } from "@/components/services/ServicesProvider";
 
 /**
  * Booking tab: what a customer can do on the website, read from the Services catalog. This is a view, not a
@@ -23,7 +24,8 @@ import { useWebsite } from "./WebsiteProvider";
  */
 export function BookingSetup() {
   const { site } = useWebsite();
-  const shown = getShownServices((site.published ? site.live : site.draft).services);
+  const { services: catalog } = useServices();
+  const shown = getShownServices((site.published ? site.live : site.draft).services, catalog);
   const online = shown.filter((service) => service.visibility === "public-booking");
 
   return (

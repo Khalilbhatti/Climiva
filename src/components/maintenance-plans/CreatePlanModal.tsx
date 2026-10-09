@@ -11,7 +11,6 @@ import { Select } from "@/components/ui/Select";
 import { StepList } from "@/components/ui/StepList";
 import { Textarea } from "@/components/ui/Textarea";
 import {
-  CUSTOMERS,
   formatPropertyAddress,
   formatPropertyCityLine,
   getCustomerById,
@@ -33,6 +32,7 @@ import {
 import { slugify } from "@/lib/team-state";
 import { formatDate } from "@/lib/format";
 import { useMaintenancePlans } from "./MaintenancePlansProvider";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 const STEPS = [
   { id: "customer", label: "Customer" },
@@ -70,9 +70,10 @@ type CreatePlanModalProps = {
  * information about the agreement; nothing is billed.
  */
 export function CreatePlanModal({ presetCustomerId, onClose, onScheduleFirstVisit }: CreatePlanModalProps) {
+  const dir = useDirectory();
   const { data, createPlan } = useMaintenancePlans();
 
-  const preset = presetCustomerId ? getCustomerById(presetCustomerId) : undefined;
+  const preset = presetCustomerId ? getCustomerById(presetCustomerId, dir) : undefined;
   const [draft, setDraft] = useState<Draft>({
     customerId: preset?.id,
     propertyId: preset?.propertyIds[0],
@@ -92,9 +93,9 @@ export function CreatePlanModal({ presetCustomerId, onClose, onScheduleFirstVisi
   const firstRender = useRef(true);
 
   const step = STEPS[stepIndex];
-  const customer = draft.customerId ? getCustomerById(draft.customerId) : undefined;
-  const properties = customer ? getPropertiesForCustomer(customer.id) : [];
-  const property = draft.propertyId ? getPropertyById(draft.propertyId) : undefined;
+  const customer = draft.customerId ? getCustomerById(draft.customerId, dir) : undefined;
+  const properties = customer ? getPropertiesForCustomer(customer.id, dir) : [];
+  const property = draft.propertyId ? getPropertyById(draft.propertyId, dir) : undefined;
   const existing = customer ? getCurrentPlanForCustomer(customer.id, data) : undefined;
   const visits = COVERAGE_IDS.reduce((sum, id) => sum + draft.coverage[id], 0);
   const price = Number(draft.price);
@@ -156,8 +157,8 @@ export function CreatePlanModal({ presetCustomerId, onClose, onScheduleFirstVisi
 
   /* ───────── created ───────── */
   if (created) {
-    const createdCustomer = created.customerId ? getCustomerById(created.customerId) : undefined;
-    const createdProperty = created.propertyId ? getPropertyById(created.propertyId) : undefined;
+    const createdCustomer = created.customerId ? getCustomerById(created.customerId, dir) : undefined;
+    const createdProperty = created.propertyId ? getPropertyById(created.propertyId, dir) : undefined;
     return (
       <Modal
         open
@@ -248,8 +249,8 @@ export function CreatePlanModal({ presetCustomerId, onClose, onScheduleFirstVisi
       {step.id === "customer" && (
         <div>
           <OptionGroup legend="Existing customer" hint="Select an existing customer from your directory.">
-            {CUSTOMERS.map((item) => {
-              const home = getPropertyById(item.propertyIds[0]);
+            {dir.customers.map((item) => {
+              const home = getPropertyById(item.propertyIds[0], dir);
               return (
                 <OptionCard
                   key={item.id}

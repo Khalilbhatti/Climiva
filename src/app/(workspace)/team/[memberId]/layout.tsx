@@ -1,19 +1,21 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { MemberWorkspace } from "@/components/team/MemberWorkspace";
-import { getTeamMemberById } from "@/data/team";
-import { fixtureGate, hasSampleDataAccess } from "@/server/fixture-gate";
+import { getTeam } from "@/server/core-data";
 
-// The fixture members are prerendered. Any other id (someone invited during a demo session) is rendered on
-// demand and resolved against the in-memory Team data on the client.
 export async function generateMetadata({ params }: LayoutProps<"/team/[memberId]">): Promise<Metadata> {
-  if (!(await hasSampleDataAccess())) return { title: "Not available" };
   const { memberId } = await params;
-  return { title: getTeamMemberById(memberId)?.name ?? "Team member" };
+  const team = await getTeam();
+  return { title: team.members.find((member) => member.id === memberId)?.name ?? "Team member" };
 }
 
+/**
+ * A member of the active business's team, found by their slug. A slug that belongs to another business's team, or to
+ * nobody, is "not found": the lookup only ever sees this business's rows.
+ */
 export default async function MemberLayout({ children, params }: LayoutProps<"/team/[memberId]">) {
-  const gate = await fixtureGate("Team");
-  if (gate) return gate;
   const { memberId } = await params;
+  const team = await getTeam();
+  if (!team.members.some((member) => member.id === memberId)) notFound();
   return <MemberWorkspace memberId={memberId}>{children}</MemberWorkspace>;
 }

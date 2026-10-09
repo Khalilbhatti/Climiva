@@ -30,6 +30,7 @@ import { formatDate } from "@/lib/format";
 import { useFinancials } from "./FinancialProvider";
 import { InvoiceStatusBadge } from "./StatusBadges";
 import { usd } from "./shared";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 type RecordPaymentModalProps = {
   /** Skip the invoice step when the flow starts from one invoice. */
@@ -44,6 +45,7 @@ type RecordPaymentModalProps = {
  * payment service: the payment is a record in this session's data.
  */
 export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentModalProps) {
+  const dir = useDirectory();
   const { data, recordPayment } = useFinancials();
   const [stage, setStage] = useState<"select" | "details" | "done">(initialInvoiceId ? "details" : "select");
   const [invoiceId, setInvoiceId] = useState<string | undefined>(initialInvoiceId);
@@ -136,7 +138,7 @@ export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentM
                   key={item.id}
                   type="radio"
                   name="record-payment-invoice"
-                  title={`#${item.id} · ${getPartyName(item)}`}
+                  title={`#${item.id} · ${getPartyName(item, dir)}`}
                   badge={<InvoiceStatusBadge status={getInvoiceStatus(item, data)} />}
                   description={
                     <>
@@ -158,7 +160,7 @@ export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentM
         )}
         {invoice && payable && (
           <p role="status" className="rounded-btn bg-primary-subtle px-3 py-2 text-sm text-ink">
-            Selected: Invoice #{payable.id} ({getPartyName(payable)}) · Balance due: {usd(balance)}
+            Selected: Invoice #{payable.id} ({getPartyName(payable, dir)}) · Balance due: {usd(balance)}
           </p>
         )}
       </Modal>
@@ -196,7 +198,7 @@ export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentM
           <KeyValueList
             className="rounded-card border border-line bg-surface-low p-4"
             items={[
-              { label: "Customer", value: getPartyName(done) },
+              { label: "Customer", value: getPartyName(done, dir) },
               { label: "Invoice", value: `#${done.id}` },
               { label: "Amount", value: usd(recorded.amount) },
               { label: "Method", value: PAYMENT_METHOD_LABEL[recorded.method] },
@@ -217,7 +219,7 @@ export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentM
       onClose={onClose}
       size="xl"
       title="Record payment"
-      description={payable ? `${getPartyName(payable)} · Balance due ${usd(balance)}` : "Choose an invoice with an outstanding balance."}
+      description={payable ? `${getPartyName(payable, dir)} · Balance due ${usd(balance)}` : "Choose an invoice with an outstanding balance."}
       footer={
         <>
           {!initialInvoiceId && (
@@ -319,8 +321,8 @@ export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentM
             <KeyValueList
               items={[
                 { label: "Invoice", value: `#${payable.id}` },
-                { label: "Customer", value: getPartyName(payable) },
-                { label: "Related work", value: getRelatedWork(payable) },
+                { label: "Customer", value: getPartyName(payable, dir) },
+                { label: "Related work", value: getRelatedWork(payable, dir.services) },
                 { label: "Invoice total", value: usd(getInvoiceTotal(payable)) },
                 { label: "Previously paid", value: usd(getInvoicePaid(payable, data)) },
                 { label: "Payment being recorded", value: usd(amountError ? 0 : amount) },

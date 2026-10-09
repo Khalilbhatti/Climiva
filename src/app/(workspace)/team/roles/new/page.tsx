@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { CreateRole } from "@/components/team/CreateRole";
-import { fixtureGate } from "@/server/fixture-gate";
+import { requireWorkspaceContext } from "@/server/workspace";
 
 export const metadata: Metadata = { title: "Create role" };
 
 export default async function CreateRolePage() {
-  const gate = await fixtureGate("Team");
-  if (gate) return gate;
+  await requireWorkspaceContext();
   // CreateRole reads ?from= (the Duplicate action), which needs a Suspense boundary.
   return (
     <Suspense>

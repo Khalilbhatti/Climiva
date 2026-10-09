@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
+import { useServices } from "@/components/services/ServicesProvider";
 import { initialMarketplaceState, type ListingConfig, type MarketplaceState } from "@/data/marketplace";
 import * as state from "@/lib/marketplace-state";
 
@@ -20,7 +21,9 @@ const MarketplaceContext = createContext<MarketplaceContextValue | null>(null);
  * workspace shell yet must show what was saved inside it. In memory only; a reload restores the baseline.
  */
 export function MarketplaceProvider({ children }: { children: ReactNode }) {
-  const [listing, setListing] = useState<MarketplaceState>(initialMarketplaceState);
+  // Starts from the business's Services as they were when the page loaded; the listing's own choices are held here.
+  const { services } = useServices();
+  const [listing, setListing] = useState<MarketplaceState>(() => initialMarketplaceState(services));
   const latest = useRef(listing);
 
   const commit = useCallback((next: MarketplaceState) => {

@@ -11,6 +11,7 @@ import { cn } from "@/lib/cn";
 import { addDays, formatMonthDay, formatTime } from "@/lib/dates";
 import { formatDate } from "@/lib/format";
 import { useMember } from "./MemberWorkspace";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 const ICONS: Record<ActivityCategory, LucideIcon> = {
   access: ShieldCheck,
@@ -95,8 +96,9 @@ export function MemberActivity() {
 }
 
 function ActivityRow({ entry, memberId }: { entry: ActivityEntry; memberId: string }) {
+  const dir = useDirectory();
   const Icon = ICONS[entry.category];
-  const by = getTeamMemberById(entry.byId);
+  const by = getTeamMemberById(entry.byId, dir.team);
   return (
     <li className="flex items-start gap-3 rounded-card bg-surface-low p-4">
       <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-surface text-primary">

@@ -123,6 +123,9 @@ const CANONICAL_AWAITING = new Set(REVIEWS.filter((review) => !review.response).
 
 export const REVIEWS_DATA: ReviewsData = { reviews: REVIEWS, requests: [] };
 
+/** What a business that is not the sample one has: no reviews. */
+export const EMPTY_REVIEWS_DATA: ReviewsData = { reviews: [], requests: [] };
+
 /* ───────────────────────── selectors ───────────────────────── */
 
 export const getReviewById = (id: string, data: ReviewsData = REVIEWS_DATA) => data.reviews.find((review) => review.id === id);

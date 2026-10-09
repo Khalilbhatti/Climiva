@@ -7,7 +7,8 @@ import { initialSettings, type SettingsData } from "@/data/settings";
 import { businessFromOrganization, preferencesFromOrganization, weeklyHoursFromRows } from "@/db/settings-mappers";
 import { organizationBusinessHours, organizationMemberships, organizations, profiles, type OrganizationRow } from "@/db/schema";
 import { withTenant, withUser } from "@/db/tenant";
-import { ROLE_LABEL, SAMPLE_DATA_SET, canManage, type OrganizationRole, type WorkspaceSnapshot } from "@/lib/workspace-types";
+import { can, capabilitiesOf } from "@/lib/policy";
+import { ROLE_LABEL, SAMPLE_DATA_SET, type OrganizationRole, type WorkspaceSnapshot } from "@/lib/workspace-types";
 import { getSessionUser, type SessionUser } from "./session";
 
 /**
@@ -101,7 +102,8 @@ export const resolveWorkspace = cache(async (): Promise<WorkspaceState> => {
           role: membership.role as OrganizationRole,
         })),
         hasSampleData,
-        canEditSettings: canManage(role),
+        canEditSettings: can(role, "settings:manage"),
+        capabilities: capabilitiesOf(role),
         settings,
       },
     },

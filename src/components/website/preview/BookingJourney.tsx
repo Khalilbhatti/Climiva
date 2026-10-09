@@ -26,6 +26,7 @@ import { getSlotGroup, type Slot } from "@/lib/booking-slots";
 import { toTelHref } from "@/lib/format";
 import { previewHref } from "../site-links";
 import { usePreview } from "./PreviewShell";
+import { useServices } from "@/components/services/ServicesProvider";
 
 const STEP_LABELS: Record<BookingMethod, readonly string[]> = {
   instant: ["Service", "Date & time", "Your details", "Confirmation"],
@@ -75,7 +76,8 @@ export function BookingJourney({ serviceId }: { serviceId: string }) {
   const { content, live } = usePreview();
   const { business, hours } = useSettings().settings;
   const { createBooking } = useOperations();
-  const service = getShownServices(content.services).find((item) => item.id === serviceId);
+  const { services: catalog } = useServices();
+  const service = getShownServices(content.services, catalog).find((item) => item.id === serviceId);
 
   const [stage, setStage] = useState<"time" | "details" | "done">("time");
   const [date, setDate] = useState(FIRST_DATE);

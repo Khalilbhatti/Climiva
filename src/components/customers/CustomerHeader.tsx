@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { Mail, MapPin, Phone, ShieldCheck, type LucideIcon } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
@@ -7,6 +9,8 @@ import { customerPropertiesHref } from "@/config/routes";
 import { getPrimaryProperty, type Customer } from "@/data/customers";
 import { toTelHref } from "@/lib/format";
 import { PlanStatusText } from "./CustomerPlan";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 
 function InfoTile({ icon: Icon, label, children }: { icon: LucideIcon; label: string; children: React.ReactNode }) {
   return (
@@ -23,7 +27,9 @@ function InfoTile({ icon: Icon, label, children }: { icon: LucideIcon; label: st
 }
 
 export function CustomerHeader({ customer }: { customer: Customer }) {
-  const property = getPrimaryProperty(customer);
+  const dir = useDirectory();
+  const { hasSampleData } = useWorkspace();
+  const property = getPrimaryProperty(customer, dir);
 
   return (
     <div className="space-y-5">
@@ -40,15 +46,18 @@ export function CustomerHeader({ customer }: { customer: Customer }) {
             <p className="mt-1 text-sm text-ink-muted">Preferred contact: {customer.preferredContact}</p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <ButtonLink href="/quotes-invoices" variant="secondary">
-            Create quote
-          </ButtonLink>
-          <ButtonLink href="/jobs" variant="secondary">
-            New job
-          </ButtonLink>
-          <ButtonLink href={`/bookings?new=1&customer=${customer.id}`}>New booking</ButtonLink>
-        </div>
+        {/* Quotes, Jobs and Bookings are not on the database yet, so only the sample business has them to start from. */}
+        {hasSampleData && (
+          <div className="flex flex-wrap items-center gap-2">
+            <ButtonLink href="/quotes-invoices" variant="secondary">
+              Create quote
+            </ButtonLink>
+            <ButtonLink href="/jobs" variant="secondary">
+              New job
+            </ButtonLink>
+            <ButtonLink href={`/bookings?new=1&customer=${customer.id}`}>New booking</ButtonLink>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

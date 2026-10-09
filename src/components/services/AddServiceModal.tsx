@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { Button } from "@/components/ui/Button";
 import { KeyValueList } from "@/components/ui/KeyValueList";
 import { Modal } from "@/components/ui/Modal";
@@ -28,13 +29,13 @@ const STEPS = [
 type AddServiceModalProps = {
   open: boolean;
   onClose: () => void;
-  onAdd: (service: Service) => void;
+  /** Saves the Service. Resolves with the reason it was refused, or nothing when it was stored. */
+  onAdd: (service: Service) => Promise<string | undefined>;
 };
 
 /**
  * Add Service wizard. It mounts only while open, so every open starts from a blank draft and a closed
- * wizard leaves nothing in the DOM. Nothing is saved until the final step, and even then the service
- * only joins this session's in-memory catalog.
+ * wizard leaves nothing in the DOM. Nothing is saved until the final step; the Service is then stored for the business.
  */
 export function AddServiceModal({ open, onClose, onAdd }: AddServiceModalProps) {
   return open ? <AddServiceWizard onClose={onClose} onAdd={onAdd} /> : null;
@@ -45,6 +46,8 @@ function AddServiceWizard({ onClose, onAdd }: Omit<AddServiceModalProps, "open">
   const [draft, setDraft] = useState<Service>(() => createBlankService(services));
   const [stepIndex, setStepIndex] = useState(0);
   const [showErrors, setShowErrors] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
 
@@ -74,7 +77,8 @@ function AddServiceWizard({ onClose, onAdd }: Omit<AddServiceModalProps, "open">
     setStepIndex((index) => index + 1);
   }
 
-  function finish() {
+  async function finish() {
+    if (saving) return;
     if (Object.keys(allErrors).length > 0) {
       // Defensive: step gating should make this unreachable. Send the user to the first failing step.
       const failing = STEPS.findIndex((candidate) => candidate.fields.some((field) => field in allErrors));
@@ -82,13 +86,17 @@ function AddServiceWizard({ onClose, onAdd }: Omit<AddServiceModalProps, "open">
       setShowErrors(true);
       return;
     }
-    onAdd({
+    setSaving(true);
+    setProblem(undefined);
+    const error = await onAdd({
       ...draft,
       id: createServiceId(draft.name, services),
       name: draft.name.trim(),
       description: draft.description.trim(),
       internalDescription: draft.internalDescription?.trim() || undefined,
     });
+    setSaving(false);
+    if (error) setProblem(error);
   }
 
   return (
@@ -115,7 +123,9 @@ function AddServiceWizard({ onClose, onAdd }: Omit<AddServiceModalProps, "open">
             </Button>
           )}
           {isLast ? (
-            <Button onClick={finish}>Add service</Button>
+            <Button onClick={finish} disabled={saving}>
+              {saving ? "Adding…" : "Add service"}
+            </Button>
           ) : (
             <Button onClick={goNext}>Next: {STEPS[stepIndex + 1].label}</Button>
           )}
@@ -159,6 +169,7 @@ function AddServiceWizard({ onClose, onAdd }: Omit<AddServiceModalProps, "open">
           <ServicePreview service={draft} />
         </div>
       )}
+      {problem && <FormAlert>{problem}</FormAlert>}
     </Modal>
   );
 }

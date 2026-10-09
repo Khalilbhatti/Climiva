@@ -25,7 +25,7 @@ export async function createOrganizationAction(input: unknown): Promise<ActionRe
   const parsed = parseNewOrganization(input);
   if (!parsed.ok) return parsed;
   try {
-    const created = await createOrganizationForUser(user.id, parsed.value);
+    const created = await createOrganizationForUser(user.id, parsed.value, user.name);
     await rememberActiveOrganization(created.organizationId);
     return ok({ slug: created.slug });
   } catch (error) {

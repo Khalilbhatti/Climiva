@@ -14,7 +14,6 @@ import { StepList } from "@/components/ui/StepList";
 import { Textarea } from "@/components/ui/Textarea";
 import { cn } from "@/lib/cn";
 import {
-  CUSTOMERS,
   formatPropertyAddress,
   formatPropertyCityLine,
   getCustomerById,
@@ -26,7 +25,6 @@ import { OFFLINE_BOOKING_SOURCES, type Booking, type BookingSource } from "@/dat
 import {
   BOOKING_METHOD_ARRIVAL,
   BOOKING_METHOD_LABEL,
-  SERVICES,
   formatDuration,
   formatServicePrice,
   getServiceById,
@@ -34,6 +32,7 @@ import {
 import { getAssignableMembers, getTeamMemberById } from "@/data/team";
 import { getSlotGroup } from "@/lib/booking-slots";
 import { addDays, formatLongDate, formatTime, formatTimeRange, formatWeekdayDate } from "@/lib/dates";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 const STEPS = [
   { id: "customer", label: "Customer" },
@@ -72,12 +71,13 @@ type CreateBookingModalProps = {
  * and the booking only joins this session's in-memory data.
  */
 export function CreateBookingModal({ presetCustomerId, onClose, onFinished }: CreateBookingModalProps) {
+  const dir = useDirectory();
   const { createBooking } = useOperations();
   const { data: team } = useTeam();
   const { hours } = useSettings().settings;
   const router = useRouter();
 
-  const preset = presetCustomerId ? getCustomerById(presetCustomerId) : undefined;
+  const preset = presetCustomerId ? getCustomerById(presetCustomerId, dir) : undefined;
   const [draft, setDraft] = useState<Draft>({
     customerId: preset?.id,
     propertyId: preset?.propertyIds[0],
@@ -93,9 +93,9 @@ export function CreateBookingModal({ presetCustomerId, onClose, onFinished }: Cr
   const firstRender = useRef(true);
 
   const step = STEPS[stepIndex];
-  const customer = draft.customerId ? getCustomerById(draft.customerId) : undefined;
-  const properties = customer ? getPropertiesForCustomer(customer.id) : [];
-  const service = draft.serviceId ? getServiceById(draft.serviceId) : undefined;
+  const customer = draft.customerId ? getCustomerById(draft.customerId, dir) : undefined;
+  const properties = customer ? getPropertiesForCustomer(customer.id, dir) : [];
+  const service = draft.serviceId ? getServiceById(draft.serviceId, dir.services) : undefined;
   const slotGroup = service ? getSlotGroup(service.bookingMethod, draft.date, service.durationMinutes, hours) : undefined;
   const slot = slotGroup?.slots.find((candidate) => candidate.id === draft.slotId && candidate.available);
 
@@ -152,9 +152,9 @@ export function CreateBookingModal({ presetCustomerId, onClose, onFinished }: Cr
 
   /* ───────── success ───────── */
   if (created) {
-    const createdService = getServiceById(created.serviceId);
-    const createdCustomer = created.customerId ? getCustomerById(created.customerId) : undefined;
-    const technician = getTeamMemberById(created.assigneeId);
+    const createdService = getServiceById(created.serviceId, dir.services);
+    const createdCustomer = created.customerId ? getCustomerById(created.customerId, dir) : undefined;
+    const technician = getTeamMemberById(created.assigneeId, dir.team);
     const finish = () => onFinished(created);
 
     return (
@@ -252,8 +252,8 @@ export function CreateBookingModal({ presetCustomerId, onClose, onFinished }: Cr
       {step.id === "customer" && (
         <div>
           <OptionGroup legend="Existing customer" hint="Select a customer from your Customers list.">
-            {CUSTOMERS.map((item) => {
-              const property = getPropertyById(item.propertyIds[0]);
+            {dir.customers.map((item) => {
+              const property = getPropertyById(item.propertyIds[0], dir);
               return (
                 <OptionCard
                   key={item.id}
@@ -284,7 +284,7 @@ export function CreateBookingModal({ presetCustomerId, onClose, onFinished }: Cr
         <div className="space-y-6">
           <div>
             <OptionGroup legend="Service" hint="Select a service from your configured catalog.">
-              {SERVICES.filter((item) => item.active).map((item) => (
+              {dir.services.filter((item) => item.active).map((item) => (
                 <OptionCard
                   key={item.id}
                   type="radio"
@@ -455,8 +455,8 @@ export function CreateBookingModal({ presetCustomerId, onClose, onFinished }: Cr
           </ReviewRow>
           <ReviewRow label="Service & property" onEdit={() => setStepIndex(1)}>
             {service.name}
-            {draft.propertyId && getPropertyById(draft.propertyId) && (
-              <span className="block text-xs font-normal text-ink-muted">{formatPropertyAddress(getPropertyById(draft.propertyId)!)}</span>
+            {draft.propertyId && getPropertyById(draft.propertyId, dir) && (
+              <span className="block text-xs font-normal text-ink-muted">{formatPropertyAddress(getPropertyById(draft.propertyId, dir)!)}</span>
             )}
             <span className="block text-xs font-normal text-ink-muted">Source: {draft.source}</span>
           </ReviewRow>
@@ -465,7 +465,7 @@ export function CreateBookingModal({ presetCustomerId, onClose, onFinished }: Cr
             <span className="block text-xs font-normal text-ink-muted">{BOOKING_METHOD_LABEL[service.bookingMethod]}</span>
           </ReviewRow>
           <ReviewRow label="Assignment & notes" onEdit={() => setStepIndex(3)}>
-            {draft.assignee === LATER ? "Assign later" : getTeamMemberById(draft.assignee)?.name}
+            {draft.assignee === LATER ? "Assign later" : getTeamMemberById(draft.assignee, dir.team)?.name}
             {draft.notes.trim() && <span className="block text-xs font-normal text-ink-muted">“{draft.notes.trim()}”</span>}
           </ReviewRow>
           <p className="text-xs text-ink-muted">This booking will be added directly to your schedule and booking records.</p>

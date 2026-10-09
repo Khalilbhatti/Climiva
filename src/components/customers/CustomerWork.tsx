@@ -11,12 +11,14 @@ import { jobHref } from "@/config/routes";
 import { getAssigneeName, getJobsForCustomer, getServiceNameFor } from "@/data/operations";
 import { formatDate } from "@/lib/format";
 import { formatTimeRange } from "@/lib/dates";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 /**
  * The customer's work, read from the shared operations records (not copied onto the customer), so it
  * stays correct when a job is completed elsewhere in the session.
  */
 export function CurrentServiceCard({ customerId }: { customerId: string }) {
+  const dir = useDirectory();
   const { data } = useOperations();
   const job = getJobsForCustomer(customerId, data).find((item) => item.status === "in-progress");
   if (!job) return null;
@@ -29,7 +31,7 @@ export function CurrentServiceCard({ customerId }: { customerId: string }) {
             <Link href={jobHref(job.id)} className="hover:underline">
               Job #{job.id}
             </Link>
-            <span className="ml-2 text-sm font-normal text-ink-muted">{getServiceNameFor(job)}</span>
+            <span className="ml-2 text-sm font-normal text-ink-muted">{getServiceNameFor(job, dir)}</span>
           </p>
           <p className="text-xs font-semibold text-primary">
             {formatDate(job.date)}, {formatTimeRange(job.start, job.end)}
@@ -38,7 +40,7 @@ export function CurrentServiceCard({ customerId }: { customerId: string }) {
         <KeyValueList
           className="mt-3"
           items={[
-            { label: "Assigned technician", value: getAssigneeName(job) ?? "Unassigned" },
+            { label: "Assigned technician", value: getAssigneeName(job, dir) ?? "Unassigned" },
             ...(job.bookingId ? [{ label: "Booking", value: `#${job.bookingId}` }] : []),
           ]}
         />
@@ -52,6 +54,7 @@ export function CurrentServiceCard({ customerId }: { customerId: string }) {
 }
 
 export function RecentVisitsCard({ customerId }: { customerId: string }) {
+  const dir = useDirectory();
   const { data } = useOperations();
   const jobs = getJobsForCustomer(customerId, data);
 
@@ -71,7 +74,7 @@ export function RecentVisitsCard({ customerId }: { customerId: string }) {
                   <JobStatusBadge status={job.status} />
                 </p>
                 <p className="mt-0.5 text-sm text-ink-muted">
-                  {getServiceNameFor(job)} · {getAssigneeName(job) ?? "Unassigned"}
+                  {getServiceNameFor(job, dir)} · {getAssigneeName(job, dir) ?? "Unassigned"}
                 </p>
               </div>
               <p className="text-xs text-ink-muted">{formatDate(job.date)}</p>

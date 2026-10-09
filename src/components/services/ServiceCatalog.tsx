@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { serviceHref } from "@/config/routes";
 import {
   BOOKING_METHOD_ARRIVAL,
@@ -55,6 +56,7 @@ function matches(service: Service, filters: Filters): boolean {
 export function ServiceCatalog() {
   const { services, addService } = useServices();
   const { toast } = useToast();
+  const canManage = useCan("services:manage");
   const router = useRouter();
   // "?state=empty" previews the approved empty state without needing to delete the catalog.
   const previewEmpty = useSearchParams().get("state") === "empty";
@@ -77,7 +79,8 @@ export function ServiceCatalog() {
         description="Manage the HVAC services customers can book and your team can perform."
         // The empty state carries its own primary action, so the header one is hidden to keep a single CTA.
         actions={
-          catalog.length > 0 && (
+          catalog.length > 0 &&
+          canManage && (
             <Button size="lg" onClick={openWizard}>
               <Plus aria-hidden className="size-[18px]" />
               Add service
@@ -87,7 +90,7 @@ export function ServiceCatalog() {
       />
 
       {catalog.length === 0 ? (
-        <ServicesEmptyState onAdd={openWizard} onLoadStarter={() => router.replace("/services")} />
+        <ServicesEmptyState onAdd={canManage ? openWizard : undefined} onLoadStarter={previewEmpty ? () => router.replace("/services") : undefined} />
       ) : (
         <div className="space-y-4">
           <Card padding="md">
@@ -206,10 +209,11 @@ export function ServiceCatalog() {
       <AddServiceModal
         open={adding}
         onClose={() => setAdding(false)}
-        onAdd={(service) => {
-          addService(service);
+        onAdd={async (service) => {
+          const result = await addService(service);
+          if (!result.ok) return result.error;
           setAdding(false);
-          toast(`${service.name} added for this session. Reloading restores the standard catalog.`);
+          toast(`${result.data.name} was added to your services.`);
           if (previewEmpty) router.replace("/services");
         }}
       />

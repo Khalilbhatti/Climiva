@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Lock, SearchX, Users } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { Avatar } from "@/components/ui/Avatar";
 import { BackLink } from "@/components/ui/BackLink";
 import { Button, ButtonLink } from "@/components/ui/Button";
@@ -11,6 +12,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/components/ui/Toast";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { memberHref } from "@/config/routes";
 import { MODULE_IDS, getMembersForRole, getRoleById, type Permissions, type Role } from "@/data/team";
 import { PermissionMatrix } from "./PermissionMatrix";
@@ -26,7 +28,7 @@ export function RoleDetail({ roleId }: { roleId: string }) {
         as="h1"
         icon={SearchX}
         title="Role not found"
-        description="This role isn't in the list. Roles created in this session are cleared when the page reloads."
+        description="This role isn't in your list."
         action={<ButtonLink href="/team/roles">Back to Roles</ButtonLink>}
       />
     );
@@ -39,6 +41,9 @@ const samePermissions = (a: Permissions, b: Permissions) => MODULE_IDS.every((id
 function RoleEditor({ role }: { role: Role }) {
   const { data, updateRole } = useTeam();
   const { toast } = useToast();
+  const canManage = useCan("team:manage");
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
 
   const [name, setName] = useState(role.name);
   const [description, setDescription] = useState(role.description);
@@ -46,16 +51,21 @@ function RoleEditor({ role }: { role: Role }) {
   const [showError, setShowError] = useState(false);
 
   const members = getMembersForRole(role.id, data);
-  const readOnly = Boolean(role.protected);
+  const readOnly = Boolean(role.protected) || !canManage;
   const nameError =
     !name.trim() ? "Enter a role name."
     : data.roles.some((item) => item.id !== role.id && item.name.toLowerCase() === name.trim().toLowerCase()) ? "A role with this name already exists."
     : undefined;
   const dirty = name !== role.name || description !== role.description || !samePermissions(permissions, role.permissions);
 
-  function save() {
+  async function save() {
     if (nameError) return setShowError(true);
-    updateRole(role.id, { name, description, permissions });
+    if (saving) return;
+    setSaving(true);
+    setProblem(undefined);
+    const result = await updateRole(role.id, { name, description, permissions });
+    setSaving(false);
+    if (!result.ok) return setProblem(result.error);
     toast(`${name.trim()} role updated.`);
   }
 
@@ -73,7 +83,11 @@ function RoleEditor({ role }: { role: Role }) {
             </span>
           </div>
           <p className="mt-1 text-sm text-ink-muted">
-            {readOnly ? "The Owner role always has full access and can't be edited." : `Manage the permissions used by team members with the ${role.name} role.`}
+            {role.protected
+              ? "The Owner role always has full access and can't be edited."
+              : readOnly
+                ? `Only an owner or admin can change the ${role.name} role.`
+                : `Manage the permissions used by team members with the ${role.name} role.`}
           </p>
         </div>
         {!readOnly && (
@@ -93,7 +107,7 @@ function RoleEditor({ role }: { role: Role }) {
               label="Role name"
               required
               value={name}
-              readOnly={role.kind === "system"}
+              readOnly={role.kind === "system" || !canManage}
               hint={role.kind === "system" ? "System role names can't be changed." : undefined}
               error={showError ? nameError : undefined}
               onChange={(event) => setName(event.target.value)}
@@ -142,6 +156,7 @@ function RoleEditor({ role }: { role: Role }) {
         </aside>
       </div>
 
+      {problem && <FormAlert>{problem}</FormAlert>}
       {!readOnly && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-line bg-surface p-4">
           <p className="text-sm text-ink-muted" aria-live="polite">
@@ -161,8 +176,8 @@ function RoleEditor({ role }: { role: Role }) {
             >
               Cancel
             </Button>
-            <Button onClick={save} disabled={!dirty}>
-              Save changes
+            <Button onClick={save} disabled={!dirty || saving}>
+              {saving ? "Saving…" : "Save changes"}
             </Button>
           </div>
         </div>

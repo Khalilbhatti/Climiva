@@ -34,6 +34,7 @@ import { previewHref } from "./site-links";
 import { SiteFooter, SiteHeader, SiteRenderer } from "./SiteRenderer";
 import { BrowserFrame, SiteStatusBadge, usePublishing } from "./site-ui";
 import { useWebsite } from "./WebsiteProvider";
+import { useServices } from "@/components/services/ServicesProvider";
 
 function Card({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
   return (
@@ -57,6 +58,7 @@ export function WebsiteOverview() {
   const hours = useHoursRows();
   const { publishNow, askUnpublish, unpublishModal } = usePublishing();
   const empty = useSearchParams().get("state") === "empty";
+  const { services: catalog } = useServices();
 
   if (empty) {
     return (
@@ -86,7 +88,7 @@ export function WebsiteOverview() {
   }
 
   const content = site.published ? site.live : site.draft;
-  const shown = getShownServices(content.services);
+  const shown = getShownServices(content.services, catalog);
   const bookable = shown.filter((service) => service.visibility === "public-booking");
   const primary = getPrimaryDomain(site.domain);
   const pending = hasUnpublishedChanges(site);

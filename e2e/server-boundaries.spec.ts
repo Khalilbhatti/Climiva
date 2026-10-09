@@ -7,6 +7,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { expect, test } from "playwright/test";
+import { NORTHSTAR_CUSTOMERS, NORTHSTAR_SERVICES, NORTHSTAR_TEAM } from "../scripts/db/seed-data/northstar";
+import { CUSTOMERS, PROPERTIES, SERVICES, TEAM } from "./apex-data";
 
 const ROOT = process.cwd();
 const SRC = join(ROOT, "src");
@@ -71,6 +73,26 @@ test.describe("nothing server-only reaches the browser", () => {
     }
   });
 
+  test("no customer, property, Service or team record is compiled into the browser's JavaScript", () => {
+    // The foundations are read from PostgreSQL for the verified business and sent to that business's browser only. Their seed
+    // lives in scripts/db/seed-data, which nothing under src imports; this checks the built result, where a stray import would show.
+    const staticDir = join(ROOT, ".next", "static");
+    expect(existsSync(staticDir), "run a production build first (npm run build)").toBe(true);
+    const bundle = walk(staticDir, (path) => path.endsWith(".js")).map(read).join("\n");
+    expect(bundle.length).toBeGreaterThan(100_000);
+    const distinctive = [
+      ...CUSTOMERS.flatMap((customer) => [customer.email, customer.phone]),
+      ...PROPERTIES.flatMap((property) => [property.street, property.accessInstructions ?? ""]),
+      ...SERVICES.map((service) => service.description),
+      ...TEAM.flatMap((member) => [member.email ?? "", member.notes ?? ""]),
+      ...NORTHSTAR_CUSTOMERS.flatMap((customer) => [customer.name, customer.email]),
+      ...NORTHSTAR_SERVICES.map((service) => service.name),
+      ...NORTHSTAR_TEAM.map((member) => member.name),
+    ].filter(Boolean);
+    expect(distinctive.length).toBeGreaterThan(30);
+    expect(distinctive.filter((value) => bundle.includes(value) || bundle.includes(JSON.stringify(value).slice(1, -1)))).toEqual([]);
+  });
+
   test("no secret is exposed to the browser through NEXT_PUBLIC_ variables", () => {
     const offenders = sourceFiles.filter((path) => /NEXT_PUBLIC_[A-Z_]*(SECRET|PASSWORD|KEY|TOKEN|DATABASE)/.test(read(path))).map(posix);
     expect(offenders).toEqual([]);
@@ -84,15 +106,45 @@ test.describe("every Server Action authorizes its caller", () => {
   test("each exported action resolves the caller from the session before it does anything else", () => {
     // signOutAction only ends the caller's own session: it needs no workspace and is safe when already signed out.
     const exempt = new Set(["signOutAction"]);
+    const CHECKS = /resolveWorkspace\(|getSessionUser\(|manager\(|authorize\(|requireMember\(/;
     for (const path of actionFiles) {
       const source = read(path);
       const exported = [...source.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)];
       expect(exported.length, `${posix(path)} exports no actions`).toBeGreaterThan(0);
+      // team.ts routes every write through one helper whose first step is the authorization; it is checked below.
+      const helper = /async function change<[\s\S]*?\n}\n/.exec(source)?.[0];
       for (const [, name, body] of exported) {
         if (exempt.has(name)) continue;
-        expect(/resolveWorkspace\(|getSessionUser\(|manager\(/.test(body), `${name} in ${posix(path)} does not check the session`).toBe(true);
+        const direct = CHECKS.test(body);
+        const viaHelper = helper !== undefined && /\bchange\(/.test(body) && /await authorize\(/.test(helper);
+        expect(direct || viaHelper, `${name} in ${posix(path)} does not check the session`).toBe(true);
       }
     }
+  });
+
+  test("the actions that read or write a business's data authorize before they open a tenant transaction", () => {
+    for (const path of actionFiles) {
+      const source = read(path);
+      for (const [, name, body] of source.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)) {
+        const opens = body.search(/withTenant\(|withUser\(/);
+        if (opens === -1) continue;
+        const checks = body.search(/resolveWorkspace\(|getSessionUser\(|manager\(|authorize\(|requireMember\(/);
+        expect(checks, `${name} in ${posix(path)} opens a transaction without checking the session`).toBeGreaterThanOrEqual(0);
+        expect(checks, `${name} in ${posix(path)} checks the session after it opens a transaction`).toBeLessThan(opens);
+      }
+    }
+  });
+
+  test("Services and Team writes need the owner/admin capability, and customer reads need a verified member", () => {
+    const services = read(join(SRC, "server", "actions", "services.ts"));
+    expect(services.match(/authorize\("services:manage"/g)?.length).toBe(2);
+    expect(services).not.toMatch(/requireMember\(/);
+    const team = read(join(SRC, "server", "actions", "team.ts"));
+    expect(team).toMatch(/authorize\("team:manage"/);
+    expect(read(join(SRC, "server", "actions", "customers.ts"))).toMatch(/requireMember\(/);
+    // The capabilities are decided in one place.
+    expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"services:manage": \["owner", "admin"\]/);
+    expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"team:manage": \["owner", "admin"\]/);
   });
 
   test("no action takes an organization id from the client and trusts it", () => {
@@ -137,15 +189,17 @@ test.describe("tenant data is never cached or prerendered", () => {
 });
 
 test.describe("every fixture-backed page checks its caller and its tenant", () => {
-  const FIXTURE_MODULES = ["analytics", "bookings", "customers", "jobs", "maintenance-plans", "marketing", "marketplace", "payments", "quotes-invoices", "reviews", "schedule", "services", "team", "website"];
+  const FIXTURE_MODULES = ["analytics", "bookings", "jobs", "maintenance-plans", "marketing", "marketplace", "payments", "quotes-invoices", "reviews", "schedule", "website"];
+  /** Customers, Services and Team moved to PostgreSQL: they work for every workspace, with that workspace's own rows. */
+  const DATABASE_MODULES = ["customers", "services", "team"];
   const workspaceDir = join(SRC, "app", "(workspace)");
   const entries = FIXTURE_MODULES.flatMap((module) => walk(join(workspaceDir, module), (path) => /(page|layout)\.tsx$/.test(path)));
 
   test("the module list matches the sidebar", () => {
-    // Settings and Help are real for every workspace; every other module folder still runs on the sample dataset and must be listed here.
-    const present = readdirSync(workspaceDir).filter((entry) => statSync(join(workspaceDir, entry)).isDirectory() && !["settings", "help"].includes(entry));
+    // Settings, Help and the three database-backed modules are real for every workspace; every other module folder still runs on the sample dataset and must be listed here.
+    const present = readdirSync(workspaceDir).filter((entry) => statSync(join(workspaceDir, entry)).isDirectory() && !["settings", "help", ...DATABASE_MODULES].includes(entry));
     expect(present.sort()).toEqual([...FIXTURE_MODULES].sort());
-    expect(entries.length).toBeGreaterThan(40);
+    expect(entries.length).toBeGreaterThan(25);
   });
 
   test("each page and layout calls fixtureGate() before it renders anything", () => {
@@ -156,6 +210,25 @@ test.describe("every fixture-backed page checks its caller and its tenant", () =
   test("each dynamic-metadata function asks hasSampleDataAccess()", () => {
     const missing = entries.filter((path) => /export async function generateMetadata/.test(read(path)) && !/hasSampleDataAccess\(\)/.test(read(path))).map(posix);
     expect(missing).toEqual([]);
+  });
+
+  test("Customers, Services and Team read the database for the verified workspace: no sample gate, no sample data", () => {
+    const pages = DATABASE_MODULES.flatMap((module) => walk(join(workspaceDir, module), (path) => /(page|layout)\.tsx$/.test(path)));
+    expect(pages.length).toBeGreaterThan(15);
+    const ASKS_THE_SERVER = /await requireWorkspaceContext\(\)|await getCustomerBook\(\)|await getCustomerDetail\(|await getServices\(\)|await getTeam\(\)/;
+    expect(pages.filter((path) => !ASKS_THE_SERVER.test(read(path))).map(posix), "pages that do not verify the workspace next to their data").toEqual([]);
+    expect(pages.filter((path) => /fixtureGate|hasSampleDataAccess|@\/data\/(operations|financials|fixtures)/.test(read(path))).map(posix)).toEqual([]);
+    // A record is asked for by its reference, and the answer for one the active business does not have is "not found".
+    for (const file of [
+      "customers/[customerId]/layout.tsx",
+      "customers/[customerId]/page.tsx",
+      "customers/[customerId]/properties/page.tsx",
+      "services/[serviceId]/layout.tsx",
+      "team/[memberId]/layout.tsx",
+      "team/roles/[roleId]/page.tsx",
+    ]) {
+      expect(read(join(workspaceDir, file)), file).toMatch(/notFound\(\)/);
+    }
   });
 
   test("the customer-facing previews call publicGate()", () => {

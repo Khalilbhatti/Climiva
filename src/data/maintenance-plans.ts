@@ -231,6 +231,9 @@ export const PLANS: readonly MaintenancePlan[] = [
 
 export const PLANS_DATA: PlansData = { plans: PLANS };
 
+/** What a business that is not the sample one has: no maintenance plans. */
+export const EMPTY_PLANS_DATA: PlansData = { plans: [] };
+
 /** The workspace-level totals Stitch shows. Detailed records above are a representative sample of them. */
 export const PLAN_BASELINE = {
   active: 14,

@@ -338,7 +338,7 @@ test.describe("one source of truth", () => {
   });
 
   test("the fixtures that do read the baseline are data modules, and Settings is the only editor of it", () => {
-    const readers = ["src/data/customers.ts", "src/data/reviews.ts", "src/data/settings.ts", "src/data/team.ts", "src/lib/booking-slots.ts", "src/lib/reviews-state.ts"];
+    const readers = ["src/data/reviews.ts", "src/data/settings.ts", "src/lib/booking-slots.ts", "src/lib/reviews-state.ts"];
     for (const file of readers) expect(readFileSync(file, "utf8")).toMatch(/from "(@\/data\/|\.\/)fixtures"/);
   });
 });

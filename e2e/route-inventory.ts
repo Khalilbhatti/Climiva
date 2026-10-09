@@ -5,15 +5,13 @@
  */
 import { readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { CUSTOMERS } from "../src/data/customers";
 import { FINANCIALS } from "../src/data/financials";
 import { JOBS } from "../src/data/operations";
 import { PLANS } from "../src/data/maintenance-plans";
 import { CAMPAIGNS } from "../src/data/marketing";
 import { REVIEWS_DATA } from "../src/data/reviews";
-import { SERVICES } from "../src/data/services";
-import { ROLES, TEAM } from "../src/data/team";
 import { WEBSITE_PAGES } from "../src/data/website";
+import { CUSTOMERS, ROLES, SERVICES, TEAM } from "./apex-data";
 
 export type InventoryRoute = {
   /** The URL that is visited. */

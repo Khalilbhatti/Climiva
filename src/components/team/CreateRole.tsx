@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Info } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { BackLink } from "@/components/ui/BackLink";
 import { Button } from "@/components/ui/Button";
 import { cardClasses } from "@/components/ui/Card";
@@ -11,6 +12,7 @@ import { OptionCard, OptionGroup } from "@/components/ui/OptionCard";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/components/ui/Toast";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { buildPermissions, getRoleById, type Permissions } from "@/data/team";
 import { PermissionMatrix } from "./PermissionMatrix";
 import { useTeam } from "./TeamProvider";
@@ -28,12 +30,15 @@ export function CreateRole() {
   const { toast } = useToast();
   const router = useRouter();
   const from = getRoleById(useSearchParams().get("from") ?? undefined, data);
+  const canManage = useCan("team:manage");
 
   const [name, setName] = useState(from ? `${from.name} copy` : "");
   const [description, setDescription] = useState("");
   const [template, setTemplate] = useState(from?.id ?? BLANK);
   const [permissions, setPermissions] = useState<Permissions>(from?.permissions ?? buildPermissions("none"));
   const [showError, setShowError] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
 
   const templates = data.roles.filter((role) => TEMPLATE_IDS.includes(role.id) || role.id === from?.id);
   const nameError = !name.trim()
@@ -47,10 +52,15 @@ export function CreateRole() {
     setPermissions(getRoleById(id, data)?.permissions ?? buildPermissions("none"));
   }
 
-  function create() {
+  async function create() {
     if (nameError) return setShowError(true);
-    const role = createRole({ name, description, permissions });
-    toast(`${role.name} role created.`);
+    if (saving) return;
+    setSaving(true);
+    setProblem(undefined);
+    const result = await createRole({ name, description, permissions });
+    setSaving(false);
+    if (!result.ok) return setProblem(result.error);
+    toast(`${result.data.role.name} role created.`);
     router.push("/team/roles");
   }
 
@@ -114,11 +124,15 @@ export function CreateRole() {
         <PermissionMatrix idPrefix="new-role-permission" value={permissions} onChange={setPermissions} />
       </section>
 
+      {problem && <FormAlert>{problem}</FormAlert>}
+      {!canManage && <p className="text-sm text-ink-muted">Only an owner or admin can create roles.</p>}
       <div className="flex items-center justify-end gap-3 rounded-card border border-line bg-surface p-4">
         <Button variant="secondary" onClick={() => router.push("/team/roles")}>
           Cancel
         </Button>
-        <Button onClick={create}>Create role</Button>
+        <Button onClick={create} disabled={!canManage || saving}>
+          {saving ? "Creating…" : "Create role"}
+        </Button>
       </div>
     </>
   );

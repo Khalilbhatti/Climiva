@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { CalendarClock, CircleCheck, History, KeyRound, TriangleAlert } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { AssignDialog } from "@/components/operations/AssignDialog";
 import { useOperations } from "@/components/operations/OperationsProvider";
 import { Button } from "@/components/ui/Button";
@@ -12,21 +13,36 @@ import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import { getPartyName, getScheduleEvents, getServiceNameFor, type WorkEvent } from "@/data/operations";
 import type { TeamMember } from "@/data/team";
 import { formatTimeRange, formatWeekdayDate } from "@/lib/dates";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 type DeactivateMemberModalProps = {
   member: TeamMember;
   onClose: () => void;
-  onConfirm: () => void;
+  /** Resolves with the reason it failed, or nothing when the member was deactivated. */
+  onConfirm: () => Promise<string | undefined>;
 };
 
 /**
  * Confirm deactivating a member. The work still ahead of them has to be handled first: each upcoming
  * assignment can be opened or reassigned here, and Deactivate unlocks once none is left. Nothing is
  * reassigned automatically, and completed Jobs and past bookings keep showing the member's name.
+ * Deactivating changes the Team record only: the person's sign-in and workspace access are not touched.
  */
 export function DeactivateMemberModal({ member, onClose, onConfirm }: DeactivateMemberModalProps) {
+  const dir = useDirectory();
   const { data, assign } = useOperations();
   const [reassigning, setReassigning] = useState<WorkEvent | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
+
+  async function confirm() {
+    if (saving) return;
+    setSaving(true);
+    setProblem(undefined);
+    const error = await onConfirm();
+    setSaving(false);
+    if (error) setProblem(error);
+  }
 
   const first = member.name.split(" ")[0];
   const upcoming = getScheduleEvents(data).filter(
@@ -40,21 +56,21 @@ export function DeactivateMemberModal({ member, onClose, onConfirm }: Deactivate
         onClose={onClose}
         size="lg"
         title={`Deactivate ${member.name}?`}
-        description={`${first} will lose access to Climvia and will no longer be available for new Job assignments. Historical records will remain unchanged.`}
+        description={`${first} will no longer be available for new Job assignments. Their sign-in and workspace access are not changed, and historical records will remain unchanged.`}
         footer={
           <>
             <Button variant="secondary" onClick={onClose}>
               Cancel
             </Button>
-            <Button variant="destructive-solid" onClick={onConfirm} disabled={upcoming.length > 0}>
-              Deactivate member
+            <Button variant="destructive-solid" onClick={confirm} disabled={upcoming.length > 0 || saving}>
+              {saving ? "Deactivating…" : "Deactivate member"}
             </Button>
           </>
         }
       >
         <ul className="divide-y divide-line rounded-card border border-line">
           {[
-            { icon: KeyRound, label: "Climvia access", value: "Removed" },
+            { icon: KeyRound, label: "Sign-in & workspace access", value: "Unchanged" },
             { icon: CalendarClock, label: "New Job assignments", value: "Disabled" },
             { icon: History, label: "Historical Jobs & activity", value: "Preserved" },
           ].map(({ icon: Icon, label, value }) => (
@@ -82,10 +98,10 @@ export function DeactivateMemberModal({ member, onClose, onConfirm }: Deactivate
                 <li key={event.id} className="flex flex-wrap items-center justify-between gap-3 rounded-btn bg-surface p-3 text-sm">
                   <div>
                     <p className="font-semibold text-ink">
-                      #{event.id} · {getPartyName(event)}
+                      #{event.id} · {getPartyName(event, dir)}
                     </p>
                     <p className="text-xs text-ink-muted">
-                      {getServiceNameFor(event)} · {event.date === PROTOTYPE_TODAY ? "Today" : formatWeekdayDate(event.date)},{" "}
+                      {getServiceNameFor(event, dir)} · {event.date === PROTOTYPE_TODAY ? "Today" : formatWeekdayDate(event.date)},{" "}
                       {formatTimeRange(event.start, event.end)}
                     </p>
                   </div>
@@ -119,11 +135,12 @@ export function DeactivateMemberModal({ member, onClose, onConfirm }: Deactivate
             </div>
           </div>
         )}
+        {problem && <FormAlert>{problem}</FormAlert>}
       </Modal>
 
       {reassigning && (
         <AssignDialog
-          description={`${getServiceNameFor(reassigning)} for ${getPartyName(reassigning)} · ${formatWeekdayDate(reassigning.date)}, ${formatTimeRange(reassigning.start, reassigning.end)}`}
+          description={`${getServiceNameFor(reassigning, dir)} for ${getPartyName(reassigning, dir)} · ${formatWeekdayDate(reassigning.date)}, ${formatTimeRange(reassigning.start, reassigning.end)}`}
           excludeMemberId={member.id}
           onClose={() => setReassigning(null)}
           onAssign={(memberId) => {

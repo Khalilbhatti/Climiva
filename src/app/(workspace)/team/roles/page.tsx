@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import { RolesList } from "@/components/team/RolesList";
-import { fixtureGate } from "@/server/fixture-gate";
+import { requireWorkspaceContext } from "@/server/workspace";
 
 export const metadata: Metadata = { title: "Roles & permissions" };
 
 export default async function RolesPage() {
-  const gate = await fixtureGate("Team");
-  if (gate) return gate;
+  await requireWorkspaceContext();
   return <RolesList />;
 }

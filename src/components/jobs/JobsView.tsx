@@ -20,7 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } fro
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
 import { customerHref, jobHref } from "@/config/routes";
-import { EQUIPMENT, formatPropertyAddress, formatPropertyCityLine, getCustomerById, getPropertyById } from "@/data/customers";
+import { formatPropertyAddress, formatPropertyCityLine, getCustomerById, getPropertyById } from "@/data/customers";
 import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import {
   JOB_STATUS_LABEL,
@@ -30,9 +30,10 @@ import {
   type Job,
   type JobStatus,
 } from "@/data/operations";
-import { SERVICES } from "@/data/services";
 import { getTeamMemberById } from "@/data/team";
 import { formatTimeRange, formatWeekdayDate } from "@/lib/dates";
+import type { Directory } from "@/data/directory";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 const TABS = [
   { id: "active", label: "Active" },
@@ -51,22 +52,23 @@ const inTab = (job: Job, tab: TabId) =>
   tab === "completed" ? job.status === "completed" : tab === "upcoming" ? job.status === "scheduled" && job.date > PROTOTYPE_TODAY : job.status !== "completed";
 
 /** The secondary line under the service: what was done, or the equipment worked on. */
-function jobSubline(job: Job): string | undefined {
+function jobSubline(job: Job, dir: Directory): string | undefined {
   if (job.workSummary) return job.workSummary;
-  const equipment = EQUIPMENT.find((item) => item.id === job.equipmentId);
+  const equipment = dir.equipment.find((item) => item.id === job.equipmentId);
   return equipment ? `${equipment.manufacturer} ${equipment.model}${equipment.capacity ? ` · ${equipment.capacity}` : ""}` : undefined;
 }
 
-function matchesQuery(job: Job, query: string): boolean {
-  const customer = job.customerId ? getCustomerById(job.customerId) : undefined;
-  const property = getPropertyById(job.propertyId ?? "");
-  return [job.id, job.bookingId ?? "", getPartyName(job), getServiceNameFor(job), job.workSummary ?? "", customer?.phone ?? "", property ? formatPropertyAddress(property) : ""]
+function matchesQuery(job: Job, query: string, dir: Directory): boolean {
+  const customer = job.customerId ? getCustomerById(job.customerId, dir) : undefined;
+  const property = getPropertyById(job.propertyId ?? "", dir);
+  return [job.id, job.bookingId ?? "", getPartyName(job, dir), getServiceNameFor(job, dir), job.workSummary ?? "", customer?.phone ?? "", property ? formatPropertyAddress(property) : ""]
     .join(" ")
     .toLowerCase()
     .includes(query.trim().toLowerCase());
 }
 
 export function JobsView() {
+  const dir = useDirectory();
   const { data, assign } = useOperations();
   const { data: team } = useTeam();
   const { toast } = useToast();
@@ -95,7 +97,7 @@ export function JobsView() {
 
   const visible = tabJobs.filter(
     (job) =>
-      matchesQuery(job, query) &&
+      matchesQuery(job, query, dir) &&
       (technician === "all" || (technician === "none" ? !job.assigneeId : job.assigneeId === technician)) &&
       (service === "all" || job.serviceId === service) &&
       (status === "all" || job.status === status),
@@ -165,7 +167,7 @@ export function JobsView() {
           <div className="w-52">
             <Select label="Service" hideLabel value={service} onChange={(event) => setService(event.target.value)}>
               <option value="all">All services</option>
-              {SERVICES.map((item) => (
+              {dir.services.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name}
                 </option>
@@ -222,10 +224,10 @@ export function JobsView() {
                 </tr>
               ) : (
                 visible.map((job) => {
-                  const customer = job.customerId ? getCustomerById(job.customerId) : undefined;
-                  const property = getPropertyById(job.propertyId ?? "");
-                  const assignee = getTeamMemberById(job.assigneeId);
-                  const subline = jobSubline(job);
+                  const customer = job.customerId ? getCustomerById(job.customerId, dir) : undefined;
+                  const property = getPropertyById(job.propertyId ?? "", dir);
+                  const assignee = getTeamMemberById(job.assigneeId, dir.team);
+                  const subline = jobSubline(job, dir);
                   return (
                     <TableRow key={job.id}>
                       <TableCell className="whitespace-nowrap">
@@ -240,12 +242,12 @@ export function JobsView() {
                             {customer.name}
                           </Link>
                         ) : (
-                          <span className="font-semibold whitespace-nowrap text-ink">{getPartyName(job)}</span>
+                          <span className="font-semibold whitespace-nowrap text-ink">{getPartyName(job, dir)}</span>
                         )}
                         {customer && <div className="text-xs text-ink-muted">{customer.phone}</div>}
                       </TableCell>
                       <TableCell className="max-w-52">
-                        <div className="font-medium">{getServiceNameFor(job)}</div>
+                        <div className="font-medium">{getServiceNameFor(job, dir)}</div>
                         {subline && <div className="text-xs text-ink-muted">{subline}</div>}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
@@ -324,13 +326,13 @@ export function JobsView() {
 
       {assigning && (
         <AssignDialog
-          description={`${getServiceNameFor(assigning)} for ${getPartyName(assigning)} · ${formatWeekdayDate(assigning.date)}, ${formatTimeRange(assigning.start, assigning.end)}`}
+          description={`${getServiceNameFor(assigning, dir)} for ${getPartyName(assigning, dir)} · ${formatWeekdayDate(assigning.date)}, ${formatTimeRange(assigning.start, assigning.end)}`}
           currentAssigneeId={assigning.assigneeId}
           onClose={() => setAssigning(null)}
           onAssign={(memberId) => {
             assign({ jobId: assigning.id }, memberId);
             setAssigning(null);
-            toast(memberId ? `Job #${assigning.id} assigned to ${getAssigneeName({ assigneeId: memberId })}.` : `Job #${assigning.id} is unassigned.`);
+            toast(memberId ? `Job #${assigning.id} assigned to ${getAssigneeName({ assigneeId: memberId }, dir)}.` : `Job #${assigning.id} is unassigned.`);
           }}
         />
       )}

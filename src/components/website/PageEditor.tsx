@@ -12,7 +12,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Switch } from "@/components/ui/Switch";
 import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/components/ui/Toast";
-import { formatServicePrice, getPublicActiveServices, BOOKING_METHOD_LABEL } from "@/data/services";
+import { formatServicePrice, BOOKING_METHOD_LABEL } from "@/data/services";
 import {
   PAGE_SCHEMA,
   getPageStatus,
@@ -31,6 +31,7 @@ import { previewHref } from "./site-links";
 import { SiteFooter, SiteHeader, SiteRenderer } from "./SiteRenderer";
 import { BrowserFrame, PageStatusBadge } from "./site-ui";
 import { useWebsite } from "./WebsiteProvider";
+import { useServices } from "@/components/services/ServicesProvider";
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -42,7 +43,8 @@ const CONNECTED_COPY: Record<ConnectedSource, { text: string; link: string; href
 };
 
 function ServiceDisplayControls({ value, onChange }: { value: ServiceDisplay; onChange: (next: ServiceDisplay) => void }) {
-  const ordered = getShownServices({ order: value.order, hidden: [] }, getPublicActiveServices());
+  const { services: catalog } = useServices();
+  const ordered = getShownServices({ order: value.order, hidden: [] }, catalog);
 
   function move(id: string, by: -1 | 1) {
     const ids = ordered.map((service) => service.id);

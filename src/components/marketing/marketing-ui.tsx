@@ -1,5 +1,6 @@
 import { CircleAlert, Mail, MessageSquare, Check } from "lucide-react";
 import { StatusBadge, type StatusTone } from "@/components/ui/StatusBadge";
+import type { Directory } from "@/data/directory";
 import { getCustomerById } from "@/data/customers";
 import {
   CAMPAIGN_STATUS_LABEL,
@@ -61,8 +62,8 @@ export function sendDateText(campaign: Campaign, withTime = true): string {
 export const recipientsText = (campaign: Pick<Campaign, "recipients">) => (campaign.recipients === undefined ? "—" : String(campaign.recipients));
 
 /** Who a delivery record is for, and where it went. A Customers record supplies both where there is one. */
-export function describeDelivery(record: DeliveryRecord, channel: CampaignChannel) {
-  const customer = record.customerId ? getCustomerById(record.customerId) : undefined;
+export function describeDelivery(record: DeliveryRecord, channel: CampaignChannel, dir: Pick<Directory, "customers">) {
+  const customer = record.customerId ? getCustomerById(record.customerId, dir) : undefined;
   return {
     name: customer?.name ?? record.contact?.name ?? "Contact",
     customerId: customer?.id,

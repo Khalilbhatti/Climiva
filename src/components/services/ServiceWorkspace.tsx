@@ -10,6 +10,7 @@ import { Modal } from "@/components/ui/Modal";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { TabNav } from "@/components/ui/TabNav";
 import { useToast } from "@/components/ui/Toast";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { serviceTabHref } from "@/config/routes";
 import {
   BOOKING_METHOD_LABEL,
@@ -50,7 +51,7 @@ export function ServiceWorkspace({ serviceId, children }: { serviceId: string; c
         as="h1"
         icon={SearchX}
         title="Service not found"
-        description="This service isn't in the catalog. Services added in this session are cleared when the page reloads."
+        description="This service isn't in your catalog."
         action={<ButtonLink href="/services">Back to Services</ButtonLink>}
       />
     );
@@ -65,8 +66,11 @@ export function ServiceWorkspace({ serviceId, children }: { serviceId: string; c
 function ServiceEditor({ saved, children }: { saved: Service; children: ReactNode }) {
   const { services, updateService } = useServices();
   const { toast } = useToast();
+  const canManage = useCan("services:manage");
 
   const [draft, setDraft] = useState<Service>(saved);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
   // Bumped on discard so tab bodies remount and drop any transient input state.
   const [version, setVersion] = useState(0);
   const [showErrors, setShowErrors] = useState(false);
@@ -76,26 +80,41 @@ function ServiceEditor({ saved, children }: { saved: Service; children: ReactNod
   const errors = validateService(draft, services);
   const errorMessages = Object.values(errors);
 
-  function save() {
+  async function save() {
     if (errorMessages.length > 0) {
       setShowErrors(true);
       return;
     }
+    if (saving) return;
     setShowErrors(false);
-    updateService({ ...draft, name: draft.name.trim(), description: draft.description.trim() });
-    toast("Service changes saved for this session. Reloading restores the standard catalog.");
+    setProblem(undefined);
+    setSaving(true);
+    const result = await updateService({ ...draft, name: draft.name.trim(), description: draft.description.trim() });
+    setSaving(false);
+    if (!result.ok) {
+      setProblem(result.error);
+      return;
+    }
+    // What was stored is what the form now shows, so nothing is left "unsaved" because the server tidied a value.
+    setDraft(result.data);
+    toast("Service changes saved.");
   }
 
   function discard() {
     setDraft(saved);
     setShowErrors(false);
+    setProblem(undefined);
     setVersion((current) => current + 1);
   }
 
   /** Status changes apply immediately to the saved record; other unsaved edits stay in the draft. */
-  function setActive(active: boolean) {
-    updateService({ ...saved, active });
-    setDraft((current) => ({ ...current, active }));
+  async function setActive(active: boolean) {
+    const result = await updateService({ ...saved, active });
+    if (!result.ok) {
+      toast(result.error);
+      return;
+    }
+    setDraft((current) => ({ ...current, active: result.data.active }));
     toast(`${saved.name} ${active ? "activated" : "deactivated"}.`);
   }
 
@@ -120,17 +139,18 @@ function ServiceEditor({ saved, children }: { saved: Service; children: ReactNod
             {BOOKING_METHOD_LABEL[saved.bookingMethod]}
           </p>
         </div>
-        {saved.active ? (
-          <Button variant="destructive" onClick={() => setConfirmingDeactivate(true)}>
-            <Power aria-hidden className="size-4" />
-            Deactivate
-          </Button>
-        ) : (
-          <Button variant="secondary" onClick={() => setActive(true)}>
-            <Power aria-hidden className="size-4" />
-            Activate
-          </Button>
-        )}
+        {canManage &&
+          (saved.active ? (
+            <Button variant="destructive" onClick={() => setConfirmingDeactivate(true)}>
+              <Power aria-hidden className="size-4" />
+              Deactivate
+            </Button>
+          ) : (
+            <Button variant="secondary" onClick={() => setActive(true)}>
+              <Power aria-hidden className="size-4" />
+              Activate
+            </Button>
+          ))}
       </header>
 
       <TabNav
@@ -148,7 +168,11 @@ function ServiceEditor({ saved, children }: { saved: Service; children: ReactNod
         ]}
       />
 
-      <div key={version}>{children}</div>
+      {/* Someone who may not change Services reads the same record with every field switched off. */}
+      <fieldset disabled={!canManage} className="min-w-0 border-0 p-0">
+        {!canManage && <p className="mb-4 text-sm text-ink-muted">Only an owner or admin can change this service.</p>}
+        <div key={version}>{children}</div>
+      </fieldset>
 
       {dirty && (
         <div
@@ -163,12 +187,19 @@ function ServiceEditor({ saved, children }: { saved: Service; children: ReactNod
                 Fix before saving: {errorMessages.join(" ")}
               </p>
             )}
+            {problem && (
+              <p role="alert" className="mt-0.5 text-xs text-danger">
+                {problem}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <Button variant="secondary" onClick={discard}>
               Discard changes
             </Button>
-            <Button onClick={save}>Save changes</Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
           </div>
         </div>
       )}

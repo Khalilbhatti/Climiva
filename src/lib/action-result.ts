@@ -6,4 +6,7 @@ export const failure = (error: string, fields?: Record<string, string>): { ok: f
 
 export const SIGNED_OUT = "Your session has ended. Sign in again to continue.";
 export const NOT_ALLOWED = "Only an owner or admin can change this workspace's settings.";
+export const NOT_ALLOWED_SERVICES = "Only an owner or admin can change Services.";
+export const NOT_ALLOWED_TEAM = "Only an owner or admin can change the team.";
+export const NOT_FOUND = "That record no longer exists. Reload the page and try again.";
 export const NO_ACCESS = "You don't have access to that workspace.";

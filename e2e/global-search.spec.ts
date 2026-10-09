@@ -11,24 +11,25 @@ import { expect as fixtureExpect, test as fixtureTest } from "./fixtures";
 import { OPERATIONS } from "../src/data/operations";
 import { MIN_QUERY, PER_GROUP, SEARCH_GROUPS, searchWorkspace } from "../src/lib/global-search";
 import { assign } from "../src/lib/operations-state";
+import { DIR } from "./apex-data";
 
 const titles = (query: string, group?: string, data = OPERATIONS) =>
-  searchWorkspace(query, data)
+  searchWorkspace(query, data, DIR)
     .filter((result) => !group || result.group === group)
     .map((result) => result.title);
 
 test.describe("what the search finds", () => {
   test("nothing is searched until there are two characters, and nothing odd matches", () => {
     expect(MIN_QUERY).toBe(2);
-    expect(searchWorkspace("", OPERATIONS)).toEqual([]);
-    expect(searchWorkspace("s", OPERATIONS)).toEqual([]);
-    expect(searchWorkspace("   ", OPERATIONS)).toEqual([]);
-    expect(searchWorkspace("zzzzzz", OPERATIONS)).toEqual([]);
-    expect(searchWorkspace("Elena Rostova", OPERATIONS)).toEqual([]);
+    expect(searchWorkspace("", OPERATIONS, DIR)).toEqual([]);
+    expect(searchWorkspace("s", OPERATIONS, DIR)).toEqual([]);
+    expect(searchWorkspace("   ", OPERATIONS, DIR)).toEqual([]);
+    expect(searchWorkspace("zzzzzz", OPERATIONS, DIR)).toEqual([]);
+    expect(searchWorkspace("Elena Rostova", OPERATIONS, DIR)).toEqual([]);
   });
 
   test("a customer's name finds the customer, their jobs and their bookings, each linking to its own page", () => {
-    const results = searchWorkspace("sarah", OPERATIONS);
+    const results = searchWorkspace("sarah", OPERATIONS, DIR);
     expect(results.map((result) => result.group)).toEqual(expect.arrayContaining(["Customers", "Jobs", "Bookings"]));
     expect(results.find((result) => result.group === "Customers")).toMatchObject({ title: "Sarah Mitchell", href: "/customers/sarah-mitchell" });
     expect(results.find((result) => result.id === "JB-204")).toMatchObject({ group: "Jobs", title: "#JB-204 · Sarah Mitchell", href: "/jobs/JB-204" });
@@ -53,17 +54,17 @@ test.describe("what the search finds", () => {
   });
 
   test("a technician or a day finds the schedule entries, each linking to that day with the entry open", () => {
-    const marcus = searchWorkspace("marcus", OPERATIONS);
+    const marcus = searchWorkspace("marcus", OPERATIONS, DIR);
     expect(marcus.length).toBeGreaterThan(0);
     expect(marcus.every((result) => result.group === "Schedule")).toBe(true);
     for (const result of marcus) expect(result.href).toMatch(/^\/schedule\?view=day&date=\d{4}-\d{2}-\d{2}&event=/);
-    const day = searchWorkspace("oct 25", OPERATIONS).filter((result) => result.group === "Schedule");
+    const day = searchWorkspace("oct 25", OPERATIONS, DIR).filter((result) => result.group === "Schedule");
     expect(day.length).toBeGreaterThan(0);
     for (const result of day) expect(result.href).toContain("date=2024-10-25");
   });
 
   test("results are grouped in a fixed order and each group shows at most four", () => {
-    const results = searchWorkspace("an", OPERATIONS);
+    const results = searchWorkspace("an", OPERATIONS, DIR);
     const order = results.map((result) => SEARCH_GROUPS.indexOf(result.group));
     expect(order).toEqual([...order].sort((a, b) => a - b));
     for (const group of SEARCH_GROUPS) expect(results.filter((result) => result.group === group).length).toBeLessThanOrEqual(PER_GROUP);
@@ -71,10 +72,10 @@ test.describe("what the search finds", () => {
 
   test("it reads the session: reassigned work is found under its new technician", () => {
     expect(titles("samira", "Schedule").length).toBeGreaterThan(0);
-    const before = searchWorkspace("samira", OPERATIONS).filter((result) => result.id === "JB-198");
+    const before = searchWorkspace("samira", OPERATIONS, DIR).filter((result) => result.id === "JB-198");
     expect(before).toEqual([]);
     const after = assign(OPERATIONS, { jobId: "JB-198" }, "samira-patel");
-    expect(searchWorkspace("samira", after).filter((result) => result.id === "JB-198")).toHaveLength(1);
+    expect(searchWorkspace("samira", after, DIR).filter((result) => result.id === "JB-198")).toHaveLength(1);
   });
 });
 

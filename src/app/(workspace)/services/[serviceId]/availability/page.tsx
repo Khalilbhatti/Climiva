@@ -1,8 +1,7 @@
 import { AvailabilityTab } from "@/components/services/ServiceTabs";
-import { fixtureGate } from "@/server/fixture-gate";
+import { requireWorkspaceContext } from "@/server/workspace";
 
 export default async function ServiceAvailabilityPage() {
-  const gate = await fixtureGate("Services");
-  if (gate) return gate;
+  await requireWorkspaceContext();
   return <AvailabilityTab />;
 }

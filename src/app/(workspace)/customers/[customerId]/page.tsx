@@ -8,25 +8,16 @@ import { MaintenanceAgreementCard } from "@/components/customers/CustomerPlan";
 import { CurrentServiceCard, RecentVisitsCard } from "@/components/customers/CustomerWork";
 import { EquipmentCard } from "@/components/customers/EquipmentCard";
 import { customerPropertiesHref } from "@/config/routes";
-import {
-  formatPropertyCityLine,
-  getCustomerById,
-  getEquipmentForCustomer,
-  getPropertiesForCustomer,
-} from "@/data/customers";
-import { fixtureGate } from "@/server/fixture-gate";
+import { formatPropertyCityLine } from "@/data/customers";
+import { getCustomerDetail } from "@/server/core-data";
 
 const linkClasses = "inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline";
 
 export default async function CustomerOverviewPage({ params }: PageProps<"/customers/[customerId]">) {
-  const gate = await fixtureGate("Customers");
-  if (gate) return gate;
   const { customerId } = await params;
-  const customer = getCustomerById(customerId);
-  if (!customer) notFound();
-
-  const properties = getPropertiesForCustomer(customer.id);
-  const equipment = getEquipmentForCustomer(customer.id);
+  const detail = await getCustomerDetail(customerId);
+  if (!detail) notFound();
+  const { customer, properties, equipment } = detail;
   const propertiesHref = customerPropertiesHref(customer.id);
   const showNotes = customer.notes.length > 0 || customer.preferences.length > 0;
 
@@ -59,7 +50,7 @@ export default async function CustomerOverviewPage({ params }: PageProps<"/custo
                     <p className="text-sm text-ink-muted">{formatPropertyCityLine(property)}</p>
                   </div>
                   <span className="rounded-full bg-surface px-2.5 py-1 text-xs text-ink-muted">
-                    {getEquipmentForCustomer(customer.id).filter((item) => item.propertyId === property.id).length} systems
+                    {equipment.filter((item) => item.propertyId === property.id).length} systems
                   </span>
                 </div>
                 {property.accessInstructions && (

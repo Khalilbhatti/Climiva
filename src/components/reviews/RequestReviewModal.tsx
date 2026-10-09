@@ -9,11 +9,12 @@ import { OptionCard, OptionGroup } from "@/components/ui/OptionCard";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/components/ui/Toast";
-import { CUSTOMERS, getCustomerById } from "@/data/customers";
+import { getCustomerById } from "@/data/customers";
 import { getServiceNameFor } from "@/data/operations";
 import { DEFAULT_REQUEST_MESSAGE, REQUEST_MESSAGE_MAX, type ReviewRequestChannel } from "@/data/reviews";
 import { formatDate } from "@/lib/format";
 import { useReviews } from "./ReviewsProvider";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 const NO_JOB = "";
 
@@ -22,6 +23,7 @@ const NO_JOB = "";
  * return, and no Marketing campaign is created. A request can be tied to one of the customer's completed jobs.
  */
 export function RequestReviewModal({ onClose }: { onClose: () => void }) {
+  const dir = useDirectory();
   const { addReviewRequest } = useReviews();
   const { data: ops } = useOperations();
   const { toast } = useToast();
@@ -33,7 +35,7 @@ export function RequestReviewModal({ onClose }: { onClose: () => void }) {
   const [message, setMessage] = useState(DEFAULT_REQUEST_MESSAGE);
   const [showError, setShowError] = useState(false);
 
-  const customer = getCustomerById(customerId)!;
+  const customer = getCustomerById(customerId, dir)!;
   const completed = ops.jobs
     .filter((job) => job.customerId === customerId && job.status === "completed")
     .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
@@ -73,7 +75,7 @@ export function RequestReviewModal({ onClose }: { onClose: () => void }) {
           setJobChoice(null);
         }}
       >
-        {CUSTOMERS.map((item) => (
+        {dir.customers.map((item) => (
           <option key={item.id} value={item.id}>
             {item.name}
           </option>
@@ -85,7 +87,7 @@ export function RequestReviewModal({ onClose }: { onClose: () => void }) {
           <option value={NO_JOB}>No related job</option>
           {completed.map((job) => (
             <option key={job.id} value={job.id}>
-              #{job.id} · {getServiceNameFor(job)} · Completed {formatDate(job.date)}
+              #{job.id} · {getServiceNameFor(job, dir)} · Completed {formatDate(job.date)}
             </option>
           ))}
         </Select>

@@ -18,8 +18,8 @@ const PlansContext = createContext<PlansContextValue | null>(null);
  * in memory (a reload restores them) and never writes back to data/maintenance-plans.ts. Mounted once at the
  * app root next to the other providers, so Maintenance Plans, Bookings, Schedule and Customers agree.
  */
-export function MaintenancePlansProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<PlansData>(PLANS_DATA);
+export function MaintenancePlansProvider({ initial = PLANS_DATA, children }: { initial?: PlansData; children: ReactNode }) {
+  const [data, setData] = useState<PlansData>(initial);
   // The ref lets actions that return a value (createPlan) read the latest data synchronously.
   const latest = useRef(data);
 

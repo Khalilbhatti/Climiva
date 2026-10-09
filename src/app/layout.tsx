@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { AppProviders } from "@/components/providers/AppProviders";
+import { getCoreSnapshot } from "@/server/core-data";
 import { resolveWorkspace } from "@/server/workspace";
 import "./globals.css";
 
@@ -30,11 +31,12 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const state = await resolveWorkspace();
   const snapshot = state.status === "ready" ? state.context.snapshot : null;
+  const core = snapshot ? await getCoreSnapshot() : null;
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
       <body className="min-h-dvh bg-canvas font-sans text-ink">
-        {snapshot ? (
-          <AppProviders key={snapshot.organization.id} snapshot={snapshot}>
+        {snapshot && core ? (
+          <AppProviders key={snapshot.organization.id} snapshot={snapshot} core={core}>
             {children}
           </AppProviders>
         ) : (

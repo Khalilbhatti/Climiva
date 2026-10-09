@@ -21,11 +21,13 @@ import { customerHref } from "@/config/routes";
 import { getCustomerPlanSummary } from "@/data/maintenance-plans";
 import { PlanBadge } from "./CustomerPlan";
 import { formatDate, formatDateTime } from "@/lib/format";
+import type { Directory } from "@/data/directory";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 type PlanFilter = "all" | "active" | "none";
 
-function matchesQuery(customer: Customer, query: string): boolean {
-  const property = getPrimaryProperty(customer);
+function matchesQuery(customer: Customer, query: string, dir: Directory): boolean {
+  const property = getPrimaryProperty(customer, dir);
   const haystack = [customer.name, customer.phone, customer.email, property ? formatPropertyAddress(property) : ""]
     .join(" ")
     .toLowerCase();
@@ -33,6 +35,7 @@ function matchesQuery(customer: Customer, query: string): boolean {
 }
 
 export function CustomerDirectory({ customers }: { customers: readonly Customer[] }) {
+  const dir = useDirectory();
   const [query, setQuery] = useState("");
   const [plan, setPlan] = useState<PlanFilter>("all");
   const { data: plans } = useMaintenancePlans();
@@ -41,10 +44,10 @@ export function CustomerDirectory({ customers }: { customers: readonly Customer[
     () =>
       customers.filter(
         (customer) =>
-          matchesQuery(customer, query) &&
+          matchesQuery(customer, query, dir) &&
           (plan === "all" || (plan === "active") === (getCustomerPlanSummary(customer, plans) !== undefined)),
       ),
-    [customers, query, plan, plans],
+    [customers, query, plan, plans, dir],
   );
 
   const filtering = query.trim() !== "" || plan !== "all";
@@ -109,8 +112,8 @@ export function CustomerDirectory({ customers }: { customers: readonly Customer[
             </tr>
           ) : (
             visible.map((customer) => {
-              const property = getPrimaryProperty(customer);
-              const lastService = describeLastService(customer);
+              const property = getPrimaryProperty(customer, dir);
+              const lastService = describeLastService(customer, dir.services);
               return (
                 <TableRow key={customer.id}>
                   <TableCell>

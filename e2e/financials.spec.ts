@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "playwright/test";
-import { CUSTOMERS, getCustomerById, getPropertyById } from "../src/data/customers";
+import { getCustomerById, getPropertyById } from "../src/data/customers";
 import {
   FINANCIALS,
   INVOICES,
@@ -29,6 +29,7 @@ import { getBookingById, getJobById, getPartyName } from "../src/data/operations
 import { getServiceById } from "../src/data/services";
 import { getTeamMemberById } from "../src/data/team";
 import { createInvoiceFromQuote, recordPayment, voidPayment } from "../src/lib/financial-state";
+import { BOOK, CUSTOMERS, DIR, SERVICES, TEAM_DATA } from "./apex-data";
 
 // Pure data/selector/state tests: no browser needed.
 
@@ -55,17 +56,17 @@ test.describe("canonical financial baseline (post-#PAY-1008)", () => {
     expect(getOutstandingBalance()).toBe(680);
 
     const arthur = getInvoiceById("INV-1050")!;
-    expect(getPartyName(arthur)).toBe("Arthur Pendleton");
+    expect(getPartyName(arthur, DIR)).toBe("Arthur Pendleton");
     expect([getInvoiceTotal(arthur), getInvoicePaid(arthur), getInvoiceBalance(arthur), getInvoiceStatus(arthur)]).toEqual([500, 200, 300, "partially-paid"]);
 
     const maya = getInvoiceById("INV-1051")!;
-    expect(getPartyName(maya)).toBe("Maya Lin");
+    expect(getPartyName(maya, DIR)).toBe("Maya Lin");
     expect([getInvoiceTotal(maya), getInvoicePaid(maya), getInvoiceBalance(maya), getInvoiceStatus(maya)]).toEqual([380, 0, 380, "unpaid"]);
   });
 
   test("INV-1044 is fully paid by PAY-1008 and never offered for payment", () => {
     const invoice = getInvoiceById("INV-1044")!;
-    expect(getPartyName(invoice)).toBe("Sarah Mitchell");
+    expect(getPartyName(invoice, DIR)).toBe("Sarah Mitchell");
     expect([getInvoiceTotal(invoice), getInvoicePaid(invoice), getInvoiceBalance(invoice), getInvoiceStatus(invoice)]).toEqual([285, 285, 0, "paid"]);
     expect(getPaymentsForInvoice("INV-1044").map((payment) => [payment.id, payment.status])).toEqual([
       ["PAY-1008", "recorded"],
@@ -94,16 +95,16 @@ test.describe("financial records reference the shared records", () => {
   test("customers, properties, services, jobs, bookings and team members all resolve", () => {
     for (const record of [...QUOTES, ...INVOICES]) {
       expect(Boolean(record.customerId) !== Boolean(record.contactName), `${record.id}: customerId xor contactName`).toBe(true);
-      if (record.customerId) expect(getCustomerById(record.customerId), `${record.id}: customer`).toBeDefined();
-      if (record.propertyId) expect(getPropertyById(record.propertyId)?.customerId, `${record.id}: property`).toBe(record.customerId);
-      if (record.serviceId) expect(getServiceById(record.serviceId), `${record.id}: service`).toBeDefined();
+      if (record.customerId) expect(getCustomerById(record.customerId, BOOK), `${record.id}: customer`).toBeDefined();
+      if (record.propertyId) expect(getPropertyById(record.propertyId, BOOK)?.customerId, `${record.id}: property`).toBe(record.customerId);
+      if (record.serviceId) expect(getServiceById(record.serviceId, SERVICES), `${record.id}: service`).toBeDefined();
       if (record.jobId) expect(getJobById(record.jobId), `${record.id}: job`).toBeDefined();
       if (record.bookingId) expect(getBookingById(record.bookingId), `${record.id}: booking`).toBeDefined();
     }
     for (const invoice of INVOICES) if (invoice.quoteId) expect(getQuoteById(invoice.quoteId), invoice.id).toBeDefined();
     for (const payment of PAYMENTS) {
       expect(getInvoiceById(payment.invoiceId), payment.id).toBeDefined();
-      expect(getTeamMemberById(payment.recordedBy), payment.id).toBeDefined();
+      expect(getTeamMemberById(payment.recordedBy, TEAM_DATA), payment.id).toBeDefined();
     }
   });
 
@@ -116,7 +117,7 @@ test.describe("financial records reference the shared records", () => {
     expect(getJobById("JB-204")!.customerId).toBe("sarah-mitchell");
     expect(getQuoteTotal(quote)).toBe(285);
     expect(getInvoiceTotal(invoice)).toBe(285);
-    expect(getPartyName(getInvoiceById("INV-1048")!)).toBe("Elena Rodriguez");
+    expect(getPartyName(getInvoiceById("INV-1048")!, DIR)).toBe("Elena Rodriguez");
     expect(JSON.stringify(FINANCIALS)).not.toContain("Rostova");
   });
 

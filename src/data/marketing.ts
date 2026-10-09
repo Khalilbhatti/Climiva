@@ -167,6 +167,9 @@ export const CAMPAIGN_BASELINE = { draft: 2, scheduled: 1, sent: 8, recentRecipi
 
 export const MARKETING_DATA: MarketingData = { campaigns: CAMPAIGNS };
 
+/** What a business that is not the sample one has: no campaigns. */
+export const EMPTY_MARKETING_DATA: MarketingData = { campaigns: [] };
+
 const CANONICAL_STATUS: Record<string, CampaignStatus> = Object.fromEntries(CAMPAIGNS.map((campaign) => [campaign.id, campaign.status]));
 
 /* ───────────────────────── selectors ───────────────────────── */

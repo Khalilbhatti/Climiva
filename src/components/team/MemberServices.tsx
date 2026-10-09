@@ -3,20 +3,19 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ExternalLink, ListChecks, ShieldCheck } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
+import { useServices } from "@/components/services/ServicesProvider";
 import { Button } from "@/components/ui/Button";
 import { cardClasses } from "@/components/ui/Card";
 import { OptionCard, OptionGroup } from "@/components/ui/OptionCard";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { useToast } from "@/components/ui/Toast";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { serviceHref } from "@/config/routes";
 import { getAssignedServiceIds } from "@/data/team";
-import { BOOKING_METHOD_LABEL, SERVICES, SERVICE_CATEGORIES, formatDuration } from "@/data/services";
+import { BOOKING_METHOD_LABEL, SERVICE_CATEGORIES, formatDuration } from "@/data/services";
 import { useMember } from "./MemberWorkspace";
 import { useTeam } from "./TeamProvider";
-
-/** Eligibility reads the six canonical Service records by id; nothing about a service is copied here. */
-const CATALOG = SERVICES.filter((service) => service.active);
-const CATALOG_IDS = CATALOG.map((service) => service.id);
 
 /**
  * Which services this person can be assigned to. It is set by hand by your team; nothing is inferred.
@@ -26,6 +25,13 @@ export function MemberServices() {
   const member = useMember();
   const { setServiceEligibility } = useTeam();
   const { toast } = useToast();
+  const canManage = useCan("team:manage");
+  // Eligibility reads the business's own active Services by id; nothing about a service is copied here.
+  const { services } = useServices();
+  const CATALOG = services.filter((service) => service.active);
+  const CATALOG_IDS = CATALOG.map((service) => service.id);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
 
   const savedIds = getAssignedServiceIds(member, CATALOG_IDS);
   const [mode, setMode] = useState(member.serviceMode);
@@ -33,7 +39,7 @@ export function MemberServices() {
   const [query, setQuery] = useState("");
 
   const first = member.name.split(" ")[0];
-  const locked = member.status === "inactive";
+  const locked = member.status === "inactive" || !canManage;
   const effective = mode === "all" ? CATALOG_IDS : selected;
   const dirty =
     mode !== member.serviceMode || (mode === "selected" && [...selected].sort().join() !== [...savedIds].sort().join());
@@ -161,6 +167,8 @@ export function MemberServices() {
         )}
       </section>
 
+      {problem && <FormAlert>{problem}</FormAlert>}
+      {!canManage && <p className="text-sm text-ink-muted">Only an owner or admin can change assigned services.</p>}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-line bg-surface p-4">
         <p className="text-sm text-ink-muted" aria-live="polite">
           {effective.length} of {CATALOG.length} services assigned to {member.name}
@@ -174,14 +182,19 @@ export function MemberServices() {
             onClick={() => {
               setMode(member.serviceMode);
               setSelected(savedIds);
+              setProblem(undefined);
             }}
           >
             Discard
           </Button>
           <Button
-            disabled={!dirty || empty || locked}
-            onClick={() => {
-              setServiceEligibility(member.id, mode, mode === "all" ? [] : selected);
+            disabled={!dirty || empty || locked || saving}
+            onClick={async () => {
+              setSaving(true);
+              setProblem(undefined);
+              const result = await setServiceEligibility(member.id, mode, mode === "all" ? [] : selected);
+              setSaving(false);
+              if (!result.ok) return setProblem(result.error);
               toast(`Assigned services for ${member.name} saved.`);
             }}
           >

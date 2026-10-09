@@ -1,16 +1,12 @@
 import { notFound } from "next/navigation";
 import { PropertySection } from "@/components/customers/PropertySection";
-import { getCustomerById, getPropertiesForCustomer } from "@/data/customers";
-import { fixtureGate } from "@/server/fixture-gate";
+import { getCustomerDetail } from "@/server/core-data";
 
 export default async function CustomerPropertiesPage({ params }: PageProps<"/customers/[customerId]/properties">) {
-  const gate = await fixtureGate("Customers");
-  if (gate) return gate;
   const { customerId } = await params;
-  const customer = getCustomerById(customerId);
-  if (!customer) notFound();
-
-  const properties = getPropertiesForCustomer(customer.id);
+  const detail = await getCustomerDetail(customerId);
+  if (!detail) notFound();
+  const { customer, properties } = detail;
 
   return (
     <div className="space-y-6">

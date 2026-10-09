@@ -19,8 +19,8 @@ type MarketingContextValue = {
 const MarketingContext = createContext<MarketingContextValue | null>(null);
 
 /** In memory only; a reload restores the baseline. Nothing is delivered to anyone. */
-export function MarketingProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<MarketingData>(MARKETING_DATA);
+export function MarketingProvider({ initial = MARKETING_DATA, children }: { initial?: MarketingData; children: ReactNode }) {
+  const [data, setData] = useState<MarketingData>(initial);
   const latest = useRef(data);
 
   const commit = useCallback((next: MarketingData) => {

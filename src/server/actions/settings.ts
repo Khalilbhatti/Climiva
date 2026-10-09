@@ -6,8 +6,8 @@ import { hoursRowsFromWeekly, organizationValuesFromBusiness, organizationValues
 import { organizationBusinessHours, organizations, profiles } from "@/db/schema";
 import { withTenant, withUser } from "@/db/tenant";
 import { NOT_ALLOWED, SIGNED_OUT, failure, ok, type ActionResult } from "@/lib/action-result";
+import { can } from "@/lib/policy";
 import { parseBusiness, parseHours, parsePreferences, parseProfileName } from "@/lib/validation";
-import { canManage } from "@/lib/workspace-types";
 import { resolveWorkspace, type WorkspaceContext } from "../workspace";
 
 /**
@@ -21,7 +21,7 @@ import { resolveWorkspace, type WorkspaceContext } from "../workspace";
 async function manager(): Promise<{ context: WorkspaceContext } | { error: ActionResult<never> }> {
   const state = await resolveWorkspace();
   if (state.status !== "ready") return { error: failure(SIGNED_OUT) };
-  if (!canManage(state.context.role)) return { error: failure(NOT_ALLOWED) };
+  if (!can(state.context.role, "settings:manage")) return { error: failure(NOT_ALLOWED) };
   return { context: state.context };
 }
 

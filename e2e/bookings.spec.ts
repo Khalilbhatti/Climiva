@@ -1,6 +1,6 @@
 import type { Page } from "playwright/test";
-import { SERVICES } from "../src/data/services";
 import { expect, test } from "./fixtures";
+import { SERVICES } from "./apex-data";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
 const bookingRows = (page: Page, tab: string) => page.getByRole("table", { name: `${tab} bookings` }).locator("tbody tr");

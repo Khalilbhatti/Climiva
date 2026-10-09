@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "playwright/test";
-import { CUSTOMERS, PROPERTIES, getPropertyById } from "../src/data/customers";
+import { getPropertyById } from "../src/data/customers";
 import { business, overviewMetrics } from "../src/data/fixtures";
 import {
   COVERAGE,
@@ -23,7 +23,7 @@ import {
   getPaymentsReceivedTotal,
   getRecordedPaymentsCount,
 } from "../src/data/financials";
-import { SERVICES, getPublicActiveServices } from "../src/data/services";
+import { getPublicActiveServices } from "../src/data/services";
 import {
   CLIMVIA_DOMAIN,
   DEFAULT_CUSTOM_DOMAIN,
@@ -48,6 +48,7 @@ import {
   savePage,
   unpublish,
 } from "../src/lib/website-state";
+import { BOOK, CUSTOMERS, PROPERTIES, SERVICES } from "./apex-data";
 
 // Pure data/selector/state tests: no browser needed.
 
@@ -94,7 +95,7 @@ test.describe("maintenance plan data", () => {
       endDate: "2025-05-14",
       visitsPerYear: 2,
     });
-    expect(getPropertyById(plan.propertyId!)).toMatchObject({ street: "1402 Kinney Ave", city: "Austin", state: "TX", postalCode: "78704", label: "Home" });
+    expect(getPropertyById(plan.propertyId!, BOOK)).toMatchObject({ street: "1402 Kinney Ave", city: "Austin", state: "TX", postalCode: "78704", label: "Home" });
     // Cooling and heating maintenance only, one visit each.
     expect(plan.coverage).toEqual([
       { coverageId: "cooling", visits: 1 },
@@ -262,18 +263,18 @@ test.describe("website data", () => {
   });
 
   test("the website owns no business details: it reads them from the Business fixture and the Services catalog", () => {
-    const text = JSON.stringify(PAGE_SCHEMA) + JSON.stringify(defaultSiteContent());
+    const text = JSON.stringify(PAGE_SCHEMA) + JSON.stringify(defaultSiteContent(SERVICES));
     for (const value of [business.phone, business.email, business.address.street, business.hours[0].hours]) expect(text).not.toContain(value);
     for (const service of SERVICES) {
       expect(text).not.toContain(service.name);
       expect(text).not.toContain(service.description);
     }
     // Services are held as ids only.
-    expect(defaultSiteContent().services.order).toEqual(getPublicActiveServices().map((service) => service.id));
+    expect(defaultSiteContent(SERVICES).services.order).toEqual(getPublicActiveServices(SERVICES).map((service) => service.id));
   });
 
   test("no invented credentials, founding dates, awards or SEO and debug fields", () => {
-    const text = (JSON.stringify(PAGE_SCHEMA) + JSON.stringify(defaultSiteContent())).toLowerCase();
+    const text = (JSON.stringify(PAGE_SCHEMA) + JSON.stringify(defaultSiteContent(SERVICES))).toLowerCase();
     for (const phrase of ["licensed", "insured", "certified", "founded", "since 19", "since 20", "award", "years of experience", "seo", "meta ", "debug", "5-star", "4.9"]) {
       expect(text, phrase).not.toContain(phrase);
     }
@@ -281,8 +282,8 @@ test.describe("website data", () => {
 
   test("showing, hiding and ordering services never changes the Services themselves", () => {
     const before = JSON.stringify(SERVICES);
-    const content = defaultSiteContent();
-    const shown = getShownServices({ order: [...content.services.order].reverse(), hidden: ["annual-cooling-tune-up"] });
+    const content = defaultSiteContent(SERVICES);
+    const shown = getShownServices({ order: [...content.services.order].reverse(), hidden: ["annual-cooling-tune-up"] }, SERVICES);
     expect(shown.map((service) => service.id)).toEqual(
       [...content.services.order].reverse().filter((id) => id !== "annual-cooling-tune-up"),
     );
@@ -293,7 +294,7 @@ test.describe("website data", () => {
 
 test.describe("website state", () => {
   test("the baseline is published on both addresses, with the Climvia address primary", () => {
-    const site = initialWebsiteState();
+    const site = initialWebsiteState(SERVICES);
     expect(site.published).toBe(true);
     expect(site.domain).toEqual({ custom: DEFAULT_CUSTOM_DOMAIN, primary: "climvia" });
     expect(CLIMVIA_DOMAIN).toBe("apexclimate.climvia.com");
@@ -304,7 +305,7 @@ test.describe("website state", () => {
   });
 
   test("saving a page changes the draft only; publishing makes it live", () => {
-    const site = initialWebsiteState();
+    const site = initialWebsiteState(SERVICES);
     const home = { ...site.draft.pages.home, hero: { ...site.draft.pages.home.hero, values: { ...site.draft.pages.home.hero.values, headline: "Cool homes, fair prices" } } };
     const saved = savePage(site, "home", home);
     expect(site.draft.pages.home.hero.values.headline).not.toBe("Cool homes, fair prices");
@@ -317,7 +318,7 @@ test.describe("website state", () => {
   });
 
   test("changing which services are shown marks the pages that list services", () => {
-    const site = initialWebsiteState();
+    const site = initialWebsiteState(SERVICES);
     const saved = savePage(site, "services", site.draft.pages.services, { ...site.draft.services, hidden: ["furnace-safety-inspection"] });
     expect(getPageStatus(saved, "services")).toBe("unpublished-changes");
     expect(getPageStatus(saved, "home")).toBe("unpublished-changes");
@@ -326,15 +327,15 @@ test.describe("website state", () => {
   });
 
   test("unpublishing makes every page private and keeps the content; publishing again restores it", () => {
-    const site = unpublish(initialWebsiteState());
+    const site = unpublish(initialWebsiteState(SERVICES));
     expect(site.published).toBe(false);
     expect(WEBSITE_PAGES.every((page) => getPageStatus(site, page.id) === "private")).toBe(true);
-    expect(site.draft).toEqual(initialWebsiteState().draft);
+    expect(site.draft).toEqual(initialWebsiteState(SERVICES).draft);
     expect(publish(site).published).toBe(true);
   });
 
   test("domains and publishing are independent", () => {
-    const private_ = unpublish(initialWebsiteState());
+    const private_ = unpublish(initialWebsiteState(SERVICES));
     const removed = removeCustomDomain(private_);
     expect(removed.published).toBe(false);
     expect(removed.draft).toEqual(private_.draft);
@@ -344,7 +345,7 @@ test.describe("website state", () => {
   });
 
   test("remove restores the Climvia address as primary; make primary and connect behave", () => {
-    const site = initialWebsiteState();
+    const site = initialWebsiteState(SERVICES);
     const custom = makeCustomPrimary(site);
     expect(getPrimaryDomain(custom.domain)).toBe(DEFAULT_CUSTOM_DOMAIN);
     expect(getPrimaryDomain(makeClimviaPrimary(custom).domain)).toBe(CLIMVIA_DOMAIN);

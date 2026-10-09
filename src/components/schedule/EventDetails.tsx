@@ -11,12 +11,14 @@ import { jobHref } from "@/config/routes";
 import { getAssigneeName, getBookingById, getJobById, getPartyName, getServiceNameFor, type ScheduleEvent } from "@/data/operations";
 import { getTeamMemberById } from "@/data/team";
 import { formatTimeRange, formatWeekdayDate } from "@/lib/dates";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 /**
  * Details for the selected calendar event. Work with a booking reuses the booking panel so the
  * Schedule and Bookings can never disagree; the other kinds are small.
  */
 export function EventDetails({ event, onClose }: { event: ScheduleEvent; onClose: () => void }) {
+  const dir = useDirectory();
   const { data } = useOperations();
 
   if (event.kind === "work") {
@@ -29,10 +31,10 @@ export function EventDetails({ event, onClose }: { event: ScheduleEvent; onClose
           <KeyValueList
             className="rounded-card bg-surface-low p-4"
             items={[
-              { label: "Customer", value: getPartyName(job) },
-              { label: "Service", value: getServiceNameFor(job) },
+              { label: "Customer", value: getPartyName(job, dir) },
+              { label: "Service", value: getServiceNameFor(job, dir) },
               { label: "When", value: `${formatWeekdayDate(job.date)} · ${formatTimeRange(job.start, job.end)}` },
-              { label: "Technician", value: getAssigneeName(job) ?? "Unassigned" },
+              { label: "Technician", value: getAssigneeName(job, dir) ?? "Unassigned" },
             ]}
           />
           <ButtonLink variant="secondary" href={jobHref(job.id)}>
@@ -50,7 +52,7 @@ export function EventDetails({ event, onClose }: { event: ScheduleEvent; onClose
         className="rounded-card bg-surface-low p-4"
         items={[
           { label: "When", value: `${formatWeekdayDate(event.date)} · ${formatTimeRange(event.start, event.end)}` },
-          { label: "Applies to", value: event.memberIds.map((id) => getTeamMemberById(id)?.name).join(", ") },
+          { label: "Applies to", value: event.memberIds.map((id) => getTeamMemberById(id, dir.team)?.name).join(", ") },
           { label: "Type", value: "Internal blocked time" },
         ]}
       />

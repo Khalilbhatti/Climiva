@@ -5,9 +5,12 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useOperations } from "@/components/operations/OperationsProvider";
 import { SearchInput } from "@/components/ui/SearchInput";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { cn } from "@/lib/cn";
-import { MIN_QUERY, SEARCH_GROUPS, searchWorkspace } from "@/lib/global-search";
+import { MIN_QUERY, SEARCH_GROUPS, searchWorkspace, type SearchResult } from "@/lib/global-search";
+import { send } from "@/lib/send-action";
+import { searchCustomersAction } from "@/server/actions/customers";
 
 /**
  * Global search: Customers, Jobs, Bookings and Schedule, found from the same records the modules show. It is a
@@ -20,6 +23,7 @@ export function GlobalSearch() {
   const router = useRouter();
   const pathname = usePathname();
   const { data } = useOperations();
+  const dir = useDirectory();
   const { hasSampleData } = useWorkspace();
   const listId = useId();
   const [query, setQuery] = useState("");
@@ -35,9 +39,28 @@ export function GlobalSearch() {
     setActive(-1);
   }
 
-  // The records searched are the sample dataset's: any other workspace has none of them yet.
-  const results = useMemo(() => (hasSampleData ? searchWorkspace(query, data) : []), [query, data, hasSampleData]);
-  const searching = query.trim().length >= MIN_QUERY;
+  // The sample business is searched in the browser (its Jobs, Bookings and Schedule live there). Any other business's
+  // Customers are searched on the server, in its own PostgreSQL rows only; it has no Jobs, Bookings or Schedule yet.
+  const [found, setFound] = useState<{ query: string; results: SearchResult[] }>({ query: "", results: [] });
+  const text = query.trim();
+  useEffect(() => {
+    if (hasSampleData || text.length < MIN_QUERY) return;
+    let current = true;
+    const timer = setTimeout(async () => {
+      const outcome = await send(() => searchCustomersAction(text));
+      if (current) setFound({ query: text, results: outcome.ok ? outcome.data : [] });
+    }, 200);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [hasSampleData, text]);
+  const results = useMemo(
+    () => (hasSampleData ? searchWorkspace(query, data, dir) : found.query === text ? found.results : []),
+    [query, data, dir, hasSampleData, found, text],
+  );
+  const waiting = !hasSampleData && text.length >= MIN_QUERY && found.query !== text;
+  const searching = text.length >= MIN_QUERY;
   const listed = open && searching && results.length > 0;
   const optionId = (index: number) => `${listId}-option-${index}`;
 
@@ -116,7 +139,7 @@ export function GlobalSearch() {
         <div className="absolute top-full right-0 left-0 z-40 mt-2 max-h-[min(28rem,calc(100dvh-5rem))] overflow-y-auto rounded-card border border-line bg-surface p-2 shadow-overlay">
           {results.length === 0 ? (
             <p role="status" className="px-3 py-3 text-sm text-ink-muted">
-              No matches for “{query.trim()}”.
+              {waiting ? "Searching…" : `No matches for “${text}”.`}
             </p>
           ) : (
             <div id={listId} role="listbox" aria-label="Search results">

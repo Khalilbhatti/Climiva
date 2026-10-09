@@ -213,6 +213,8 @@ test.describe("Reply and edit response", () => {
     await expect(dialog.getByLabel(/^Public response/)).toHaveValue(SARAH_REPLY);
     await dialog.getByLabel(/^Public response/).fill("Thank you, Sarah. We are glad the repair went smoothly.");
     await dialog.getByRole("button", { name: "Save response" }).click();
+    // The change is stored on the server first; the dialog closes (and the "posted" notice goes) once it is.
+    await expect(dialog).toBeHidden();
     await expect(toast(page)).toContainText("Response updated.");
     await expect(response).toContainText("Thank you, Sarah. We are glad the repair went smoothly.");
     await expect(response).not.toContainText(SARAH_REPLY);

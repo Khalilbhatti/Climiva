@@ -35,6 +35,7 @@ import { useMaintenancePlans } from "./MaintenancePlansProvider";
 import { ScheduleVisitModal } from "./ScheduleVisitModal";
 import { PlanCustomerName, PlanStatusBadge, planCustomerName, planProperty, visitTitle } from "./plan-ui";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 
 export function PlanDetail({ planId }: { planId: string }) {
   const { data } = useMaintenancePlans();
@@ -46,7 +47,7 @@ export function PlanDetail({ planId }: { planId: string }) {
         as="h1"
         icon={SearchX}
         title="Plan not found"
-        description="This plan isn't in the list. Plans created in this session are cleared when the page reloads."
+        description="This plan isn't in this workspace. It may have been mistyped, or it belongs to another business."
         action={<ButtonLink href="/maintenance-plans">Back to Maintenance Plans</ButtonLink>}
       />
     );
@@ -57,6 +58,7 @@ export function PlanDetail({ planId }: { planId: string }) {
 function PlanPage({ plan }: { plan: MaintenancePlan }) {
   const dir = useDirectory();
   const { data: ops } = useOperations();
+  const canManage = useCan("maintenance:manage");
   const [scheduling, setScheduling] = useState<PlanVisit | null>(null);
 
   const customer = plan.customerId ? getCustomerById(plan.customerId, dir) : undefined;
@@ -65,7 +67,7 @@ function PlanPage({ plan }: { plan: MaintenancePlan }) {
   const next = getNextVisit(plan, ops);
   const completed = getCompletedVisitCount(plan, ops);
   const percent = plan.visitsPerYear > 0 ? Math.round((completed / plan.visitsPerYear) * 100) : 0;
-  const canSchedule = plan.status === "active" && next && !getVisitBooking(next, ops);
+  const canSchedule = canManage && plan.status === "active" && next && !getVisitBooking(next, ops);
 
   // The plan's story, read from the records it points at.
   const activity = [

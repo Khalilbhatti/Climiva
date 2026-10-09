@@ -11,7 +11,9 @@
  */
 import type { CustomerBook } from "./customers";
 import type { FinancialData } from "./financials";
+import type { PlansData } from "./maintenance-plans";
 import type { OperationsData } from "./operations";
+import type { ReviewsData } from "./reviews";
 import type { Service } from "./services";
 import type { TeamData } from "./team";
 
@@ -29,4 +31,8 @@ export type CoreSnapshot = {
   operations: OperationsData;
   /** The business's Quotes, Invoices and Payments: balances and statuses are derived from these. */
   financials: FinancialData;
+  /** The business's Maintenance Plans with their coverage and visits: a visit's state is derived from its Booking in `operations`. */
+  maintenance: PlansData;
+  /** The business's Reviews (each with its one reply) and the review requests it recorded. */
+  reviews: ReviewsData;
 };

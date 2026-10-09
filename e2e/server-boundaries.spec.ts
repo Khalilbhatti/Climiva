@@ -7,8 +7,16 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { expect, test } from "playwright/test";
-import { NORTHSTAR_CUSTOMERS, NORTHSTAR_FINANCIALS, NORTHSTAR_OPERATIONS, NORTHSTAR_SERVICES, NORTHSTAR_TEAM } from "../scripts/db/seed-data/northstar";
-import { BOOKINGS, CUSTOMERS, FINANCIALS, JOBS, PROPERTIES, SERVICES, TEAM } from "./apex-data";
+import {
+  NORTHSTAR_CUSTOMERS,
+  NORTHSTAR_FINANCIALS,
+  NORTHSTAR_MAINTENANCE,
+  NORTHSTAR_OPERATIONS,
+  NORTHSTAR_REVIEWS,
+  NORTHSTAR_SERVICES,
+  NORTHSTAR_TEAM,
+} from "../scripts/db/seed-data/northstar";
+import { BOOKINGS, CUSTOMERS, FINANCIALS, JOBS, PLANS, PROPERTIES, REVIEWS, SARAH_REPLY, SERVICES, TEAM } from "./apex-data";
 
 const ROOT = process.cwd();
 const SRC = join(ROOT, "src");
@@ -73,7 +81,7 @@ test.describe("nothing server-only reaches the browser", () => {
     }
   });
 
-  test("no customer, property, Service, team, booking, job, quote, invoice or payment record is compiled into the browser's JavaScript", () => {
+  test("no customer, property, Service, team, booking, job, quote, invoice, payment, maintenance plan or review record is compiled into the browser's JavaScript", () => {
     // The foundations and the operations are read from PostgreSQL for the verified business and sent to that business's browser
     // only. Their seed lives in scripts/db/seed-data, which nothing under src imports; this checks the built result, where a stray
     // import would show.
@@ -120,6 +128,22 @@ test.describe("nothing server-only reaches the browser", () => {
     const financials = billed.filter((value) => value.length > 12 && !fixtureText.includes(value));
     expect(financials.length).toBeGreaterThan(10);
     expect(financials.filter((value) => bundle.includes(value) || bundle.includes(JSON.stringify(value).slice(1, -1)))).toEqual([]);
+    // The maintenance plans and the reviews: the addresses and names on plans with no customer record, the plans' notes, what customers
+    // wrote and what the business replied. They are read from PostgreSQL for the verified business and sent to that business's browser only.
+    const maintenance = [
+      ...PLANS.flatMap((plan) => [plan.contactName ?? "", plan.propertyText ?? "", plan.note ?? ""]),
+      ...NORTHSTAR_MAINTENANCE.plans.flatMap((plan) => [plan.contactName ?? "", plan.propertyText ?? "", plan.note ?? ""]),
+    ].filter((value) => value.length > 8 && !fixtureText.includes(value));
+    expect(maintenance.length).toBeGreaterThan(4);
+    expect(maintenance.filter((value) => bundle.includes(value) || bundle.includes(JSON.stringify(value).slice(1, -1)))).toEqual([]);
+    const reviewed = [
+      SARAH_REPLY,
+      ...REVIEWS.flatMap((review) => [review.text, review.contactName ?? "", review.replyDraft ?? "", review.response?.body ?? ""]),
+      ...NORTHSTAR_REVIEWS.reviews.flatMap((review) => [review.text, review.response?.body ?? ""]),
+      ...NORTHSTAR_REVIEWS.requests.map((request) => request.message),
+    ].filter((value) => value.length > 12 && !fixtureText.includes(value));
+    expect(reviewed.length).toBeGreaterThan(8);
+    expect(reviewed.filter((value) => bundle.includes(value) || bundle.includes(JSON.stringify(value).slice(1, -1)))).toEqual([]);
     // Nor the seed modules themselves: nothing under src may import them.
     expect(sourceFiles.filter((path) => importsOf(read(path)).some((specifier) => /seed-data/.test(specifier))).map(posix)).toEqual([]);
   });
@@ -143,7 +167,7 @@ test.describe("every Server Action authorizes its caller", () => {
       const exported = [...source.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)];
       expect(exported.length, `${posix(path)} exports no actions`).toBeGreaterThan(0);
       // team.ts and operations.ts route every write through one helper whose first step is the authorization; it is checked below.
-      const helper = /async function (?:change|mutate)<[\s\S]*?\n}\n/.exec(source)?.[0];
+      const helper = /async function (?:change|mutate)[<(][\s\S]*?\n}\n/.exec(source)?.[0];
       for (const [, name, body] of exported) {
         if (exempt.has(name)) continue;
         const direct = CHECKS.test(body);
@@ -166,7 +190,7 @@ test.describe("every Server Action authorizes its caller", () => {
     }
   });
 
-  test("Services, Team, operations and financial writes need the owner/admin capability", () => {
+  test("Services, Team, operations, financial, maintenance and review writes need the owner/admin capability", () => {
     const services = read(join(SRC, "server", "actions", "services.ts"));
     expect(services.match(/authorize\("services:manage"/g)?.length).toBe(2);
     expect(services).not.toMatch(/requireMember\(/);
@@ -193,11 +217,30 @@ test.describe("every Server Action authorizes its caller", () => {
     for (const [, name, body] of financialActions) expect(/>\s\{\s+return mutate\(/.test(body), `${name} must start by handing everything to mutate()`).toBe(true);
     // No action names an organization, an owner or a customer on a payment: the tenant is the verified one, the customer is the invoice's.
     expect(financials).not.toMatch(/organizationId:\s*(input|payload|body)/);
+    // Every plan and visit write goes through the one helper that authorizes "maintenance:manage" first, and every reply and request write
+    // through the one that authorizes "reviews:manage" first.
+    const maintenance = read(join(SRC, "server", "actions", "maintenance.ts"));
+    expect(maintenance.match(/authorize\("maintenance:manage"/g)?.length).toBe(1);
+    expect(maintenance).not.toMatch(/requireMember\(/);
+    const maintenanceActions = [...maintenance.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)];
+    expect(maintenanceActions.map(([, name]) => name).sort()).toEqual(["createPlanAction", "scheduleVisitAction"]);
+    for (const [, name, body] of maintenanceActions) expect(/>\s\{\s+return mutate\(/.test(body), `${name} must start by handing everything to mutate()`).toBe(true);
+    const reviews = read(join(SRC, "server", "actions", "reviews.ts"));
+    expect(reviews.match(/authorize\("reviews:manage"/g)?.length).toBe(1);
+    expect(reviews).not.toMatch(/requireMember\(/);
+    const reviewActions = [...reviews.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)];
+    expect(reviewActions.map(([, name]) => name).sort()).toEqual(["createReviewRequestAction", "editReplyAction", "postReplyAction"]);
+    for (const [, name, body] of reviewActions) expect(/>\s\{\s+return mutate\(/.test(body), `${name} must start by handing everything to mutate()`).toBe(true);
+    // Neither names an organization from the request: the tenant is the verified one.
+    expect(maintenance).not.toMatch(/organizationId:\s*(input|payload|body)/);
+    expect(reviews).not.toMatch(/organizationId:\s*(input|payload|body)/);
     // The capabilities are decided in one place.
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"financials:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"services:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"team:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"operations:manage": \["owner", "admin"\]/);
+    expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"maintenance:manage": \["owner", "admin"\]/);
+    expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"reviews:manage": \["owner", "admin"\]/);
   });
 
   test("no action takes an organization id from the client and trusts it", () => {
@@ -242,17 +285,17 @@ test.describe("tenant data is never cached or prerendered", () => {
 });
 
 test.describe("every fixture-backed page checks its caller and its tenant", () => {
-  const FIXTURE_MODULES = ["analytics", "maintenance-plans", "marketing", "marketplace", "reviews", "website"];
-  /** Customers, Services, Team, Bookings, Jobs, the Schedule, Payments and Quotes & Invoices are on PostgreSQL: they work for every workspace, with that workspace's own rows. */
-  const DATABASE_MODULES = ["bookings", "customers", "jobs", "payments", "quotes-invoices", "schedule", "services", "team"];
+  const FIXTURE_MODULES = ["analytics", "marketing", "marketplace", "website"];
+  /** Customers, Services, Team, Bookings, Jobs, the Schedule, Payments, Quotes & Invoices, Maintenance Plans and Reviews are on PostgreSQL: they work for every workspace, with that workspace's own rows. */
+  const DATABASE_MODULES = ["bookings", "customers", "jobs", "maintenance-plans", "payments", "quotes-invoices", "reviews", "schedule", "services", "team"];
   const workspaceDir = join(SRC, "app", "(workspace)");
   const entries = FIXTURE_MODULES.flatMap((module) => walk(join(workspaceDir, module), (path) => /(page|layout)\.tsx$/.test(path)));
 
   test("the module list matches the sidebar", () => {
-    // Settings, Help and the eight database-backed modules are real for every workspace; every other module folder still runs on the sample dataset and must be listed here.
+    // Settings, Help and the ten database-backed modules are real for every workspace; every other module folder still runs on the sample dataset and must be listed here.
     const present = readdirSync(workspaceDir).filter((entry) => statSync(join(workspaceDir, entry)).isDirectory() && !["settings", "help", ...DATABASE_MODULES].includes(entry));
     expect(present.sort()).toEqual([...FIXTURE_MODULES].sort());
-    expect(entries.length).toBeGreaterThan(15);
+    expect(entries.length).toBeGreaterThan(10);
   });
 
   test("each page and layout calls fixtureGate() before it renders anything", () => {
@@ -265,7 +308,7 @@ test.describe("every fixture-backed page checks its caller and its tenant", () =
     expect(missing).toEqual([]);
   });
 
-  test("Customers, Services, Team, Bookings, Jobs, Schedule, Payments and Quotes & Invoices read the database for the verified workspace: no sample gate, no sample data", () => {
+  test("Customers, Services, Team, Bookings, Jobs, Schedule, Payments, Quotes & Invoices, Maintenance Plans and Reviews read the database for the verified workspace: no sample gate, no sample data", () => {
     const pages = DATABASE_MODULES.flatMap((module) => walk(join(workspaceDir, module), (path) => /(page|layout)\.tsx$/.test(path)));
     expect(pages.length).toBeGreaterThan(20);
     const ASKS_THE_SERVER = /await requireWorkspaceContext\(\)|await getCustomerBook\(\)|await getCustomerDetail\(|await getServices\(\)|await getTeam\(\)/;

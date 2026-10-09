@@ -19,11 +19,13 @@ import { ReplyModal } from "./ReplyModal";
 import { useReviews } from "./ReviewsProvider";
 import { ReviewStatusBadge, Stars, reviewerName } from "./review-ui";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 
 export function ReviewDetail({ reviewId }: { reviewId: string }) {
   const dir = useDirectory();
   const { data } = useReviews();
   const { data: operations } = useOperations();
+  const canManage = useCan("reviews:manage");
   const review = getReviewById(reviewId, data);
   const [dialog, setDialog] = useState<"reply" | "edit" | null>(null);
   const [posted, setPosted] = useState(false);
@@ -72,17 +74,18 @@ export function ReviewDetail({ reviewId }: { reviewId: string }) {
             <span>· Source: {review.source}</span>
           </p>
         </div>
-        {status === "awaiting" ? (
-          <Button onClick={() => setDialog("reply")}>
-            <Reply aria-hidden className="size-4" />
-            Reply to review
-          </Button>
-        ) : (
-          <Button variant="secondary" onClick={() => setDialog("edit")}>
-            <Pencil aria-hidden className="size-4" />
-            Edit response
-          </Button>
-        )}
+        {canManage &&
+          (status === "awaiting" ? (
+            <Button onClick={() => setDialog("reply")}>
+              <Reply aria-hidden className="size-4" />
+              Reply to review
+            </Button>
+          ) : (
+            <Button variant="secondary" onClick={() => setDialog("edit")}>
+              <Pencil aria-hidden className="size-4" />
+              Edit response
+            </Button>
+          ))}
       </header>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
@@ -109,9 +112,11 @@ export function ReviewDetail({ reviewId }: { reviewId: string }) {
               <div className="rounded-card bg-surface-low p-4 text-sm text-ink-muted">
                 <p className="font-medium text-ink">No response posted yet</p>
                 <p className="mt-0.5">{name}’s review is awaiting a business response.</p>
-                <Button size="sm" className="mt-3" onClick={() => setDialog("reply")}>
-                  Write a response
-                </Button>
+                {canManage && (
+                  <Button size="sm" className="mt-3" onClick={() => setDialog("reply")}>
+                    Write a response
+                  </Button>
+                )}
               </div>
             )}
           </SectionCard>
@@ -150,7 +155,7 @@ export function ReviewDetail({ reviewId }: { reviewId: string }) {
         </div>
       </div>
 
-      {dialog && (
+      {dialog && canManage && (
         <ReplyModal
           review={review}
           mode={dialog}

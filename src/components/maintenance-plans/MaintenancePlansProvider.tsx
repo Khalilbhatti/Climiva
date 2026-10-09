@@ -1,42 +1,76 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
-import { PLANS_DATA, type MaintenancePlan, type PlansData } from "@/data/maintenance-plans";
-import * as state from "@/lib/maintenance-plans-state";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { useOperations } from "@/components/operations/OperationsProvider";
+import type { CoverageId, MaintenancePlan, PlanCadence, PlansData } from "@/data/maintenance-plans";
+import type { Booking, OperationsData } from "@/data/operations";
+import type { ActionResult } from "@/lib/action-result";
+import { send } from "@/lib/send-action";
+import { createPlanAction, scheduleVisitAction } from "@/server/actions/maintenance";
+
+export type NewPlanInput = {
+  customerId: string;
+  propertyId: string;
+  name: string;
+  status: "active" | "pending";
+  /** Visits per year of each kind of coverage. */
+  coverage: Partial<Record<CoverageId, number>>;
+  /** What the person typed ("189", "189.50"): read as exact cents on the server. */
+  price: string;
+  cadence: PlanCadence;
+  startDate: string;
+  endDate?: string;
+  note?: string;
+};
+
+export type ScheduleVisitInput = {
+  serviceId: string;
+  date: string;
+  start: string;
+  end: string;
+  assigneeId?: string;
+  internalNotes?: string;
+};
 
 type PlansContextValue = {
-  /** The working data: canonical fixtures plus any demo changes made in this session. */
+  /** The business's plans, as stored. A visit's state is derived from its Booking by the selectors in data/maintenance-plans. */
   data: PlansData;
-  createPlan: (input: state.NewPlanInput, customerSlug: string) => MaintenancePlan;
+  /** Creates a plan with its coverage and visits. It creates no Booking, Job, Invoice or Payment. */
+  createPlan: (input: NewPlanInput) => Promise<ActionResult<{ plans: PlansData; plan: MaintenancePlan }>>;
+  /** Schedules a plan's next included visit as a real Booking, atomically. */
+  scheduleVisit: (planId: string, visitId: string, input: ScheduleVisitInput) => Promise<ActionResult<{ plans: PlansData; operations: OperationsData; booking: Booking }>>;
 };
 
 const PlansContext = createContext<PlansContextValue | null>(null);
 
 /**
- * The demo copy of maintenance plans for the whole workspace. It starts as the canonical fixtures, lives only
- * in memory (a reload restores them) and never writes back to data/maintenance-plans.ts. Mounted once at the
- * app root next to the other providers, so Maintenance Plans, Bookings, Schedule and Customers agree.
+ * The business's Maintenance Plans for the whole workspace. `initial` is what the server read from PostgreSQL for this page load,
+ * for the ACTIVE organization only. Every change goes to the server, which authorizes it (owner or admin), validates it, stores it
+ * in one transaction and answers with the plans as stored; only then does the working copy change, so the screen is never ahead
+ * of the database. Scheduling a visit makes a real Booking too, so the answer carries the operations and the Bookings and
+ * Schedule adopt them in the same step. Mounted once at the app root next to the other providers, so Maintenance Plans,
+ * Bookings, Schedule and Customers agree.
  */
-export function MaintenancePlansProvider({ initial = PLANS_DATA, children }: { initial?: PlansData; children: ReactNode }) {
+export function MaintenancePlansProvider({ initial, children }: { initial: PlansData; children: ReactNode }) {
   const [data, setData] = useState<PlansData>(initial);
-  // The ref lets actions that return a value (createPlan) read the latest data synchronously.
-  const latest = useRef(data);
+  const { adoptOperations } = useOperations();
 
-  const commit = useCallback((next: PlansData) => {
-    latest.current = next;
-    setData(next);
+  const adopt = useCallback(<T extends { plans: PlansData }>(result: ActionResult<T>): ActionResult<T> => {
+    if (result.ok) setData(result.data.plans);
+    return result;
   }, []);
 
   const value = useMemo<PlansContextValue>(
     () => ({
       data,
-      createPlan: (input, customerSlug) => {
-        const result = state.createPlan(latest.current, input, customerSlug);
-        commit(result.data);
-        return result.plan;
+      createPlan: async (input) => adopt(await send(() => createPlanAction(input))),
+      scheduleVisit: async (planId, visitId, input) => {
+        const result = adopt(await send(() => scheduleVisitAction(planId, visitId, input)));
+        if (result.ok) adoptOperations(result.data.operations);
+        return result;
       },
     }),
-    [data, commit],
+    [data, adopt, adoptOperations],
   );
 
   return <PlansContext value={value}>{children}</PlansContext>;

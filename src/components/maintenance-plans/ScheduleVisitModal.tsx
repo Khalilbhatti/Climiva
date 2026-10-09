@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CircleCheck, Info } from "lucide-react";
 import { FormAlert } from "@/components/auth/AuthShell";
-import { useOperations } from "@/components/operations/OperationsProvider";
 import { useSettings } from "@/components/settings/SettingsProvider";
 import { useTeam } from "@/components/team/TeamProvider";
 import { Button, ButtonLink } from "@/components/ui/Button";
@@ -20,6 +19,7 @@ import { getAssignableMembers, getAssignedServiceIds, getTeamMemberById } from "
 import { getSlotGroup } from "@/lib/booking-slots";
 import { formatLongDate, formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import { formatDate, formatMonthYear } from "@/lib/format";
+import { useMaintenancePlans } from "./MaintenancePlansProvider";
 import { planCustomerName, planFullAddress, visitTitle } from "./plan-ui";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
 import { useClock } from "@/components/workspace/WorkspaceProvider";
@@ -32,7 +32,7 @@ const STEPS = [
 ] as const;
 
 const LATER = "later";
-/** Visits that name no coverage can be booked as either maintenance service. */
+/** Visits that name no coverage can be booked as either maintenance service (the business's own, where it has them). */
 const MAINTENANCE_SERVICE_IDS = ["annual-cooling-tune-up", "furnace-safety-inspection"];
 
 type ScheduleVisitModalProps = {
@@ -43,18 +43,24 @@ type ScheduleVisitModalProps = {
 
 /**
  * Schedule an included visit. It creates one real Booking (stored in PostgreSQL like any other, which Bookings and the
- * Schedule already read). The Booking points at the plan visit it schedules, and the plan reads its visit's state from that
- * Booking, so the plan never holds a second copy that could disagree. It creates no Job, Quote, Invoice or Payment: the
- * visit is included in the plan.
+ * Schedule already read) and links the visit to it, in one step on the server: the Booking is made and the visit is scheduled,
+ * or neither happens. The plan reads its visit's state from that Booking, so the plan never holds a second copy that could
+ * disagree. It creates no Job, Quote, Invoice or Payment: the visit is included in the plan.
  */
 export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalProps) {
   const dir = useDirectory();
-  const { createBooking } = useOperations();
+  const { scheduleVisit } = useMaintenancePlans();
   const { data: team } = useTeam();
   const { hours } = useSettings().settings;
   const { today } = useClock();
 
-  const mappedServiceId = visit.coverageId ? COVERAGE[visit.coverageId].bookingServiceId : undefined;
+  // A coverage names the Service its visit is booked as, when this business has that Service; otherwise the visit is booked as
+  // one of the business's own (the maintenance ones first).
+  const coverageServiceId = visit.coverageId ? COVERAGE[visit.coverageId].bookingServiceId : undefined;
+  const mappedServiceId = coverageServiceId && dir.services.some((item) => item.id === coverageServiceId && item.active) ? coverageServiceId : undefined;
+  const active = dir.services.filter((item) => item.active);
+  const maintenance = active.filter((item) => MAINTENANCE_SERVICE_IDS.includes(item.id));
+  const offered = maintenance.length > 0 ? maintenance : active;
   const [serviceId, setServiceId] = useState(mappedServiceId ?? "");
   const [date, setDate] = useState("");
   const [slotId, setSlotId] = useState<string>();
@@ -109,20 +115,13 @@ export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalP
     if (!service || !slot || saving) return;
     setSaving(true);
     setProblem(undefined);
-    const customer = plan.customerId;
-    const result = await createBooking({
-      customerId: customer,
-      contactName: customer ? undefined : plan.contactName,
-      contact: customer ? undefined : { address: plan.propertyText },
-      propertyId: plan.propertyId,
+    const result = await scheduleVisit(plan.id, visit.id, {
       serviceId: service.id,
-      source: "Maintenance plan",
       date,
       start: slot.start,
       end: slot.end,
       assigneeId: assignee === LATER ? undefined : assignee,
       internalNotes: notes,
-      planVisit: { planId: plan.id, visitId: visit.id },
     });
     setSaving(false);
     if (!result.ok) return setProblem(result.error);
@@ -250,14 +249,14 @@ export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalP
               label="Service for this visit"
               required
               value={serviceId}
-              hint="Included visits are booked as one of the maintenance services."
+              hint={maintenance.length > 0 ? "Included visits are booked as one of the maintenance services." : "Included visits are booked as one of your services."}
               error={showErrors ? errors.service : undefined}
               onChange={(event) => setServiceId(event.target.value)}
             >
               <option value="">Select a service...</option>
-              {MAINTENANCE_SERVICE_IDS.map((id) => (
-                <option key={id} value={id}>
-                  {getServiceById(id, dir.services)?.name}
+              {offered.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
                 </option>
               ))}
             </Select>

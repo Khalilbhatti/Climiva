@@ -28,17 +28,17 @@ import {
   getTotalInvoiced,
 } from "../src/data/financials";
 import { BUSINESS_TIME_ZONE, PROTOTYPE_NOW, PROTOTYPE_TODAY, business, businessHoursByWeekday, currentUser, overviewMetrics } from "../src/data/fixtures";
-import { COVERAGE, PLANS, PLANS_DATA, PLAN_BASELINE, getCurrentPlanForCustomer, getPlanById, getPlanMetrics } from "../src/data/maintenance-plans";
+import { COVERAGE, PLAN_BASELINE, getCurrentPlanForCustomer, getPlanById, getPlanMetrics } from "../src/data/maintenance-plans";
 import { CAMPAIGN_BASELINE, MARKETING_DATA, getCampaignMetrics } from "../src/data/marketing";
 import { BASELINE_EXCLUDED_SERVICE_ID, getEligibleServices, getListingServices, initialMarketplaceState } from "../src/data/marketplace";
 import { getBookingById, getJobById } from "../src/data/operations";
-import { REVIEWS, REVIEWS_DATA, REVIEW_BASELINE, getReviewById, getReviewMetrics } from "../src/data/reviews";
+import { REVIEW_BASELINE, getReviewById, getReviewMetrics } from "../src/data/reviews";
 import { getPublicActiveServices } from "../src/data/services";
 import { initialSettings } from "../src/data/settings";
 import { getTeamMemberById } from "../src/data/team";
 import { WEBSITE_PAGES, defaultSiteContent, getShownServices } from "../src/data/website";
 import { RESERVED_BOOKING_NUMBERS } from "../src/lib/operations-rules";
-import { BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, INVOICES, JOBS, OPERATIONS, ROLES, SCHEDULE_BLOCKS, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
+import { BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, INVOICES, JOBS, OPERATIONS, PLANS, PLANS_DATA, REVIEWS, REVIEWS_DATA, ROLES, SCHEDULE_BLOCKS, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
 import { withPayment } from "./financial-edits";
 
 const SIX_SERVICES = [
@@ -174,12 +174,12 @@ test.describe("Job #JB-204 and Sarah's record", () => {
   });
 
   test("Sarah's review points at JB-204, and her last service is JB-204", () => {
-    expect(getReviewById("rev-sarah-mitchell")).toMatchObject({ customerId: "sarah-mitchell", relatedJobId: "JB-204", rating: 5 });
+    expect(getReviewById("rev-sarah-mitchell", REVIEWS_DATA)).toMatchObject({ customerId: "sarah-mitchell", relatedJobId: "JB-204", rating: 5 });
     expect(getCustomerById("sarah-mitchell", BOOK)?.lastService?.jobId).toBe("JB-204");
   });
 
   test("her Comfort Care plan is $189 a year, two visits, May 14 2024 to May 14 2025, and BK-1048 is held for its cooling visit", () => {
-    const plan = getCurrentPlanForCustomer("sarah-mitchell")!;
+    const plan = getCurrentPlanForCustomer("sarah-mitchell", PLANS_DATA)!;
     expect(plan).toMatchObject({ id: "plan-sarah-comfort-care", name: "Comfort Care", status: "active", price: 189, cadence: "year", visitsPerYear: 2, startDate: "2024-05-14", endDate: "2025-05-14", propertyId: "prop-sarah-home" });
     expect(plan.visits).toHaveLength(2);
     expect(getPlanById("plan-sarah-comfort-care", PLANS_DATA)).toBe(plan);
@@ -226,7 +226,7 @@ test.describe("money", () => {
 test.describe("Growth and Insights baselines", () => {
   test("Reviews: 12 reviews, 4.7 average, 3 awaiting a reply, 5 requests", () => {
     expect(REVIEW_BASELINE).toEqual({ total: 12, average: 4.7, awaiting: 3, requests: 5 });
-    expect(getReviewMetrics(REVIEWS_DATA)).toEqual({ total: 12, average: 4.7, awaiting: 3, responded: 9, requests: 5 });
+    expect(getReviewMetrics(REVIEWS_DATA, REVIEW_BASELINE)).toEqual({ total: 12, average: 4.7, awaiting: 3, responded: 9, requests: 5 });
   });
 
   test("Marketing: 2 drafts, 1 scheduled, 8 sent, 146 recent recipients", () => {
@@ -248,7 +248,7 @@ test.describe("Growth and Insights baselines", () => {
     expect(model.payments.recorded).toBe(getRecordedPaymentsCount(FINANCIALS));
     expect(model.payments.received).toBe(getPaymentsReceivedTotal(FINANCIALS));
     expect(model.invoices.outstanding).toBe(getOutstandingBalance(FINANCIALS));
-    expect(model.plans).toEqual(getPlanMetrics(PLANS_DATA, OPERATIONS));
+    expect(model.plans).toEqual(getPlanMetrics(PLANS_DATA, OPERATIONS, PROTOTYPE_TODAY, PLAN_BASELINE));
     expect(model.plans.active).toBe(PLAN_BASELINE.active);
   });
 

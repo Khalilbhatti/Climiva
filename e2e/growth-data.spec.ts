@@ -27,20 +27,12 @@ import {
   sameConfig,
 } from "../src/data/marketplace";
 import { getJobById } from "../src/data/operations";
-import {
-  REVIEWS,
-  REVIEWS_DATA,
-  REVIEW_BASELINE,
-  SARAH_REPLY,
-  getReviewById,
-  getReviewMetrics,
-  getReviewStatus,
-} from "../src/data/reviews";
+import { REVIEW_BASELINE, getReviewById, getReviewMetrics, getReviewStatus } from "../src/data/reviews";
 import { getPublicActiveServices } from "../src/data/services";
 import { cancelSchedule, createDraft, duplicateCampaign, saveAsDraft, scheduleCampaign, sendCampaign, updateCampaign } from "../src/lib/marketing-state";
 import { hideListing, moveService, publishListing, saveListing, setUpListing, toggleService } from "../src/lib/marketplace-state";
-import { addReviewRequest, editResponse, postResponse } from "../src/lib/reviews-state";
-import { OPERATIONS, SERVICES } from "./apex-data";
+import { OPERATIONS, REVIEWS, REVIEWS_DATA, SARAH_REPLY, SERVICES } from "./apex-data";
+import { withEditedReply, withReply, withRequest } from "./review-edits";
 
 // Pure data/selector/state tests: no browser needed.
 
@@ -129,13 +121,13 @@ test.describe("marketplace data", () => {
 test.describe("reviews data", () => {
   test("the approved totals are 12 reviews, 4.7 average, 3 awaiting a reply and 5 review requests", () => {
     expect(REVIEW_BASELINE).toEqual({ total: 12, average: 4.7, awaiting: 3, requests: 5 });
-    expect(getReviewMetrics(REVIEWS_DATA)).toEqual({ total: 12, average: 4.7, awaiting: 3, responded: 9, requests: 5 });
+    expect(getReviewMetrics(REVIEWS_DATA, REVIEW_BASELINE)).toEqual({ total: 12, average: 4.7, awaiting: 3, responded: 9, requests: 5 });
     // A representative sample, not twelve invented records.
     expect(REVIEWS.length).toBeLessThan(12);
   });
 
   test("Sarah Mitchell's review is the canonical one, tied to her Customers record and to job JB-204", () => {
-    const review = getReviewById("rev-sarah-mitchell")!;
+    const review = getReviewById("rev-sarah-mitchell", REVIEWS_DATA)!;
     expect(review).toMatchObject({
       source: "Climvia",
       customerId: "sarah-mitchell",
@@ -161,39 +153,40 @@ test.describe("reviews data", () => {
   });
 
   test("posting the canonical reply moves the same review to Responded, and the totals follow", () => {
-    const after = postResponse(REVIEWS_DATA, "rev-sarah-mitchell", SARAH_REPLY);
+    // The reply itself is stored by the server (maintenance-reviews-flows.spec.ts posts it through the screen); this is what the totals do with it.
+    const after = withReply(REVIEWS_DATA, "rev-sarah-mitchell", SARAH_REPLY);
     const review = getReviewById("rev-sarah-mitchell", after)!;
     expect(getReviewStatus(review)).toBe("responded");
     expect(review.response).toMatchObject({ body: SARAH_REPLY, by: "Alex Morgan", at: "2024-10-25T10:45" });
     expect(after.reviews).toHaveLength(REVIEWS.length);
-    expect(getReviewMetrics(after)).toEqual({ total: 12, average: 4.7, awaiting: 2, responded: 10, requests: 5 });
-    // The baseline was not mutated, and a second reply does not replace the first.
-    expect(getReviewStatus(getReviewById("rev-sarah-mitchell")!)).toBe("awaiting");
-    expect(postResponse(after, "rev-sarah-mitchell", "Something else")).toEqual(after);
-    expect(postResponse(REVIEWS_DATA, "rev-sarah-mitchell", "   ")).toEqual(REVIEWS_DATA);
+    expect(getReviewMetrics(after, REVIEW_BASELINE)).toEqual({ total: 12, average: 4.7, awaiting: 2, responded: 10, requests: 5 });
+    // The baseline was not mutated, and a review has one response.
+    expect(getReviewStatus(getReviewById("rev-sarah-mitchell", REVIEWS_DATA)!)).toBe("awaiting");
+    expect(withReply(after, "rev-sarah-mitchell", "Something else")).toEqual(after);
+    expect(withReply(REVIEWS_DATA, "rev-sarah-mitchell", "   ")).toEqual(REVIEWS_DATA);
   });
 
   test("editing a response changes the same response, not a new one", () => {
-    const posted = postResponse(REVIEWS_DATA, "rev-sarah-mitchell", SARAH_REPLY);
-    const edited = editResponse(posted, "rev-sarah-mitchell", "Thank you, Sarah. We're glad it went well.");
+    const posted = withReply(REVIEWS_DATA, "rev-sarah-mitchell", SARAH_REPLY);
+    const edited = withEditedReply(posted, "rev-sarah-mitchell", "Thank you, Sarah. We're glad it went well.");
     const response = getReviewById("rev-sarah-mitchell", edited)!.response!;
     expect(response).toMatchObject({ body: "Thank you, Sarah. We're glad it went well.", by: "Alex Morgan", at: "2024-10-25T10:45", edited: true });
     expect(edited.reviews).toHaveLength(posted.reviews.length);
     // Nothing to edit before a reply, and the totals do not move.
-    expect(editResponse(REVIEWS_DATA, "rev-sarah-mitchell", "Hello")).toEqual(REVIEWS_DATA);
-    expect(getReviewMetrics(edited).awaiting).toBe(2);
+    expect(withEditedReply(REVIEWS_DATA, "rev-sarah-mitchell", "Hello")).toEqual(REVIEWS_DATA);
+    expect(getReviewMetrics(edited, REVIEW_BASELINE).awaiting).toBe(2);
   });
 
   test("replying to a review that was already answered does not move the totals", () => {
-    const edited = editResponse(REVIEWS_DATA, "rev-david-chen", "Thanks again, David!");
-    expect(getReviewMetrics(edited)).toEqual(getReviewMetrics(REVIEWS_DATA));
+    const edited = withEditedReply(REVIEWS_DATA, "rev-david-chen", "Thanks again, David!");
+    expect(getReviewMetrics(edited, REVIEW_BASELINE)).toEqual(getReviewMetrics(REVIEWS_DATA, REVIEW_BASELINE));
   });
 
   test("a review request is recorded and nothing else: it adds one to the count and creates no campaign", () => {
     const marketingBefore = JSON.stringify(MARKETING_DATA);
-    const { data, id } = addReviewRequest(REVIEWS_DATA, { customerId: "sarah-mitchell", relatedJobId: "JB-204", channel: "sms", message: "  Please review us.  " });
+    const { data, id } = withRequest(REVIEWS_DATA, { customerId: "sarah-mitchell", relatedJobId: "JB-204", channel: "sms", message: "  Please review us.  " });
     expect(data.requests).toEqual([{ id, customerId: "sarah-mitchell", relatedJobId: "JB-204", channel: "sms", message: "Please review us.", at: "2024-10-25T10:45" }]);
-    expect(getReviewMetrics(data).requests).toBe(6);
+    expect(getReviewMetrics(data, REVIEW_BASELINE).requests).toBe(6);
     expect(data.reviews).toBe(REVIEWS_DATA.reviews);
     expect(JSON.stringify(MARKETING_DATA)).toBe(marketingBefore);
     expect(REVIEWS_DATA.requests).toHaveLength(0);
@@ -366,9 +359,9 @@ test.describe("Phase 6 source", () => {
       ...sourceFiles("src/components/marketing"),
       "src/data/marketplace.ts",
       "src/data/reviews.ts",
+      "src/lib/review-rules.ts",
       "src/data/marketing.ts",
       "src/lib/marketplace-state.ts",
-      "src/lib/reviews-state.ts",
       "src/lib/marketing-state.ts",
     ];
     const hits: string[] = [];

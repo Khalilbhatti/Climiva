@@ -34,6 +34,8 @@ type OperationsContextValue = {
   updateJobDetails: (jobId: string, patch: Partial<JobDetails>) => Done;
   /** Completes the job, keeping any work details not yet saved, and completes its booking in the same step. */
   completeJob: (jobId: string, notes: string, details?: Partial<JobDetails>) => Done;
+  /** Takes up operations another change answered with (scheduling a maintenance visit makes a Booking), as stored. */
+  adoptOperations: (operations: OperationsData) => void;
   /** Photos chosen in this browser. There is no file storage yet, so they live only until the page is reloaded. */
   addSessionFiles: (jobId: string, files: readonly JobFile[]) => void;
   setFileVisibility: (jobId: string, fileId: string, visibility: JobFile["visibility"]) => Done;
@@ -77,6 +79,7 @@ export function OperationsProvider({ initial, children }: { initial: OperationsD
       startJob: async (id) => adopt(await send(() => startJobAction(id))),
       updateJobDetails: async (id, patch) => adopt(await send(() => updateJobDetailsAction(id, patch))),
       completeJob: async (id, notes, details) => adopt(await send(() => completeJobAction(id, notes, details))),
+      adoptOperations: setStored,
       addSessionFiles: (jobId, files) => setSessionFiles((current) => ({ ...current, [jobId]: [...(current[jobId] ?? []), ...files] })),
       setFileVisibility: async (jobId, fileId, visibility) => {
         // A photo chosen in this browser was never stored: only its label here changes.

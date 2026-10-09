@@ -35,7 +35,7 @@ import {
   type QuoteStatus,
 } from "@/data/financials";
 import { PROTOTYPE_TODAY, overviewMetrics } from "@/data/fixtures";
-import { getPlanMetrics, type PlanMetrics, type PlansData } from "@/data/maintenance-plans";
+import { PLAN_BASELINE, getPlanMetrics, type PlanMetrics, type PlansData } from "@/data/maintenance-plans";
 import type { Booking, Job, OperationsData } from "@/data/operations";
 import { getServiceById, type Service } from "@/data/services";
 import { formatMonthDay, isValidDate } from "./dates";
@@ -125,7 +125,7 @@ export function buildAnalytics(financial: FinancialData, plans: PlansData, opera
         .sort((a, b) => newestFirst(a.date, b.date) || newestFirst(a.id, b.id))
         .slice(0, 4),
     },
-    plans: getPlanMetrics(plans, operations),
+    plans: getPlanMetrics(plans, operations, PROTOTYPE_TODAY, PLAN_BASELINE),
   };
 }
 

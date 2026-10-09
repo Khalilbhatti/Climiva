@@ -33,6 +33,7 @@ Read [production-handoff.md](production-handoff.md) for the front end, which thi
 23. [Known limitations](#23-known-limitations)
 24. [Operations: bookings, jobs and the schedule](#24-operations-bookings-jobs-and-the-schedule)
 25. [Financials: quotes, invoices and payments](#25-financials-quotes-invoices-and-payments)
+26. [Maintenance plans and reviews](#26-maintenance-plans-and-reviews)
 
 ## 1. Status and scope
 
@@ -44,11 +45,12 @@ reload. Now:
 | Real sign-up, log-in, log-out (Better Auth, sessions in PostgreSQL) | Email verification, password reset, invitations by email (no mail service yet) |
 | Organizations, memberships, owner / admin / member roles | A UI to invite or remove members, or to change roles |
 | Many people ↔ many businesses; a workspace switcher | Billing for Climvia itself |
-| New-business onboarding in one transaction | Maintenance Plans, Reviews, Marketing, Website, Marketplace and Analytics (still sample data, see §12) |
+| New-business onboarding in one transaction | Marketing, Website, Marketplace and Analytics (still sample data, see §12) |
 | Business information, Business hours, Workspace preferences and the profile name stored in PostgreSQL | Logo / branding / avatar storage (needs object storage) |
 | Customers, properties, equipment, Services, the team and its roles stored in PostgreSQL per organization (§13) | A flow to add or edit a customer, email invitations for team members |
 | Bookings, Jobs (with work details and photo metadata), the Schedule (derived) and blocked time stored per organization (§24) | Rescheduling a booking, file storage for photos, a public booking page for a business's own domain |
 | Quotes, invoices (with line items) and payments stored per organization, money in integer cents, balances derived, payments voided rather than deleted (§25) | A payment processor, bank or accounting connection, Climvia's own subscription billing |
+| Maintenance plans (with coverage and included visits) and reviews (with replies and review requests) stored per organization; a visit is scheduled as a real booking (§26) | Pausing or ending a plan from a screen, sending a review request (email or SMS), a public way to submit a review, automatic billing from a plan |
 | Strict tenant isolation: server authorization **and** PostgreSQL Row Level Security | The visual Website Builder, templates, domains |
 | `sites` table: one organization owns many sites | Deployment to AWS |
 
@@ -251,8 +253,8 @@ after hydration, which remounts the tree once. The first render is always the de
 
 ## 12. Transitional fixtures
 
-Maintenance Plans, Website, Marketplace, Reviews, Marketing, Analytics and the customer-facing previews still run on
-the sample dataset in `src/data/*`, held in React state for the visit. (Customers, Services and Team moved to PostgreSQL in §13, Bookings, the Schedule and Jobs in §24, and Quotes & Invoices and Payments in §25; none of them is gated.)
+Website, Marketplace, Marketing, Analytics and the customer-facing previews still run on
+the sample dataset in `src/data/*`, held in React state for the visit. (Customers, Services and Team moved to PostgreSQL in §13, Bookings, the Schedule and Jobs in §24, and Quotes & Invoices and Payments in §25, and Maintenance Plans and Reviews in §26; none of them is gated.)
 
 - That dataset belongs to **one** business. An organization flagged `fixture_set = 'apex-demo'` sees it; **any other organization sees "isn't available for *Name* yet"**. The flag is set by the seed only
   (the runtime role has no column grant to set it).
@@ -261,8 +263,8 @@ the sample dataset in `src/data/*`, held in React state for the visit. (Customer
 - Overview shows a plain "Your workspace is ready" state with the real business card for any other workspace; sidebar counts are sample-business only, and global search finds the active business's own customers, jobs, bookings and schedule (§13, §24).
 - **No silent fallback.** If sign-in, the database, the organization or the membership fails, the app redirects to Log in, shows an error, or shows the unavailable state. It never falls back to
   showing the Apex sample.
-- The remaining sample dataset (plans, reviews, marketing, website …) is compiled into the browser JavaScript (it is static, fictional demo data, not tenant data). It is removed module by module as each moves to PostgreSQL (§21). The *foundations* it
-  points at (customers, Services, team) , the operations (bookings, jobs, blocked time) and the financials (quotes, invoices, payments) are not compiled in: they are read from PostgreSQL and reach the browser only for the business that owns them (§13, "Fixture compatibility bridge", §24, §25).
+- The remaining sample dataset (marketing, website, marketplace, analytics …) is compiled into the browser JavaScript (it is static, fictional demo data, not tenant data). It is removed module by module as each moves to PostgreSQL (§21). The *foundations* it
+  points at (customers, Services, team) , the operations (bookings, jobs, blocked time) the financials (quotes, invoices, payments), the maintenance plans and the reviews are not compiled in: they are read from PostgreSQL and reach the browser only for the business that owns them (§13, "Fixture compatibility bridge", §24, §25, §26).
 
 ## 13. Core business data: customers, services, team
 
@@ -298,7 +300,7 @@ A **property** is a service location, owned by one customer (one is `is_primary`
 property if the customer record is ever merged. There are no scores, lifetime-value, health or telemetry fields, and no flow to add a customer, send a message or edit history: the product does not have those yet, so the runtime role has
 **no INSERT/UPDATE/DELETE privilege** on these four tables (a write fails with `permission denied` before RLS is even consulted). When an Add Customer flow ships, its migration adds the grant and an owner/admin policy together.
 
-`customers.maintenance_plan`, `last_service` and `upcoming` are small JSONB display summaries, kept only because Maintenance Plans, Jobs and Bookings are not on the database yet; they go when those modules move. Equipment's
+`customers.maintenance_plan`, `last_service` and `upcoming` are small JSONB display summaries. The plan one is only a fallback now: a customer with a plan record shows that record (§26), and the summary is read only for a customer who has none. Equipment's
 `last_serviced` is likewise a small document, not a foreign key to a job that does not exist in PostgreSQL.
 
 ### Services
@@ -353,7 +355,7 @@ in a request is never read; the organization is the one the server resolved. The
 
 ### Fixture compatibility bridge
 
-Maintenance Plans, Reviews, Marketing, Analytics and the Website still run on the sample dataset (§12), and they reference customers, Services and team members by id (Bookings, Jobs, the Schedule and the financial documents now point at the same records through composite foreign keys, §24, §25). The bridge:
+Marketing, Analytics, the Website and the Marketplace still run on the sample dataset (§12), and they reference customers, Services and team members by id (Bookings, Jobs, the Schedule, the financial documents, the maintenance plans and the reviews now point at the same records through composite foreign keys, §24, §25, §26). The bridge:
 
 - Those ids are the **slugs**, and the Apex seed writes the same slugs, with deterministic UUIDv5 primary keys (`src/db/stable-id.ts`: `stableId(organization, kind, slug)`), so a booking that names `sarah-mitchell` and `ac-repair-diagnostics`
   resolves to the same people and Services after a re-seed.
@@ -525,8 +527,7 @@ Not built. The intended design: a request's host name selects the **site**, and 
 
 Each of these moves from sample data to PostgreSQL in its own phase, with `organization_id`, RLS and tests as in §9–§10. When a module moves, its `fixtureGate` call is deleted and it works for every organization.
 
-Done: Services, Customers (+ properties, equipment), Team (staff, roles) (§13); Bookings, Jobs, the Schedule (derived) and blocked time (§24); Quotes, Invoices and Payments (§25). Suggested order for the rest (dependencies first): Maintenance Plans (next: then `bookings.plan_id` / `plan_visit_id` become real foreign keys, and a plan's price can reference the
-financial records) → Reviews → Marketing → Website (then the Builder) → Marketplace → Analytics (derived last: its Bookings 24 / Completed Jobs 18 / quote and invoice-count aggregates are still baselines, not counts of the stored records; its money lines already read §25 through the same selectors as the Overview). Also pending: branding / logo / avatar storage and photo files (an object store), invitations and member management, email, a public booking page.
+Done: Services, Customers (+ properties, equipment), Team (staff, roles) (§13); Bookings, Jobs, the Schedule (derived) and blocked time (§24); Quotes, Invoices and Payments (§25); Maintenance Plans (with coverage and visits) and Reviews (with replies and requests) (§26). Suggested order for the rest (dependencies first): Marketing → Website (then the Builder) → Marketplace → Analytics (derived last: its Bookings 24 / Completed Jobs 18 / quote and invoice-count aggregates are still baselines, not counts of the stored records; its money lines already read §25 through the same selectors as the Overview). Also pending: branding / logo / avatar storage and photo files (an object store), invitations and member management, email, a public booking page.
 
 ## 22. Testing
 
@@ -547,11 +548,14 @@ The Playwright suite runs against a **production build** and a **separate databa
   `financials-flows.spec.ts` (the real application: the canonical Record Payment flow, partial and void payments, Create Invoice, persistence after a reload and in a fresh session, member read-only, replayed and forged requests, customer financial history, tenant isolation, empty states for a new business), `financials-roundtrip.spec.ts` (what the seed wrote is what is read, stable ids, a second seed changes nothing),
   `payments.spec.ts` and `quotes-invoices.spec.ts` (the screens), and the pure `money.spec.ts`, `financial-rules.spec.ts` and `financials.spec.ts`. `financial-edits.ts` holds the small pure builders other specs use to ask the selectors "what if this payment were recorded?".
 
+- Maintenance plans and reviews (§26): `maintenance-reviews-database.spec.ts` (SQL as `climvia_app`: what the seed holds, the structure, reads and writes per business, grants, composite foreign keys, the visit and booking triggers, reply and request guards, no DELETE, and the concurrency tests: simultaneous replies, simultaneous requests for one job, simultaneous edits), `maintenance-reviews-flows.spec.ts` (the real application: Sarah's Comfort Care, scheduling BK-1048 once, cancel and rebook, six simultaneous schedules, Create plan, reply, edit and request persistence after a reload and in a fresh session, member read-only, replayed and forged requests, tenant isolation, empty states for a new business, completing a job creating no review or request), `maintenance-reviews-roundtrip.spec.ts` (what the seed wrote is what is read, stable ids, a second seed changes nothing), `maintenance-reviews-rules.spec.ts` (the pure rules and totals), plus `maintenance-plans.spec.ts` and `reviews.spec.ts` (the screens). `review-edits.ts` and `replay.ts` hold the pure builders and the Server Action replay helpers the specs share.
+
 ## 23. Known limitations
 
 - Email verification, password reset, invitations and member management have no UI: they need a mail service and are the next SaaS work.
 - Branding, logo and avatar are session-only until object storage exists.
-- The plans, reviews, marketing and website sample dataset ships in the browser bundle (fictional, public, not tenant data) until its modules migrate. Customers, Services, the team, bookings, jobs, blocked time, quotes, invoices and payments do not.
+- The marketing, website, marketplace and analytics sample dataset ships in the browser bundle (fictional, public, not tenant data) until its modules migrate. Customers, Services, the team, bookings, jobs, blocked time, quotes, invoices, payments, maintenance plans and reviews do not.
+- Maintenance plans and reviews (§26): no screen pauses, ends, renews or edits a plan (no flow was approved, so the application has no UPDATE on plans), a visit is rescheduled only by cancelling its booking and booking it again, a review request is a record and nothing is sent, and a customer has no public way to submit a review yet (the sample reviews are seeded). The Website and the Marketplace show no reviews.
 - Money (§25): there is no screen to write a quote or to edit, void or reissue an invoice (an invoice is made from an approved quote and is then fixed; a mistake in it is a new invoice for the quote's replacement), no refund or credit note, no tax model (an invoice shows Tax $0.00), no deposit or overpayment, no PDF, email or print, and no payment processor. The Overview's Total Invoiced and the Analytics quote and invoice-count aggregates are reporting baselines that cover more history than the stored records (see §25).
 - A booking's date and time cannot be changed after it is created (there is no rescheduling flow). When one is built it must change the booking and its job in the same transaction. Nothing creates blocked time yet either: the blocks are seeded and read.
 - Photos on a job: the database holds their **metadata** (name, size, category, caption, visibility); the file itself has no home until an object store exists, so a file chosen in the browser lasts for the visit and is labelled so. The whole booking, job and customer lists are sent to the browser with the page.
@@ -592,7 +596,7 @@ organization ──< bookings ──(at most one)── jobs ──< job_files
 ```
 
 - **A booking** has: its number, who it is for (a `customer_id`, **or** a `contact_name` with optional phone, email and address: exactly one, by a CHECK), a property (only with a customer, and it must be that customer's own), a service, an assignee, the source,
-  the status, the local date and start and end times, a customer note, the intake answers, internal notes, the cancellation reason (present exactly when cancelled), the maintenance-plan visit it schedules (`plan_id`, `plan_visit_id`, plain references until plans move),
+  the status, the local date and start and end times, a customer note, the intake answers, internal notes, the cancellation reason (present exactly when cancelled), the maintenance-plan visit it schedules (found from the plan's side: the visit points at the booking, §26),
   and `received_at` / `confirmed_at` instants. `source` and `received_at` are `NULL` for an older record that never had them (the sample bookings from before the system existed); every booking made through the application has both, and nothing invents a value.
 - **A job** has: its number, the booking it came from (`UNIQUE (organization_id, booking_id)`: **at most one job per booking**; a historical visit has none), the same party, property, service and assignee, the equipment worked on, the appointment, and the work details as **explicit columns**
   (`technician_diagnosis`, `work_performed`, `customer_summary`, `internal_notes`, `customer_request`, `safety_note`, `completion_notes`, `completed_at`). Only the diagnostics checklist, a list the technician's record carries, is JSONB.
@@ -666,14 +670,11 @@ and services. A new workspace has none, and its counters start at 1001.
 
 ### Maintenance Plan bridge (BK-1048)
 
-Plans are not on the database yet. Scheduling an included visit creates a **real booking** through the same action (source "Maintenance plan", confirmed, no job, no financial record) that carries `plan_id` and `plan_visit_id`. The plan screens **derive the visit's state from the stored
-booking** (`getVisitBooking()`: the non-cancelled booking whose `planVisit` points at the visit): Scheduled after a reload, open again once the booking is cancelled. The plan holds no pointer of its own that could disagree. A plan created in the browser for the visit is not stored
-(plans migrate later), so a booking made for it outlives it as an ordinary booking.
+Since Phase 13 plans are on the database (§26). Scheduling an included visit still creates a **real booking** through the same shared code (source "Maintenance plan", confirmed, no job, no financial record), and the **visit** now points at it with a real foreign key (the plain `bookings.plan_id` / `plan_visit_id` columns of this phase were dropped). The plan screens **derive the visit's state from the stored booking** (`getVisitBooking()`): Scheduled after a reload, open again once the booking is cancelled. The booking learns its plan from the visit, so nothing could disagree.
 
-### Reviews compatibility
+### Reviews and jobs
 
-Reviews are still sample data and name a related job (Sarah Mitchell's review → JB-204). They resolve it against the **active business's stored jobs**, so the chip, the job page and the Request Review list (completed jobs only, JB-204 and JB-142 for Sarah) come from the
-database; in a business that has no JB-204 the link simply is not shown.
+Since Phase 13 reviews are on the database (§26). A review names the real job it is about (Sarah Mitchell's review → JB-204, which stays Completed) through a composite key, so the chip, the job page and the Request Review list (completed jobs only, JB-204 and JB-142 for Sarah) come from the stored jobs; a review cannot name another business's job, or another customer's.
 
 ### Website booking preview
 
@@ -766,3 +767,80 @@ The server loads the active business's financials with the rest of its core data
 ### Not in this phase
 
 A payment processor, bank or accounting connection, Climvia's own billing, a Quote builder, invoice editing, refunds and credit notes, tax, PDFs and email, Maintenance Plans, Reviews records, Marketing, the Analytics aggregate facts, the Website model and Marketplace configuration. No Docker image was built or run for this phase: the Dockerfile and compose file are unchanged and compatible with the new migrations, and **Docker verification is required before AWS deployment** (§17).
+
+## 26. Maintenance plans and reviews
+
+Phase 13 moved Maintenance Plans (with their coverage and included visits) and Reviews (with replies and review requests) to PostgreSQL. A plan is the agreement a business makes with **its own customer**; it is not Climvia's own billing (§19) and shares nothing with it. Everything below belongs to exactly one organization, follows the rules of §9 and §13, and is read for the **active** business only.
+
+| Domain | Tables | Written by | Read by |
+| --- | --- | --- | --- |
+| Plans | `maintenance_plans`, `maintenance_plan_coverage`, `maintenance_plan_visits` | owner, admin (server actions) | every member |
+| Reviews | `reviews` | nobody through the application (customers write reviews; the seed carries the sample history in) | every member |
+| Replies | `review_replies` | owner, admin | every member |
+| Requests | `review_requests` | owner, admin | every member |
+
+Migrations: `0008_maintenance_reviews.sql` (tables, constraints, indexes; generated by drizzle-kit from `src/db/schema/maintenance.ts` and `reviews.ts`, hand-ordered where a new key must exist before the foreign keys that use it) and `0009_maintenance_reviews_rls.sql` (policies, grants and the guard triggers; hand-written). `0008` also **drops** `bookings.plan_id`, `bookings.plan_visit_id` and the `bookings_plan_visit` check: they were plain text references written before plans existed, and the link is now a real foreign key held on the other side (below). The code is `src/db/maint-queries.ts` and `maint-mappers.ts`, `src/db/review-queries.ts`, `src/db/booking-create.ts` (the booking insert shared with the Bookings screens), `src/lib/maintenance-rules.ts` and `review-rules.ts` (what a request may ask, pure), and `src/server/actions/maintenance.ts` and `reviews.ts`.
+
+### The Maintenance Plan model
+
+A **plan** has its customer (a `customer_id`, **or** a `contact_name` with an address snapshot for someone without a Customers record: exactly one, by a CHECK, the pattern bookings, jobs and invoices use), the property it covers (only with a customer, and it must be **that customer's own**), a name, a status, the price per cadence, the start and the renewal / end date, the visits per year and a note. Statuses are the four the screens already had: `active`, `pending`, `paused`, `ended`; nothing else exists (CHECK). A plan **starts** Active or Pending; the application has no screen that pauses, ends or renews one (none was approved), so it has no UPDATE privilege on `maintenance_plans` at all. A paused or ended plan exists only as carried-in history, and ending a plan could never delete its visits or bookings: no table here has a DELETE grant.
+
+**The price** is information about the agreement, stored as whole cents (`price_cents`, integer; the same rule as §25). It bills no one: creating a plan creates no quote, invoice or payment, scheduling a visit creates none, and the plan's $189 is not money received (a test counts all of them before and after, and that no financial table has a column that could name a plan).
+
+### Coverage is not a Service
+
+A plan covers kinds of visit: **Cooling maintenance** and **Heating maintenance**, and nothing else. They are rows of `maintenance_plan_coverage` (`coverage_key` `cooling` | `heating`, a label, how many visits) and **do not reference `services`**: no Service is added to the catalog (the Apex catalog stays exactly the six approved services), and nothing in the public Service list changes. Which Service a visit is *booked as* is configuration in the application (`COVERAGE` in `src/data/maintenance-plans.ts`; a cooling visit is booked as the Annual Cooling Tune-Up & Maintenance Service when the business has it), checked by the server when a visit is scheduled.
+
+### Visits
+
+A **visit** ("Visit 2 of 2, Cooling maintenance") is an entitlement, not an appointment. It has a position, a label, the coverage it belongs to, an optional target window, a status (`due`, `scheduled`, `completed`), the **booking** that schedules it and the day it was completed. It carries no date, time, technician or Service of its own: the appointment is the booking and only the booking. The coverage reference is a composite key through the plan, so a visit cannot cover something another plan includes.
+
+PostgreSQL keeps the visit and its booking in step (`plan_visits_guard_update` and `bookings_sync_plan_visit`, in `0009`): a visit is born `due` with no booking; `due` → `scheduled` happens only by attaching a booking **for the plan's own customer** (a booking of another customer, or another business, is refused); `scheduled` → `completed` happens when its booking is completed, on the day of the service; **cancelling the booking reopens the visit** (`due`) and keeps pointing at the cancelled booking as history until the visit is booked again; a completed visit is final; one booking schedules at most one visit (`UNIQUE (organization_id, booking_id)`); and the runtime role can change a visit's status, booking and completion day and nothing else (column grants).
+
+### Booking integration (BK-1048)
+
+Scheduling an included visit makes a **real booking** through the code the Bookings screens use (`insertBookingTx`: the same validation, hours, team and numbering), source "Maintenance plan", confirmed, with **no job**, and links it to the visit **in the same transaction**: if either fails neither happens. The visit must be the plan's next uncompleted one, the plan must be active, the date must fall in the visit's window and not be in the past, and the Service must be the one the coverage maps to. The visit rows are locked in order (`FOR UPDATE`) so two requests for one plan wait for each other; a test fires six at once and exactly one booking results.
+
+The Bookings screens know which booking belongs to a plan from the **visit's side**: `loadOperations` joins `maintenance_plan_visits` and `maintenance_plans` to give a booking its `planVisit` (the "Comfort Care · Visit 2 of 2" label). A booking carries no plan column that could disagree.
+
+**BK-1048 is created by scheduling, not by seeding.** The sample business holds the number back for Sarah Mitchell's second visit (`RESERVED_BOOKING_NUMBERS`), as before: in a freshly seeded database no booking numbered 1048 exists, the visit is `due`, and scheduling it creates the one and only booking BK-1048 (Sarah Mitchell, Comfort Care, Nov 19 2024, 10:00 AM to 12:00 PM, Marcus Vance, confirmed). A second attempt is refused ("That visit already has a booking"), and seeding again never creates it. If that booking is cancelled the visit is open again and booking it a second time makes a **new** booking number; the cancelled one stays in history.
+
+### The canonical Apex records
+
+The seed (`scripts/db/seed-data/maintenance.ts`, `reviews.ts`) writes them through the same functions the application uses, with deterministic ids. **Sarah Mitchell's Comfort Care** is $189 a year (`18900` cents), two visits a year, May 14 2024 to May 14 2025, Active, for her own property: visit 1 (Heating maintenance) fulfilled May 22 2024 with no booking or job, visit 2 (Cooling maintenance) due in November 2024. Apex has six plans (Sarah's, David Chen's Seasonal Maintenance, and four for people without a Customers record: an active one, a renewing one, a paused one and an ended one); Northstar has one of its own, different in every value, whose first visit is Northstar's own BK-1001.
+
+The workspace totals the screens report (14 active plans, 5 visits due, 3 renewals, 1 paused, 1 ended; and 12 reviews, a 4.7 average, 3 awaiting a reply, 5 requests) are **reporting baselines, not counts of rows**, exactly as Bookings 24 and Total Invoiced are (§24, §25): the seed does not invent dozens of rows to match them. A plan, review or reply carried in with the sample history is marked `imported` (already inside the baseline); one created since is not and **adds** to it (a plan created moves Active 14 → 15; a reply moves Awaiting 3 → 2 and Responded 9 → 10). The baseline applies to the sample business only (`PLAN_BASELINE`, `REVIEW_BASELINE`); a business with no history counts exactly what it has, which is nothing. The runtime role cannot write an `imported` row (RLS).
+
+### The Reviews model
+
+A **review** has its author (a Customers record, or a name), the rating (1 to 5), the source (**Climvia** is the only one; nothing is published to or read from any outside review site), the customer's words, the day it was left and, optionally, the **job** it is about. A review naming both a customer and a job must name that customer's **own** job (composite key). The application cannot create or change a review: the runtime role has SELECT only, so the customer's words, rating and author are never rewritten. **Sarah Mitchell's review** is 5 stars, "The technician explained the repair clearly and completed the work as scheduled.", about the real **JB-204**, which stays Completed; it awaits a reply, and the Reply dialog opens with the approved answer ("Thank you, Sarah. We appreciate your feedback and are glad the repair process was clear and completed as scheduled.").
+
+### Replies
+
+A review has **one** reply (`UNIQUE (organization_id, review_id)`); editing changes the same row. The server stores who signed it (`author_name`, the person's profile name at the time, and `replied_by`, their Team record when they have one) and when (an instant, shown in the business's time zone). The runtime role can change only `body`; the database sets `edited_at` when the words change (not when the same words are saved again) and nothing can rewrite who replied or when. Two people replying at once leave one reply: the second is told the review already has one. A reply is 1 to 500 characters.
+
+### Review requests
+
+A request is a **record** that the business asked a customer for a review. **Nothing is sent**: there is no email or SMS delivery, no Marketing campaign is created, and `status` is only `recorded`. It names a customer of the business and, optionally, one of that customer's **completed jobs**: the database refuses a job that is not completed (`review_requests_guard_insert`) or is another customer's (composite key), and **one active request per job** is a partial unique index, so a double click or a second person cannot ask twice for the same work. The Request review dialog offers only the customer's completed jobs without a request. **Completing a job creates no review and no request** (a test counts both before and after); a request is always a choice a person makes.
+
+### Customers, jobs and the other modules
+
+The Customer page reads the customer's plan, coverage and next visit (with its booking) from `maintenance_plans` and shows the booking as a link; the plan list and the Overview read the same plans; Jobs are untouched except that a completed job is what a request can name. A review's job chip and the job page resolve against the **active business's stored jobs**. Marketing, Analytics, the Website and the Marketplace were **not** migrated. Analytics reads the plan figures through the same selectors with the same baseline. The Website and the Marketplace show **no customer reviews** today (nothing in them reads the Reviews module), so there is nothing to wire; a public read of reviews needs the Website phase's public path (§15, §20) and a decision on which reviews a business publishes.
+
+### Authorization and tenant isolation
+
+`maintenance:manage` and `reviews:manage` (`src/lib/policy.ts`) are owner and admin; a member reads and changes nothing, and the screens do not offer them the buttons. Every action in `src/server/actions/maintenance.ts` and `reviews.ts` hands everything it does to one helper, `mutate()`, whose first step is `authorize(...)`: **authenticated user → verified active organization (never taken from the request) → active membership → capability → validation → tenant transaction → validated references → locked rows → write → safe error**. No action takes an organization id and none of the arguments can name one; a request that does is ignored, and a test replays a captured request with another business's id in it to show the plan lands in the *caller's* workspace only. Every reference (a customer, a property, a plan, a visit, a review, a job) is resolved **inside the transaction, within the verified organization**: one that belongs to another business is indistinguishable from one that never existed. A refused request rolls the whole change back and a database error is never shown.
+
+PostgreSQL enforces the same: members of the **active** organization read; owner or admin write only what the grants allow; composite `(organization_id, id)` foreign keys make a cross-business reference **impossible** rather than checked (an Apex plan cannot name a Northstar customer or property, an Apex visit cannot name a Northstar plan, coverage or booking, a review cannot name another business's customer or job, a reply cannot belong to another business's review, a request cannot name another business's customer or job). Coverage and visits can join a plan **only in the transaction that created it** (RLS), so a plan never gains or loses either later. No table has a DELETE grant; ids, numbers, the customer, the property and the customer's words are never rewritten. **A cross-tenant read or write is a release blocker** and is tested at the database as the restricted role, through replayed and forged requests, and in the pages.
+
+### New organizations
+
+A new business has no plans and no reviews. Maintenance Plans and Reviews show real empty states with zero totals (not "isn't available"); with no customers there is nothing to put on a plan or to ask for a review, and the dialogs say so.
+
+### Where the data meets the screens
+
+The server loads the active business's plans and reviews with the rest of its core data (`getCoreSnapshot`) and `MaintenancePlansProvider` and `ReviewsProvider` hold them for the whole workspace, so the plan pages, the Bookings, the Customer page, the Overview and Analytics agree. Each change goes to the server, which answers with the data **as stored**; only then does the working copy change (a scheduled visit also updates the operations), so a screen is never ahead of the database, and a refusal is shown in the dialog. The canonical Apex fixtures are not part of the application: nothing under `src/` imports the seed, and a test searches the built JavaScript for the seed's names, addresses, reviews and replies.
+
+### Not in this phase
+
+Pausing, ending or renewing a plan from a screen, editing a plan or its visits, rescheduling a visit other than by cancelling its booking and booking it again, automatic billing from a plan, sending a review request (email or SMS), a public way for a customer to submit a review, reviews on the Website or the Marketplace, Marketing, the Analytics aggregate facts, the Website model and Marketplace configuration. No Docker image was built or run for this phase: the Dockerfile and compose file are unchanged and compatible with the new migrations, and **Docker verification is required before AWS deployment** (§17).

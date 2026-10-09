@@ -15,10 +15,10 @@ import {
 } from "../src/data/analytics";
 import { getInvoiceTotal, getInvoicesForQuote } from "../src/data/financials";
 import { overviewMetrics } from "../src/data/fixtures";
-import { PLANS_DATA, getPlanMetrics } from "../src/data/maintenance-plans";
+import { PLAN_BASELINE, getPlanMetrics } from "../src/data/maintenance-plans";
 import { buildAnalytics, formatRange, hasActivity, isReportPeriod, resolveRange, validateCustomRange } from "../src/lib/analytics-state";
 import { buildReport, reportFileName, toCsv, toPdf } from "../src/lib/report-export";
-import { FINANCIALS, INVOICES, OPERATIONS, QUOTES, SERVICES } from "./apex-data";
+import { FINANCIALS, INVOICES, OPERATIONS, PLANS_DATA, QUOTES, SERVICES } from "./apex-data";
 import { withInvoiceFromQuote, withPayment, withVoid } from "./financial-edits";
 import { completedJob } from "./operations-edits";
 
@@ -109,7 +109,7 @@ test.describe("what follows the session", () => {
   });
 
   test("maintenance plans use the Maintenance Plans selector, so the two screens agree", () => {
-    expect(baseline().plans).toEqual(getPlanMetrics(PLANS_DATA, OPERATIONS));
+    expect(baseline().plans).toEqual(getPlanMetrics(PLANS_DATA, OPERATIONS, "2024-10-25", PLAN_BASELINE));
   });
 
   test("Bookings, Jobs, Quotes, the chart and the Service table are aggregates: working jobs does not move them", () => {

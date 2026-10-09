@@ -296,7 +296,7 @@ test.describe("Create maintenance plan", () => {
     await expect(page.getByRole("tablist", { name: "Booking lists" }).getByRole("tab")).toHaveText([/^Requests\s*2$/, /^Upcoming\s*5$/, /^Past\s*6$/, /^Cancelled\s*0$/]);
   });
 
-  test("a created plan lasts for the session and resets on reload; View plan opens it", async ({ page }) => {
+  test("a created plan is stored: it survives a reload; View plan opens it", async ({ page }) => {
     await page.goto("/maintenance-plans?new=1");
     const wizard = await fillPlan(page, "Peace of Mind");
     await wizard.getByRole("button", { name: "Create plan" }).click();
@@ -304,13 +304,15 @@ test.describe("Create maintenance plan", () => {
     await expect(page).toHaveURL(/\/maintenance-plans\/plan-elena-rodriguez-peace-of-mind$/);
     await expect(page.getByRole("heading", { level: 1, name: "Peace of Mind" })).toBeVisible();
 
-    // Client navigation keeps the session...
+    // Client navigation keeps it...
     await primaryNav(page).getByRole("link", { name: /^Customers/ }).click();
     await primaryNav(page).getByRole("link", { name: /^Maintenance Plans/ }).click();
     await expect(page.getByRole("table", { name: "Active plans" })).toContainText("Peace of Mind");
-    // ...and a reload restores the baseline.
+    // ...and so does a reload: the plan is stored in the database, not held for the session.
     await page.reload();
-    await expect(page.getByRole("table", { name: "Active plans" })).not.toContainText("Peace of Mind");
+    await expect(page.getByRole("table", { name: "Active plans" })).toContainText("Peace of Mind");
+    await page.goto("/maintenance-plans/plan-elena-rodriguez-peace-of-mind");
+    await expect(page.getByRole("heading", { level: 1, name: "Peace of Mind" })).toBeVisible();
   });
 
   test("Schedule first visit leads straight into the Schedule included visit flow", async ({ page }) => {

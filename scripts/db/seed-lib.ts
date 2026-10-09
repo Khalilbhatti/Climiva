@@ -36,22 +36,29 @@ import * as schema from "../../src/db/schema";
 import type { CustomerBook } from "../../src/data/customers";
 import type { FinancialData } from "../../src/data/financials";
 import type { OperationsData } from "../../src/data/operations";
+import type { ReviewsData } from "../../src/data/reviews";
 import type { Service } from "../../src/data/services";
 import { EMPTY_TEAM, type TeamData } from "../../src/data/team";
 import { clearCoreData, insertCustomerBook, insertServices, persistTeamData } from "../../src/db/core-queries";
 import { clearFinancials, insertFinancials, loadFinRefs } from "../../src/db/fin-queries";
+import { clearMaintenance, insertMaintenance, type SeedPlans } from "../../src/db/maint-queries";
 import { clearOperations, insertOperations, loadRefs } from "../../src/db/ops-queries";
+import { clearReviews, insertReviews } from "../../src/db/review-queries";
 import { createAuth, type Auth } from "../../src/lib/auth";
 import { adminDb, adminUrl, appUrl, requireEnv } from "./lib";
 import { CUSTOMERS, EQUIPMENT, PROPERTIES } from "./seed-data/customers";
 import { FINANCIALS } from "./seed-data/financials";
+import { MAINTENANCE } from "./seed-data/maintenance";
 import { OPERATIONS } from "./seed-data/operations";
+import { REVIEWS_DATA } from "./seed-data/reviews";
 import {
   NORTHSTAR_CUSTOMERS,
   NORTHSTAR_EQUIPMENT,
   NORTHSTAR_FINANCIALS,
+  NORTHSTAR_MAINTENANCE,
   NORTHSTAR_OPERATIONS,
   NORTHSTAR_PROPERTIES,
+  NORTHSTAR_REVIEWS,
   NORTHSTAR_ROLES,
   NORTHSTAR_SERVICES,
   NORTHSTAR_TEAM,
@@ -136,6 +143,10 @@ export type CoreDataset = {
   operations: OperationsData;
   /** Quotes, invoices and payments. They point at the customers, Services, jobs, bookings and team above by their public references. */
   financials: FinancialData;
+  /** Maintenance plans with their coverage and visits. They point at the customers and properties above, and a visit at a booking. */
+  maintenance: SeedPlans;
+  /** Reviews with their replies, and review requests. They point at the customers above and at jobs by their public references. */
+  reviews: ReviewsData;
   /** Team members (by slug) who have a Climvia login in the seed, by seed user key. */
   logins: Readonly<Record<string, keyof typeof SEED_USERS>>;
 };
@@ -147,6 +158,8 @@ export const APEX_CORE: CoreDataset = {
   team: { members: TEAM, roles: ROLES },
   operations: OPERATIONS,
   financials: FINANCIALS,
+  maintenance: MAINTENANCE,
+  reviews: REVIEWS_DATA,
   logins: { "alex-morgan": "alex" },
 };
 
@@ -156,6 +169,8 @@ export const NORTHSTAR_CORE: CoreDataset = {
   team: { members: NORTHSTAR_TEAM, roles: NORTHSTAR_ROLES },
   operations: NORTHSTAR_OPERATIONS,
   financials: NORTHSTAR_FINANCIALS,
+  maintenance: NORTHSTAR_MAINTENANCE,
+  reviews: NORTHSTAR_REVIEWS,
   logins: { "taylor-brooks": "taylor" },
 };
 
@@ -239,7 +254,8 @@ type AdminTx = Parameters<Parameters<AdminDb["transaction"]>[0]>[0];
 /**
  * Write a business's core records inside a transaction. `userIds` links team members (by slug) to logins. The operations are
  * written next (they point at the customers, Services and team members just written, and their times are read in `timeZone`) and
- * the financials last (they point at the jobs and bookings as well).
+ * the financials next (they point at the jobs and bookings as well), then the maintenance plans (a visit can point at a booking) and
+ * the reviews (a review names a job).
  */
 export async function writeCoreData(
   tx: AdminTx,
@@ -255,6 +271,9 @@ export async function writeCoreData(
   await persistTeamData(db, organizationId, EMPTY_TEAM, core.team, { stableIds: true, userIds });
   await insertOperations(db, organizationId, timeZone, core.operations, await loadRefs(db, organizationId), { stableIds: true });
   await insertFinancials(db, organizationId, timeZone, core.financials, await loadFinRefs(db, organizationId), { stableIds: true });
+  const refs = await loadRefs(db, organizationId);
+  await insertMaintenance(db, organizationId, core.maintenance, refs, { stableIds: true });
+  await insertReviews(db, organizationId, timeZone, core.reviews, refs, { stableIds: true });
 }
 
 /** Give a business its core records unless it already has them. Returns true when it wrote them. */
@@ -360,7 +379,11 @@ export async function coreFingerprint(db: AdminDb, organizationId: string): Prom
       (select coalesce(string_agg(kind || next_value, ',' order by kind), '') from organization_sequences where organization_id = ${organizationId}),
       (select count(*) || ':' || coalesce(max(updated_at)::text, '') from quotes where organization_id = ${organizationId}),
       (select count(*) || ':' || coalesce(max(updated_at)::text, '') from invoices where organization_id = ${organizationId}),
-      (select count(*) || ':' || coalesce(max(updated_at)::text, '') || ':' || count(*) filter (where status = 'voided') from payments where organization_id = ${organizationId})
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') || ':' || count(*) filter (where status = 'voided') from payments where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') from maintenance_plans where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') || ':' || coalesce(string_agg(status, '' order by ref), '') from maintenance_plan_visits where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') from review_replies where organization_id = ${organizationId}),
+      (select count(*) from review_requests where organization_id = ${organizationId})
     ) as fingerprint`);
   return result.rows[0].fingerprint;
 }
@@ -404,7 +427,9 @@ export async function resetTestTenant(db: AdminDb, tenant: { userId: string; org
   const seeded = seededFingerprints.get(tenant.organizationId);
   if (seeded === undefined || seeded !== (await coreFingerprint(db, tenant.organizationId))) {
     await db.transaction(async (tx) => {
-      // Documents point at jobs and bookings, and those at customers, Services and team members, so they go first.
+      // Documents, plans and reviews point at jobs and bookings, and those at customers, Services and team members, so they go first.
+      await clearReviews(tx as never, tenant.organizationId);
+      await clearMaintenance(tx as never, tenant.organizationId);
       await clearFinancials(tx as never, tenant.organizationId);
       await clearOperations(tx as never, tenant.organizationId);
       await clearCoreData(tx as never, tenant.organizationId);

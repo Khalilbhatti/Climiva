@@ -13,13 +13,14 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Select } from "@/components/ui/Select";
 import { Tabs } from "@/components/ui/Tabs";
-import { REVIEW_SOURCES, getReviewMetrics, getReviewStatus, type Review, type ReviewSource } from "@/data/reviews";
+import { REVIEW_BASELINE, REVIEW_SOURCES, getReviewMetrics, getReviewStatus, type Review, type ReviewSource } from "@/data/reviews";
 import { formatDate } from "@/lib/format";
 import { ReplyModal } from "./ReplyModal";
 import { RequestReviewModal } from "./RequestReviewModal";
 import { useReviews } from "./ReviewsProvider";
 import { RelatedJobChip, ReviewStatusBadge, Stars, reviewerName } from "./review-ui";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useCan, useWorkspace } from "@/components/workspace/WorkspaceProvider";
 
 type View = "all" | "awaiting" | "responded";
 const VIEWS: View[] = ["all", "awaiting", "responded"];
@@ -28,6 +29,8 @@ const ZERO = { total: 0, average: 0, awaiting: 0, responded: 0, requests: 0 };
 export function ReviewsView() {
   const dir = useDirectory();
   const { data } = useReviews();
+  const canManage = useCan("reviews:manage");
+  const { hasSampleData } = useWorkspace();
   const router = useRouter();
   const params = useSearchParams();
   const view: View = VIEWS.find((id) => id === params.get("tab")) ?? "all";
@@ -41,7 +44,9 @@ export function ReviewsView() {
   const [requesting, setRequesting] = useState(false);
 
   const reviews = useMemo(() => (previewEmpty ? [] : data.reviews), [previewEmpty, data.reviews]);
-  const metrics = previewEmpty ? ZERO : getReviewMetrics(data);
+  // The sample business reports the approved workspace totals its stored reviews are a sample of; any other business counts its own.
+  const metrics = previewEmpty ? ZERO : getReviewMetrics(data, hasSampleData ? REVIEW_BASELINE : undefined);
+  const empty = reviews.length === 0;
 
   function setView(id: string) {
     const next = new URLSearchParams(params.toString());
@@ -71,10 +76,12 @@ export function ReviewsView() {
         title="Reviews"
         description="View customer reviews and respond from one place."
         actions={
-          <Button size="lg" onClick={() => setRequesting(true)}>
-            <Plus aria-hidden className="size-[18px]" />
-            Request review
-          </Button>
+          canManage && (
+            <Button size="lg" onClick={() => setRequesting(true)}>
+              <Plus aria-hidden className="size-[18px]" />
+              Request review
+            </Button>
+          )
         }
       />
 
@@ -82,9 +89,9 @@ export function ReviewsView() {
         <KpiCard label="Total reviews" value={metrics.total} icon={MessageSquareText} hint="Customer reviews received" />
         <KpiCard
           label="Average rating"
-          value={previewEmpty ? "—" : metrics.average.toFixed(1)}
+          value={empty ? "—" : metrics.average.toFixed(1)}
           icon={Star}
-          hint={previewEmpty ? "No reviews recorded yet" : "Across recorded reviews"}
+          hint={empty ? "No reviews recorded yet" : "Across recorded reviews"}
         />
         <KpiCard label="Awaiting reply" value={metrics.awaiting} icon={Reply} hint="Reviews without a response" />
         <KpiCard label="Review requests" value={previewEmpty ? 0 : metrics.requests} icon={Send} hint="Requests sent recently" />
@@ -103,17 +110,19 @@ export function ReviewsView() {
           ]}
         />
 
-        {previewEmpty ? (
+        {empty ? (
           <div role="tabpanel" id="reviews-panel-all" aria-labelledby="reviews-tab-all">
             <EmptyState
               icon={MessageSquareText}
               title="No reviews yet"
               description="Customer reviews will appear here when they are submitted."
               action={
-                <Button size="lg" onClick={() => setRequesting(true)}>
-                  <Send aria-hidden className="size-4" />
-                  Request review
-                </Button>
+                canManage && (
+                  <Button size="lg" onClick={() => setRequesting(true)}>
+                    <Send aria-hidden className="size-4" />
+                    Request review
+                  </Button>
+                )
               }
             />
             <p className="mt-3 text-center text-xs text-ink-muted">Review requests can be sent to existing customers after completed work.</p>
@@ -192,10 +201,12 @@ export function ReviewsView() {
                               )}
                             </div>
                             {awaiting ? (
-                              <Button size="sm" onClick={() => setReplying(review)} aria-label={`Reply to review from ${name}`}>
-                                <Reply aria-hidden className="size-3.5" />
-                                Reply
-                              </Button>
+                              canManage && (
+                                <Button size="sm" onClick={() => setReplying(review)} aria-label={`Reply to review from ${name}`}>
+                                  <Reply aria-hidden className="size-3.5" />
+                                  Reply
+                                </Button>
+                              )
                             ) : (
                               <ButtonLink href={`/reviews/${review.id}`} variant="secondary" size="sm" aria-label={`View response to ${name}`}>
                                 View response
@@ -216,8 +227,8 @@ export function ReviewsView() {
         )}
       </Card>
 
-      {replying && <ReplyModal review={replying} mode="reply" onClose={() => setReplying(null)} />}
-      {requesting && <RequestReviewModal onClose={() => setRequesting(false)} />}
+      {replying && canManage && <ReplyModal review={replying} mode="reply" onClose={() => setReplying(null)} />}
+      {requesting && canManage && <RequestReviewModal onClose={() => setRequesting(false)} />}
     </>
   );
 }

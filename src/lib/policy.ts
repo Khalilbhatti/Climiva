@@ -6,13 +6,14 @@
  * server allows. Every server action asks `can(...)`, the pages read the same answers from the workspace snapshot to
  * disable what the person may not use, and PostgreSQL's Row Level Security enforces the owner/admin rule a third time.
  *
- * Today owners and admins change the business's settings, Services, Team, operations (bookings, jobs, assignments) and
- * financials (invoices, payments, quotes); members read everything they can see.
+ * Today owners and admins change the business's settings, Services, Team, operations (bookings, jobs, assignments),
+ * financials (invoices, payments, quotes), maintenance plans (create a plan, schedule a visit) and reviews (reply, request a
+ * review); members read everything they can see.
  * (Customers have no editing flow yet; when one ships it gets a capability here and a matching database policy.)
  */
 import type { OrganizationRole } from "./workspace-types";
 
-export type Capability = "settings:manage" | "services:manage" | "team:manage" | "operations:manage" | "financials:manage";
+export type Capability = "settings:manage" | "services:manage" | "team:manage" | "operations:manage" | "financials:manage" | "maintenance:manage" | "reviews:manage";
 
 const GRANTS: Record<Capability, readonly OrganizationRole[]> = {
   "settings:manage": ["owner", "admin"],
@@ -22,6 +23,10 @@ const GRANTS: Record<Capability, readonly OrganizationRole[]> = {
   "operations:manage": ["owner", "admin"],
   // Quotes, Invoices and Payments (the money a business receives from its customers). Members read them.
   "financials:manage": ["owner", "admin"],
+  // Maintenance Plans: creating a plan and scheduling its included visits. Members read them.
+  "maintenance:manage": ["owner", "admin"],
+  // Reviews: replying to a review and recording a request for one. Members read them.
+  "reviews:manage": ["owner", "admin"],
 };
 
 export const CAPABILITIES = Object.keys(GRANTS) as Capability[];

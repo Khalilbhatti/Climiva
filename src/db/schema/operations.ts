@@ -91,9 +91,6 @@ export const bookings = pgTable(
     intakeReportedIssue: text("intake_reported_issue"),
     internalNotes: text("internal_notes"),
     cancellationReason: text("cancellation_reason"),
-    /** The Maintenance Plan visit this Booking schedules (plans are not on the database yet, so these are plain references). */
-    planId: text("plan_id"),
-    planVisitId: text("plan_visit_id"),
     /** When the request arrived. NULL when it is not known (an older record); every booking made through the application has one. */
     receivedAt: timestamp("received_at", { withTimezone: true }),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
@@ -125,7 +122,6 @@ export const bookings = pgTable(
     check("bookings_contact_without_customer", sql`${table.customerId} is null or (${table.contactPhone} is null and ${table.contactEmail} is null and ${table.contactAddress} is null)`),
     check("bookings_property_needs_customer", sql`${table.propertyId} is null or ${table.customerId} is not null`),
     check("bookings_cancellation", sql`(${table.status} = 'cancelled') = (${table.cancellationReason} is not null)`),
-    check("bookings_plan_visit", sql`(${table.planId} is null) = (${table.planVisitId} is null)`),
   ],
 ).enableRLS();
 
@@ -184,6 +180,8 @@ export const jobs = pgTable(
     foreignKey({ name: "jobs_assignee_fk", columns: [table.organizationId, table.assigneeId], foreignColumns: [teamMembers.organizationId, teamMembers.id] }),
     foreignKey({ name: "jobs_equipment_fk", columns: [table.organizationId, table.equipmentId], foreignColumns: [equipment.organizationId, equipment.id] }),
     unique("jobs_org_id_unique").on(table.organizationId, table.id),
+    // A review or a review request names (organization, job, customer), so it cannot pair a job with a customer it is not for.
+    unique("jobs_org_id_customer_unique").on(table.organizationId, table.id, table.customerId),
     unique("jobs_org_number_unique").on(table.organizationId, table.number),
     // One Job per Booking (a Job with no Booking, such as a historical visit, has a NULL here and is not constrained).
     unique("jobs_org_booking_unique").on(table.organizationId, table.bookingId),

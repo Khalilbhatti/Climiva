@@ -46,7 +46,11 @@ test.describe("what was seeded is what is read", () => {
 
   test("Northstar: its own, smaller set comes back exactly as seeded", async () => {
     const operations = await withTenant({ userId: ids.taylor, organizationId: ids.northstar }, (tx) => loadOperations(tx, ids.northstar, "America/Denver"));
-    expect([...operations.bookings].sort(byBooking)).toEqual([...NORTHSTAR_OPERATIONS.bookings].sort(byBooking));
+    // A booking that schedules a maintenance plan visit says so: the link lives on the plan's visit (Phase 13) and is read from there.
+    const expected = NORTHSTAR_OPERATIONS.bookings.map((booking) =>
+      booking.id === "BK-1001" ? { ...booking, planVisit: { planId: "plan-marta-olsen-furnace-care", visitId: "plan-marta-olsen-furnace-care-v1" } } : booking,
+    );
+    expect([...operations.bookings].sort(byBooking)).toEqual([...expected].sort(byBooking));
     expect([...operations.jobs].sort(byJob)).toEqual([...NORTHSTAR_OPERATIONS.jobs].sort(byJob));
     expect(operations.blocks).toEqual([]);
   });

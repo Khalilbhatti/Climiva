@@ -92,18 +92,23 @@ test.describe("the sample business belongs to Apex alone", () => {
 
   test("Taylor sees an unavailable state, not Apex's records, in every module that still runs on sample data", async ({ openAs }) => {
     const { page, problems } = await openAs("taylor");
-    const modules: [string, string][] = [
-      ["/maintenance-plans", "Maintenance Plans"], ["/website", "Website"],
-      ["/marketplace", "Marketplace"], ["/reviews", "Reviews"], ["/marketing", "Marketing"], ["/analytics", "Analytics"],
-    ];
+    const modules: [string, string][] = [["/website", "Website"], ["/marketplace", "Marketplace"], ["/marketing", "Marketing"], ["/analytics", "Analytics"]];
     for (const [path, name] of modules) {
       await page.goto(path);
       await expect(page.getByRole("heading", { level: 1, name }), path).toBeVisible();
       await expect(page.getByRole("heading", { level: 2, name: `${name} isn't available for ${NORTHSTAR.name} yet` }), path).toBeVisible();
       expect(leaksIn(await page.locator("body").innerText(), APEX_ONLY), path).toEqual([]);
     }
-    // Bookings, the Schedule, Jobs, Quotes & Invoices and Payments are Northstar's own now: real pages with its own few records and none of Apex's.
-    for (const [path, name] of [["/bookings", "Bookings"], ["/schedule", "Schedule"], ["/jobs", "Jobs"], ["/quotes-invoices", "Quotes & Invoices"], ["/payments", "Payments"]] as const) {
+    // Bookings, the Schedule, Jobs, Quotes & Invoices, Payments, Maintenance Plans and Reviews are Northstar's own now: real pages with its own few records and none of Apex's.
+    for (const [path, name] of [
+      ["/bookings", "Bookings"],
+      ["/schedule", "Schedule"],
+      ["/jobs", "Jobs"],
+      ["/quotes-invoices", "Quotes & Invoices"],
+      ["/payments", "Payments"],
+      ["/maintenance-plans", "Maintenance Plans"],
+      ["/reviews", "Reviews"],
+    ] as const) {
       await page.goto(path);
       await expect(page.getByRole("heading", { level: 1, name }), path).toBeVisible();
       await expect(page.getByRole("heading", { level: 2, name: `${name} isn't available for ${NORTHSTAR.name} yet` }), path).toHaveCount(0);
@@ -113,6 +118,8 @@ test.describe("the sample business belongs to Apex alone", () => {
   });
 
   test("every record page for Apex's customers, jobs, payments and people is unavailable (or not found) for Taylor, in HTML and in client navigation", async ({ apiAs }) => {
+    // It asks for every shell address twice, as HTML and as a client navigation: about thirteen seconds alone, longer when the machine is busy.
+    test.setTimeout(120_000);
     const taylor = await apiAs("taylor");
     const urls = ROUTE_INVENTORY.filter((route) => route.shell && !["/", "/help"].includes(route.url) && !route.url.startsWith("/settings")).map((route) => route.url);
     expect(urls.length).toBeGreaterThan(100);

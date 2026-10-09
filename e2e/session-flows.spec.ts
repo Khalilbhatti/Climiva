@@ -197,8 +197,13 @@ test.describe("scheduling Sarah's included visit reaches Plans, Bookings and Sch
     await go(page, "/payments");
     await expect(main(page)).toContainText("$2,130.00");
 
+    // The booking is stored: a reload still has it, on the plan and in Bookings.
     await page.reload();
     await expect(main(page)).not.toContainText("BK-1048");
+    await go(page, "/bookings?tab=upcoming&booking=BK-1048");
+    await expect(page.getByRole("complementary", { name: "Booking details" })).toContainText("Marcus Vance");
+    await go(page, "/maintenance-plans/plan-sarah-comfort-care");
+    await expect(page.getByRole("table", { name: "Plan service history" })).toContainText("BK-1048");
   });
 });
 
@@ -218,9 +223,10 @@ test.describe("replying to a review reaches the Reviews counts", () => {
     await go(page, "/customers/sarah-mitchell");
     await expect(main(page)).toContainText("Sarah Mitchell");
 
+    // The reply is stored in the database, so a reload still counts it.
     await page.reload();
     await go(page, "/reviews");
-    await expect(tabs(page, "Review views")).toHaveText([/^All reviews\s*12$/, /^Awaiting reply\s*3$/, /^Responded\s*9$/]);
+    await expect(tabs(page, "Review views")).toHaveText([/^All reviews\s*12$/, /^Awaiting reply\s*2$/, /^Responded\s*10$/]);
   });
 });
 

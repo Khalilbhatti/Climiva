@@ -6,8 +6,7 @@ import { business, overviewMetrics } from "../src/data/fixtures";
 import {
   COVERAGE,
   COVERAGE_IDS,
-  PLANS,
-  PLANS_DATA,
+  PLAN_BASELINE,
   getCustomerPlanSummary,
   getPlanById,
   getPlanMetrics,
@@ -15,6 +14,7 @@ import {
   getUpcomingVisits,
   getVisitBooking,
   getVisitState,
+  type MaintenancePlan,
 } from "../src/data/maintenance-plans";
 import type { Booking } from "../src/data/operations";
 import {
@@ -36,7 +36,7 @@ import {
   hasUnpublishedChanges,
   initialWebsiteState,
 } from "../src/data/website";
-import { createPlan } from "../src/lib/maintenance-plans-state";
+import { parseNewPlan, planSlug, visitsOf } from "../src/lib/maintenance-rules";
 import {
   connectCustomDomain,
   makeClimviaPrimary,
@@ -47,24 +47,35 @@ import {
   savePage,
   unpublish,
 } from "../src/lib/website-state";
-import { BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, JOBS, OPERATIONS, PROPERTIES, SERVICES } from "./apex-data";
+import { BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, JOBS, OPERATIONS, PLANS, PLANS_DATA, PROPERTIES, SERVICES } from "./apex-data";
 import { cancelled, withBooking } from "./operations-edits";
 
 // Pure data/selector/state tests: no browser needed.
 
-const newPlan = {
-  customerId: "elena-rodriguez",
-  propertyId: "prop-elena-condo",
-  name: "Comfort Care",
-  status: "active" as const,
-  coverage: { cooling: 1, heating: 1 },
-  price: 189,
-  cadence: "year" as const,
-  startDate: "2024-10-25",
-  endDate: "2025-10-25",
+/** A plan as the server stores one created through the Create plan flow (not carried in with the sample history). */
+const createdPlan = (): MaintenancePlan => {
+  const slug = planSlug("elena-rodriguez", "Comfort Care", []);
+  return {
+    id: slug,
+    customerId: "elena-rodriguez",
+    propertyId: "prop-elena-condo",
+    name: "Comfort Care",
+    status: "active",
+    price: 189,
+    cadence: "year",
+    startDate: "2024-10-25",
+    endDate: "2025-10-25",
+    coverage: [
+      { coverageId: "cooling", visits: 1 },
+      { coverageId: "heating", visits: 1 },
+    ],
+    visitsPerYear: 2,
+    visits: visitsOf(slug, { cooling: 1, heating: 1 }).map((visit) => ({ id: visit.ref, sequence: visit.sequence, label: visit.label, coverageId: visit.coverageId })),
+  };
 };
 
-const visit2 = () => getPlanById("plan-sarah-comfort-care")!.visits[1];
+const TODAY = "2024-10-25";
+const visit2 = () => getPlanById("plan-sarah-comfort-care", PLANS_DATA)!.visits[1];
 
 /**
  * BK-1048 as the Schedule Included Visit flow stores it (the booking itself is created by the server action; bookings-db and
@@ -91,7 +102,7 @@ function scheduleVisit2(): { data: typeof OPERATIONS; booking: Booking } {
 
 test.describe("maintenance plan data", () => {
   test("Sarah Mitchell's Comfort Care plan is the canonical record", () => {
-    const plan = getPlanById("plan-sarah-comfort-care")!;
+    const plan = getPlanById("plan-sarah-comfort-care", PLANS_DATA)!;
     expect(plan).toMatchObject({
       customerId: "sarah-mitchell",
       propertyId: "prop-sarah-home",
@@ -123,7 +134,7 @@ test.describe("maintenance plan data", () => {
   });
 
   test("visit 1 is fulfilled; visit 2 is the cooling visit due in November and has no booking yet", () => {
-    const [v1, v2] = getPlanById("plan-sarah-comfort-care")!.visits;
+    const [v1, v2] = getPlanById("plan-sarah-comfort-care", PLANS_DATA)!.visits;
     expect(v1).toMatchObject({ coverageId: "heating", completed: true, completedOn: "2024-05-22" });
     expect(getVisitBooking(v1, OPERATIONS)).toBeUndefined();
     expect(v2).toMatchObject({ coverageId: "cooling", windowStart: "2024-11-01", windowEnd: "2024-11-30" });
@@ -132,7 +143,7 @@ test.describe("maintenance plan data", () => {
   });
 
   test("aggregates are the approved 14 / 5 / 3 / 2, not a made-up 24 records", () => {
-    expect(getPlanMetrics(PLANS_DATA, OPERATIONS)).toMatchObject({ active: 14, visitsDue: 5, renewals: 3, paused: 1, ended: 1, pausedOrEnded: 2 });
+    expect(getPlanMetrics(PLANS_DATA, OPERATIONS, TODAY, PLAN_BASELINE)).toMatchObject({ active: 14, visitsDue: 5, renewals: 3, paused: 1, ended: 1, pausedOrEnded: 2 });
     expect(PLANS.length).toBeLessThan(14);
   });
 
@@ -150,10 +161,10 @@ test.describe("maintenance plan data", () => {
   });
 
   test("the final plan names win over the older Customers labels", () => {
-    expect(getCustomerPlanSummary(CUSTOMERS.find((customer) => customer.id === "david-chen")!)).toMatchObject({ name: "Seasonal Maintenance", status: "Active" });
-    expect(getCustomerPlanSummary(CUSTOMERS.find((customer) => customer.id === "sarah-mitchell")!)).toMatchObject({ name: "Comfort Care", price: "$189/yr", visitsPerYear: 2 });
+    expect(getCustomerPlanSummary(CUSTOMERS.find((customer) => customer.id === "david-chen")!, PLANS_DATA)).toMatchObject({ name: "Seasonal Maintenance", status: "Active" });
+    expect(getCustomerPlanSummary(CUSTOMERS.find((customer) => customer.id === "sarah-mitchell")!, PLANS_DATA)).toMatchObject({ name: "Comfort Care", price: "$189/yr", visitsPerYear: 2 });
     expect(PLANS.map((plan) => plan.name)).not.toContain("Comfort Plus");
-    expect(getCustomerPlanSummary(CUSTOMERS.find((customer) => customer.id === "elena-rodriguez")!)).toBeUndefined();
+    expect(getCustomerPlanSummary(CUSTOMERS.find((customer) => customer.id === "elena-rodriguez")!, PLANS_DATA)).toBeUndefined();
   });
 
   test("Sarah's Phase 2 customer, property and equipment records are unchanged", () => {
@@ -164,22 +175,41 @@ test.describe("maintenance plan data", () => {
 });
 
 test.describe("creating a plan and scheduling an included visit", () => {
-  test("createPlan adds one plan in memory, with cooling then heating visits, and changes nothing else", () => {
-    const before = JSON.stringify(PLANS_DATA);
-    const { data, plan } = createPlan(PLANS_DATA, newPlan, "elena-rodriguez");
-    expect(JSON.stringify(PLANS_DATA)).toBe(before);
-    expect(data.plans).toHaveLength(PLANS.length + 1);
-    expect(plan).toMatchObject({ id: "plan-elena-rodriguez-comfort-care", name: "Comfort Care", status: "active", visitsPerYear: 2 });
-    expect(plan.visits.map((visit) => visit.coverageId)).toEqual(["cooling", "heating"]);
-    expect(plan.visits.every((visit) => getVisitBooking(visit, OPERATIONS) === undefined)).toBe(true);
-    // The approved totals grow by exactly what was created.
-    expect(getPlanMetrics(data, OPERATIONS)).toMatchObject({ active: 15, visitsDue: 6 });
+  test("a new plan's visits are cooling first, then heating, numbered from 1, and its reference is unique among the business's plans", () => {
+    const slug = planSlug("elena-rodriguez", "Comfort Care", []);
+    expect(slug).toBe("plan-elena-rodriguez-comfort-care");
+    expect(visitsOf(slug, { cooling: 1, heating: 1 }).map((visit) => [visit.ref, visit.sequence, visit.coverageId, visit.label])).toEqual([
+      ["plan-elena-rodriguez-comfort-care-v1", 1, "cooling", "Cooling maintenance"],
+      ["plan-elena-rodriguez-comfort-care-v2", 2, "heating", "Heating maintenance"],
+    ]);
+    // Creating the same plan twice keeps both, with different references.
+    expect(planSlug("elena-rodriguez", "Comfort Care", [slug])).toBe(`${slug}-2`);
+    expect(planSlug("elena-rodriguez", "Comfort Care", [slug, `${slug}-2`])).toBe(`${slug}-3`);
+    expect(planSlug("a", "!!!", [])).toBe("plan-a-plan");
   });
 
-  test("creating the same plan twice keeps both, with different ids", () => {
-    const first = createPlan(PLANS_DATA, newPlan, "elena-rodriguez");
-    const second = createPlan(first.data, newPlan, "elena-rodriguez");
-    expect(second.plan.id).toBe("plan-elena-rodriguez-comfort-care-2");
+  test("a new plan adds to the approved totals by exactly what was created, and the sample data is not touched", () => {
+    const before = JSON.stringify(PLANS_DATA);
+    const data = { plans: [...PLANS_DATA.plans, createdPlan()] };
+    expect(JSON.stringify(PLANS_DATA)).toBe(before);
+    expect(getPlanMetrics(data, OPERATIONS, TODAY, PLAN_BASELINE)).toMatchObject({ active: 15, visitsDue: 6 });
+    expect(createdPlan().visits.every((visit) => getVisitBooking(visit, OPERATIONS) === undefined)).toBe(true);
+  });
+
+  test("a business with no reporting history counts its own plans, and none of the approved totals", () => {
+    const data = { plans: [createdPlan()] };
+    expect(getPlanMetrics(data, OPERATIONS, TODAY)).toMatchObject({ active: 1, visitsDue: 1, renewals: 0, paused: 0, ended: 0, pausedOrEnded: 0, all: 1 });
+    expect(getPlanMetrics({ plans: [] }, OPERATIONS, TODAY)).toEqual({ active: 0, visitsDue: 0, renewals: 0, paused: 0, ended: 0, pausedOrEnded: 0, all: 0 });
+    // A plan that ends within 60 days of the business's own today is renewing soon.
+    expect(getPlanMetrics(data, OPERATIONS, "2025-09-01")).toMatchObject({ renewals: 1 });
+  });
+
+  test("the server reads a plan's price as exact cents and refuses what the screen would never send", () => {
+    const input = { customerId: "elena-rodriguez", propertyId: "prop-elena-condo", name: " Comfort Care ", status: "active", coverage: { cooling: 1, heating: 1 }, price: "189.50", cadence: "year", startDate: "2024-10-25", endDate: "2025-10-25" };
+    expect(parseNewPlan(input)).toMatchObject({ ok: true, value: { name: "Comfort Care", priceCents: 18950, coverage: { cooling: 1, heating: 1 } } });
+    for (const bad of [{ price: "0" }, { price: "-5" }, { price: "12.345" }, { price: "abc" }, { coverage: {} }, { coverage: { cooling: 0, heating: 0 } }, { coverage: { cooling: 5 } }, { coverage: { plumbing: 1 } }, { name: "  " }, { status: "ended" }, { cadence: "weekly" }, { startDate: "2024-02-30" }, { endDate: "2024-10-25" }, { customerId: "Not A Slug" }]) {
+      expect(parseNewPlan({ ...input, ...bad }).ok, JSON.stringify(bad)).toBe(false);
+    }
   });
 
   test("visit 2's booking is BK-1048 (Nov 19, 10:00–12:00, Marcus Vance) with no job", () => {
@@ -204,13 +234,13 @@ test.describe("creating a plan and scheduling an included visit", () => {
 
   test("the plan holds no pointer of its own: the visit state is read from the stored booking that points at it", () => {
     const { data: ops, booking } = scheduleVisit2();
-    const plan = getPlanById("plan-sarah-comfort-care")!;
+    const plan = getPlanById("plan-sarah-comfort-care", PLANS_DATA)!;
     expect(getVisitBooking(plan.visits[1], ops)?.id).toBe("BK-1048");
     expect(getVisitBooking(plan.visits[1], OPERATIONS)).toBeUndefined();
     expect(getPlanVisitForBooking(booking, PLANS_DATA)).toMatchObject({ visit: { id: visit2().id } });
     expect(getVisitState(plan.visits[1], ops)).toBe("scheduled");
     // Still counted as due until it is completed; the approved total does not move.
-    expect(getPlanMetrics(PLANS_DATA, ops).visitsDue).toBe(5);
+    expect(getPlanMetrics(PLANS_DATA, ops, TODAY, PLAN_BASELINE).visitsDue).toBe(5);
     expect(getUpcomingVisits(PLANS_DATA, ops).find(({ plan: item }) => item.id === plan.id)?.visit.id).toBe(visit2().id);
 
     // Cancelling the booking reopens the visit rather than leaving it scheduled.
@@ -386,7 +416,7 @@ test.describe("Phase 5 source", () => {
       ...sourceFiles("src/components/website"),
       "src/data/maintenance-plans.ts",
       "src/data/website.ts",
-      "src/lib/maintenance-plans-state.ts",
+      "src/lib/maintenance-rules.ts",
       "src/lib/website-state.ts",
     ];
     const hits: string[] = [];

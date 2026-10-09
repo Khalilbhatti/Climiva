@@ -22,6 +22,8 @@ import {
   equipment,
   jobFiles,
   jobs,
+  maintenancePlanVisits,
+  maintenancePlans,
   organizationSequences,
   scheduleBlockMembers,
   scheduleBlocks,
@@ -97,6 +99,13 @@ export async function loadOperations(tx: Tx, organizationId: string, timeZone: s
   const blockRows = await tx.select().from(scheduleBlocks).where(eq(scheduleBlocks.organizationId, organizationId)).orderBy(asc(scheduleBlocks.position));
   const blockMemberRows = await tx.select().from(scheduleBlockMembers).where(eq(scheduleBlockMembers.organizationId, organizationId));
 
+  // Which maintenance plan visit each booking schedules: the link lives on the visit, so read it from there.
+  const visitRows = await tx
+    .select({ bookingId: maintenancePlanVisits.bookingId, visitRef: maintenancePlanVisits.ref, planSlug: maintenancePlans.slug })
+    .from(maintenancePlanVisits)
+    .innerJoin(maintenancePlans, and(eq(maintenancePlans.organizationId, maintenancePlanVisits.organizationId), eq(maintenancePlans.id, maintenancePlanVisits.planId)))
+    .where(eq(maintenancePlanVisits.organizationId, organizationId));
+  const planVisitByBooking = new Map(visitRows.flatMap((row) => (row.bookingId ? [[row.bookingId, { planId: row.planSlug, visitId: row.visitRef }] as const] : [])));
   const bookingNumberById = new Map(bookingRows.map((row) => [row.id, row.number]));
   const jobNumberByBookingId = new Map(jobRows.flatMap((row) => (row.bookingId ? [[row.bookingId, row.number] as const] : [])));
   const filesByJob = new Map<string, typeof fileRows>();
@@ -110,7 +119,7 @@ export async function loadOperations(tx: Tx, organizationId: string, timeZone: s
   for (const slugs of memberSlugsByBlock.values()) slugs.sort((a, b) => a.localeCompare(b));
 
   return {
-    bookings: bookingRows.map((row) => bookingFromRow(row, resolved.slugs, jobNumberByBookingId.get(row.id), timeZone)),
+    bookings: bookingRows.map((row) => bookingFromRow(row, resolved.slugs, jobNumberByBookingId.get(row.id), timeZone, planVisitByBooking.get(row.id))),
     jobs: jobRows.map((row) => jobFromRow(row, resolved.slugs, row.bookingId ? bookingNumberById.get(row.bookingId) : undefined, filesByJob.get(row.id) ?? [], timeZone)),
     blocks: blockRows.map((row) => blockFromRow(row, memberSlugsByBlock.get(row.id) ?? [])),
   };
@@ -236,8 +245,6 @@ export async function insertOperations(tx: Tx, organizationId: string, timeZone:
         intakeReportedIssue: booking.intake?.reportedIssue ?? null,
         internalNotes: booking.internalNotes ?? null,
         cancellationReason: booking.cancellation?.reason ?? null,
-        planId: booking.planVisit?.planId ?? null,
-        planVisitId: booking.planVisit?.visitId ?? null,
         receivedAt: instant(booking.receivedAt),
         confirmedAt: instant(booking.confirmedAt),
       })

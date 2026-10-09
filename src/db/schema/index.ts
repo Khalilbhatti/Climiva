@@ -9,3 +9,5 @@ export * from "./services";
 export * from "./team";
 export * from "./operations";
 export * from "./financials";
+export * from "./maintenance";
+export * from "./reviews";

@@ -18,6 +18,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/Table";
 import { Tabs } from "@/components/ui/Tabs";
 import {
+  PLAN_BASELINE,
   PLAN_STATUS_LABEL,
   VISIT_STATE_LABEL,
   formatPlanPrice,
@@ -42,6 +43,7 @@ import { useMaintenancePlans } from "./MaintenancePlansProvider";
 import { ScheduleVisitModal } from "./ScheduleVisitModal";
 import { PlanCustomerName, PlanStatusBadge, dueText, planCustomerName, planProperty, visitTitle } from "./plan-ui";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useCan, useClock, useWorkspace } from "@/components/workspace/WorkspaceProvider";
 
 type View = "active" | "upcoming" | "all";
 const VIEWS: View[] = ["active", "upcoming", "all"];
@@ -58,6 +60,9 @@ export function MaintenancePlansView() {
   const dir = useDirectory();
   const { data: stored } = useMaintenancePlans();
   const { data: ops } = useOperations();
+  const { today } = useClock();
+  const { hasSampleData } = useWorkspace();
+  const canManage = useCan("maintenance:manage");
   const router = useRouter();
   const params = useSearchParams();
 
@@ -74,7 +79,8 @@ export function MaintenancePlansView() {
   const [scheduling, setScheduling] = useState<{ plan: MaintenancePlan; visit: PlanVisit } | null>(null);
 
   const data: PlansData = useMemo(() => (previewEmpty ? { plans: [] } : stored), [previewEmpty, stored]);
-  const metrics = previewEmpty ? ZERO : getPlanMetrics(data, ops);
+  // The sample business reports the approved workspace totals its stored plans are a sample of; any other business counts its own.
+  const metrics = previewEmpty ? ZERO : getPlanMetrics(data, ops, today, hasSampleData ? PLAN_BASELINE : undefined);
 
   function setParams(updates: Record<string, string | null>) {
     const next = new URLSearchParams(params.toString());
@@ -145,7 +151,7 @@ export function MaintenancePlansView() {
             </TableCell>
             <TableCell className="whitespace-nowrap">
               <div>{plan.endDate ? formatDate(plan.endDate) : "Open-ended"}</div>
-              {isRenewingSoon(plan) && <StatusBadge tone="warning">Renews soon</StatusBadge>}
+              {isRenewingSoon(plan, today) && <StatusBadge tone="warning">Renews soon</StatusBadge>}
             </TableCell>
             <TableCell>
               <PlanStatusBadge status={plan.status} />
@@ -187,10 +193,12 @@ export function MaintenancePlansView() {
         title="Maintenance Plans"
         description="Manage recurring HVAC service agreements, included visits, and upcoming maintenance."
         actions={
-          <Button size="lg" onClick={() => setParams({ new: "1" })}>
-            <Plus aria-hidden className="size-[18px]" />
-            Create plan
-          </Button>
+          canManage && (
+            <Button size="lg" onClick={() => setParams({ new: "1" })}>
+              <Plus aria-hidden className="size-[18px]" />
+              Create plan
+            </Button>
+          )
         }
       />
 
@@ -206,16 +214,18 @@ export function MaintenancePlansView() {
         />
       </section>
 
-      {previewEmpty ? (
+      {data.plans.length === 0 ? (
         <EmptyState
           icon={Wrench}
           title="No maintenance plans yet"
           description="Create recurring service agreements for customers who receive scheduled HVAC maintenance."
           action={
-            <Button size="lg" onClick={() => setParams({ new: "1" })}>
-              <Plus aria-hidden className="size-[18px]" />
-              Create plan
-            </Button>
+            canManage && (
+              <Button size="lg" onClick={() => setParams({ new: "1" })}>
+                <Plus aria-hidden className="size-[18px]" />
+                Create plan
+              </Button>
+            )
           }
         />
       ) : (
@@ -351,15 +361,17 @@ export function MaintenancePlansView() {
                                   View booking
                                 </Link>
                               ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setScheduling({ plan, visit })}
-                                  aria-label={`Schedule visit for ${planCustomerName(plan, dir)}`}
-                                  className="inline-flex items-center gap-1.5 rounded-btn px-2 py-1 text-sm font-semibold whitespace-nowrap text-primary hover:bg-primary-subtle"
-                                >
-                                  <CalendarPlus aria-hidden className="size-4" />
-                                  Schedule visit
-                                </button>
+                                canManage && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setScheduling({ plan, visit })}
+                                    aria-label={`Schedule visit for ${planCustomerName(plan, dir)}`}
+                                    className="inline-flex items-center gap-1.5 rounded-btn px-2 py-1 text-sm font-semibold whitespace-nowrap text-primary hover:bg-primary-subtle"
+                                  >
+                                    <CalendarPlus aria-hidden className="size-4" />
+                                    Schedule visit
+                                  </button>
+                                )
                               )}
                             </TableCell>
                           </TableRow>
@@ -406,7 +418,7 @@ export function MaintenancePlansView() {
         </p>
       </aside>
 
-      {creating && (
+      {creating && canManage && (
         <CreatePlanModal
           presetCustomerId={presetCustomerId}
           onClose={() => setParams({ new: null, customer: null })}
@@ -416,7 +428,7 @@ export function MaintenancePlansView() {
           }}
         />
       )}
-      {scheduling && <ScheduleVisitModal plan={scheduling.plan} visit={scheduling.visit} onClose={() => setScheduling(null)} />}
+      {scheduling && canManage && <ScheduleVisitModal plan={scheduling.plan} visit={scheduling.visit} onClose={() => setScheduling(null)} />}
     </>
   );
 }

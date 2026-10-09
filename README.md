@@ -12,11 +12,13 @@ workspace switching, and a PostgreSQL database that keeps businesses apart. Not 
 
 - **On PostgreSQL now:** accounts and sessions, organizations, memberships and roles, the Business information, Business
   hours and Workspace preferences of each business, each person's profile name, the `sites` a business owns, its
-  customers (with properties and equipment), Services and team, and its **operations**: bookings, jobs (work details and
-  photo records), the schedule (derived from them) and blocked time. Each business sees only its own.
-- **Still on built-in sample data** (in memory for the visit, gone on reload): Quotes & Invoices, Payments, Maintenance
-  Plans, Website, Marketplace, Reviews, Marketing and Analytics. That sample belongs to **one** business, Apex Climate
-  Heating & Air; every other business sees those modules as "not available yet", never Apex's records.
+  customers (with properties and equipment), Services and team, its **operations** (bookings, jobs with work details and
+  photo records, the schedule derived from them, blocked time), its **money** (quotes, invoices and payments, in whole
+  cents) and its **maintenance plans and reviews** (plans with their coverage and included visits, reviews with replies
+  and review requests). Each business sees only its own.
+- **Still on built-in sample data** (in memory for the visit, gone on reload): Website, Marketplace, Marketing and
+  Analytics. That sample belongs to **one** business, Apex Climate Heating & Air; every other business sees those modules
+  as "not available yet", never Apex's records.
 - **Not built:** email (so no verification, password reset or invitations by email), billing for Climvia itself, a payment
   processor, SMS, real domain connection, file storage (logo and photo last for the session), the Website Builder, deployment to AWS.
 
@@ -147,7 +149,9 @@ docs/               SaaS architecture, design map, visual audit, production hand
 | Logo and accent | Settings → Branding | the session only (needs file storage) |
 | Customers, Services, Team | their module | PostgreSQL (`customers`, `services`, `team_members` …) |
 | Bookings, Jobs, work details, photo records, blocked time | Bookings, Jobs | PostgreSQL (`bookings`, `jobs`, `job_files`, `schedule_blocks`); the Schedule is derived, not stored |
-| Everything else (money, website, marketplace, reviews, marketing) | its module | the sample data, sample business only |
+| Quotes, invoices, payments | Quotes & Invoices, Payments | PostgreSQL (`quotes`, `invoices`, `payments` …), money in integer cents |
+| Maintenance plans, coverage, visits; reviews, replies, review requests | Maintenance Plans, Reviews | PostgreSQL (`maintenance_plans`, `maintenance_plan_visits`, `reviews`, `review_replies`, `review_requests` …) |
+| Everything else (website, marketplace, marketing) | its module | the sample data, sample business only |
 
 Analytics owns nothing: it reads the other modules.
 
@@ -162,7 +166,7 @@ expiry, business set-up, workspace switching, tenant isolation (through the brow
 the restricted runtime role), Settings persistence, and source-level checks of the server boundaries. Each worker signs
 in as the owner of its own copy of the Apex workspace, restored before every test.
 
-At the last run all 2247 tests passed (63 spec files, about eleven minutes on six workers): the earlier front-end and SaaS tests, none skipped and adapted only where Settings, customers, Services, the team, bookings, jobs and now quotes, invoices and payments are stored or every page needs a sign-in, plus the operations specs (SQL as the restricted role, bookings, jobs, the schedule, the cross-module checks and the business-time conversions) and the financial specs (money in cents, the payment and invoice rules, SQL as the restricted role with the concurrency tests, the seed round trip, and the record-payment, void and create-invoice flows through the real application).
+At the last run all 2378 tests passed (67 spec files, about ten minutes on six workers): the earlier front-end and SaaS tests, none skipped and adapted only where Settings, customers, Services, the team, bookings, jobs, quotes, invoices, payments, maintenance plans and reviews are stored or every page needs a sign-in, plus the operations specs (SQL as the restricted role, bookings, jobs, the schedule, the cross-module checks and the business-time conversions) and the financial specs (money in cents, the payment and invoice rules, SQL as the restricted role with the concurrency tests, the seed round trip, and the record-payment, void and create-invoice flows through the real application) and the maintenance and review specs (the pure rules and totals, SQL as the restricted role with the concurrency tests, the seed round trip, and the create-plan, schedule-visit, reply, edit-reply and request-review flows through the real application).
 See [docs/production-handoff.md](docs/production-handoff.md#testing-status) for what each group covers.
 
 ## Deploying

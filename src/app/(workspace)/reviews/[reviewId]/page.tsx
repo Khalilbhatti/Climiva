@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 import { ReviewDetail } from "@/components/reviews/ReviewDetail";
-import { fixtureGate } from "@/server/fixture-gate";
+import { requireWorkspaceContext } from "@/server/workspace";
 
-// The sample reviews are prerendered. Any other id is resolved against the in-memory reviews on the client.
+// A review belongs to one business and is looked up in the ACTIVE business's reviews on the client; the title names none.
 export const metadata: Metadata = { title: "Review" };
 
 export default async function ReviewPage({ params }: PageProps<"/reviews/[reviewId]">) {
-  const gate = await fixtureGate("Reviews");
-  if (gate) return gate;
+  await requireWorkspaceContext();
   const { reviewId } = await params;
   return <ReviewDetail reviewId={reviewId} />;
 }

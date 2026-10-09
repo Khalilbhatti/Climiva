@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Textarea } from "@/components/ui/Textarea";
@@ -27,17 +28,19 @@ export function ReplyModal({ review, mode, onClose, onDone }: ReplyModalProps) {
   const name = reviewerName(review, dir);
   const [body, setBody] = useState(mode === "edit" ? (review.response?.body ?? "") : (review.replyDraft ?? ""));
   const [showError, setShowError] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
   const error = body.trim() === "" ? "Write a response before posting." : undefined;
 
-  function submit() {
+  async function submit() {
+    if (saving) return;
     if (error) return setShowError(true);
-    if (mode === "edit") {
-      editResponse(review.id, body);
-      toast("Response updated.");
-    } else {
-      postResponse(review.id, body);
-      toast("Response posted.");
-    }
+    setSaving(true);
+    setProblem(undefined);
+    const result = await (mode === "edit" ? editResponse(review.id, body) : postResponse(review.id, body));
+    setSaving(false);
+    if (!result.ok) return setProblem(result.error);
+    toast(mode === "edit" ? "Response updated." : "Response posted.");
     onDone?.();
     onClose();
   }
@@ -54,7 +57,9 @@ export function ReplyModal({ review, mode, onClose, onDone }: ReplyModalProps) {
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={submit}>{mode === "edit" ? "Save response" : "Post response"}</Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving ? "Saving…" : mode === "edit" ? "Save response" : "Post response"}
+          </Button>
         </>
       }
     >
@@ -76,6 +81,7 @@ export function ReplyModal({ review, mode, onClose, onDone }: ReplyModalProps) {
         hint={`${body.length} / ${RESPONSE_MAX} · Your response will be visible with this review. Responses can be edited at any time.`}
         onChange={(event) => setBody(event.target.value)}
       />
+      {problem && <FormAlert>{problem}</FormAlert>}
     </Modal>
   );
 }

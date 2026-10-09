@@ -5,11 +5,9 @@
  */
 import { readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { PLANS } from "../src/data/maintenance-plans";
 import { CAMPAIGNS } from "../src/data/marketing";
-import { REVIEWS_DATA } from "../src/data/reviews";
 import { WEBSITE_PAGES } from "../src/data/website";
-import { CUSTOMERS, FINANCIALS, JOBS, ROLES, SERVICES, TEAM } from "./apex-data";
+import { CUSTOMERS, FINANCIALS, JOBS, PLANS, REVIEWS_DATA, ROLES, SERVICES, TEAM } from "./apex-data";
 
 export type InventoryRoute = {
   /** The URL that is visited. */

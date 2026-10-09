@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CircleCheck, Minus, Plus } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { KeyValueList } from "@/components/ui/KeyValueList";
@@ -17,7 +18,6 @@ import {
   getPropertiesForCustomer,
   getPropertyById,
 } from "@/data/customers";
-import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import {
   COVERAGE,
   COVERAGE_IDS,
@@ -29,10 +29,11 @@ import {
   type MaintenancePlan,
   type PlanCadence,
 } from "@/data/maintenance-plans";
-import { slugify } from "@/lib/team-state";
 import { formatDate } from "@/lib/format";
+import { amountToCents, fromCents } from "@/lib/money";
 import { useMaintenancePlans } from "./MaintenancePlansProvider";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useClock } from "@/components/workspace/WorkspaceProvider";
 
 const STEPS = [
   { id: "customer", label: "Customer" },
@@ -66,12 +67,13 @@ type CreatePlanModalProps = {
 
 /**
  * The one Create maintenance plan flow (the Maintenance Plans page and the Overview quick action both open it).
- * It creates a plan in this session's data and nothing else: no Booking, Job, Invoice or Payment. The price is
+ * It stores a plan with its coverage and its visits and nothing else: no Booking, Job, Invoice or Payment. The price is
  * information about the agreement; nothing is billed.
  */
 export function CreatePlanModal({ presetCustomerId, onClose, onScheduleFirstVisit }: CreatePlanModalProps) {
   const dir = useDirectory();
   const { data, createPlan } = useMaintenancePlans();
+  const { today } = useClock();
 
   const preset = presetCustomerId ? getCustomerById(presetCustomerId, dir) : undefined;
   const [draft, setDraft] = useState<Draft>({
@@ -80,7 +82,7 @@ export function CreatePlanModal({ presetCustomerId, onClose, onScheduleFirstVisi
     coverage: { cooling: 1, heating: 1 },
     name: "",
     status: "active",
-    startDate: PROTOTYPE_TODAY,
+    startDate: today,
     endDate: "",
     price: "",
     cadence: "year",
@@ -89,6 +91,8 @@ export function CreatePlanModal({ presetCustomerId, onClose, onScheduleFirstVisi
   const [stepIndex, setStepIndex] = useState(0);
   const [showErrors, setShowErrors] = useState(false);
   const [created, setCreated] = useState<MaintenancePlan | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
 
@@ -98,7 +102,9 @@ export function CreatePlanModal({ presetCustomerId, onClose, onScheduleFirstVisi
   const property = draft.propertyId ? getPropertyById(draft.propertyId, dir) : undefined;
   const existing = customer ? getCurrentPlanForCustomer(customer.id, data) : undefined;
   const visits = COVERAGE_IDS.reduce((sum, id) => sum + draft.coverage[id], 0);
-  const price = Number(draft.price);
+  // What was typed is read as exact cents, never as a float.
+  const priceCents = amountToCents(draft.price);
+  const price = priceCents === undefined ? 0 : fromCents(priceCents);
 
   const errors: { customer?: string; property?: string; coverage?: string; name?: string; start?: string; end?: string; price?: string } = {};
   if (!customer) errors.customer = "Select a customer.";
@@ -107,7 +113,7 @@ export function CreatePlanModal({ presetCustomerId, onClose, onScheduleFirstVisi
   if (!draft.name.trim()) errors.name = "Enter a plan name.";
   if (!draft.startDate) errors.start = "Enter the start date.";
   if (draft.endDate && draft.startDate && draft.endDate <= draft.startDate) errors.end = "The renewal / end date must be after the start date.";
-  if (!draft.price.trim() || !Number.isFinite(price) || price <= 0) errors.price = "Enter the agreement price as an amount above $0.";
+  if (!draft.price.trim() || priceCents === undefined || priceCents <= 0) errors.price = "Enter the agreement price as an amount above $0.";
   const stepHasErrors: Record<(typeof STEPS)[number]["id"], boolean> = {
     customer: Boolean(errors.customer),
     property: Boolean(errors.property),
@@ -134,25 +140,25 @@ export function CreatePlanModal({ presetCustomerId, onClose, onScheduleFirstVisi
     setStepIndex((index) => index + 1);
   }
 
-  function create() {
-    if (!customer || !property) return;
-    setCreated(
-      createPlan(
-        {
-          customerId: customer.id,
-          propertyId: property.id,
-          name: draft.name,
-          status: draft.status,
-          coverage: draft.coverage,
-          price,
-          cadence: draft.cadence,
-          startDate: draft.startDate,
-          endDate: draft.endDate,
-          note: draft.note,
-        },
-        slugify(customer.name),
-      ),
-    );
+  async function create() {
+    if (!customer || !property || saving) return;
+    setSaving(true);
+    setProblem(undefined);
+    const result = await createPlan({
+      customerId: customer.id,
+      propertyId: property.id,
+      name: draft.name,
+      status: draft.status,
+      coverage: draft.coverage,
+      price: draft.price,
+      cadence: draft.cadence,
+      startDate: draft.startDate,
+      endDate: draft.endDate || undefined,
+      note: draft.note,
+    });
+    setSaving(false);
+    if (!result.ok) return setProblem(result.error);
+    setCreated(result.data.plan);
   }
 
   /* ───────── created ───────── */
@@ -229,7 +235,13 @@ export function CreatePlanModal({ presetCustomerId, onClose, onScheduleFirstVisi
               Back
             </Button>
           )}
-          {isLast ? <Button onClick={create}>Create plan</Button> : <Button onClick={next}>Next: {STEPS[stepIndex + 1].label}</Button>}
+          {isLast ? (
+            <Button onClick={create} disabled={saving}>
+              {saving ? "Creating…" : "Create plan"}
+            </Button>
+          ) : (
+            <Button onClick={next}>Next: {STEPS[stepIndex + 1].label}</Button>
+          )}
         </>
       }
     >
@@ -420,6 +432,7 @@ export function CreatePlanModal({ presetCustomerId, onClose, onScheduleFirstVisi
             ))}
           </div>
           <p className="text-xs text-ink-muted">Creating this Maintenance Plan does not automatically create a Booking, Job, Invoice or Payment.</p>
+          {problem && <FormAlert>{problem}</FormAlert>}
         </div>
       )}
     </Modal>

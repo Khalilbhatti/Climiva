@@ -4,10 +4,10 @@ import { and, eq } from "drizzle-orm";
 import { PROTOTYPE_NOW } from "@/data/fixtures";
 import type { Booking, Job, OperationsData } from "@/data/operations";
 import type { WeeklyHours } from "@/data/settings";
-import { loadServices } from "@/db/core-queries";
+import { findMember, insertBookingTx } from "@/db/booking-create";
 import type { Tx } from "@/db/index";
-import { allocateBookingNumber, allocateJobNumber, loadOperations, loadRefs, lockRecords, type Refs } from "@/db/ops-queries";
-import { bookings, jobFiles, jobs, teamMembers } from "@/db/schema";
+import { allocateJobNumber, loadOperations, loadRefs, lockRecords, type Refs } from "@/db/ops-queries";
+import { bookings, jobFiles, jobs } from "@/db/schema";
 import { withTenant } from "@/db/tenant";
 import { NOT_ALLOWED_OPERATIONS, NOT_FOUND, failure, ok, type ActionResult } from "@/lib/action-result";
 import { stampInstant, type BusinessClock } from "@/lib/business-time";
@@ -21,19 +21,17 @@ import {
   confirmError,
   createJobError,
   detailsError,
-  initialBookingStatus,
   jobReference,
   numberOf,
   parseCompletionNotes,
   parseDetailsPatch,
   parseNewBooking,
   parseReason,
-  RESERVED_BOOKING_NUMBERS,
-  slotError,
   slugOf,
   startJobError,
   type DetailsPatch,
 } from "@/lib/operations-rules";
+import { Refusal, refuse } from "@/lib/refusal";
 import { isRecord, type Parsed } from "@/lib/validation";
 import { authorize } from "../authorize";
 import { isIntegrityViolation, uniqueViolationOf } from "../db-errors";
@@ -50,20 +48,6 @@ import { isIntegrityViolation, uniqueViolationOf } from "../db-errors";
  * No argument names an organization. A refusal at any point rolls the whole change back, so nothing is half done, and a
  * number taken for a booking is given back.
  */
-
-/** A change the rules refuse: the message is for the person; the transaction rolls back. */
-class Refusal extends Error {
-  constructor(
-    message: string,
-    readonly fields?: Record<string, string>,
-  ) {
-    super(message);
-  }
-}
-
-const refuse = (message: string, fields?: Record<string, string>): never => {
-  throw new Refusal(message, fields);
-};
 
 /** The value of a parsed argument, or a refusal that says what was wrong with it. */
 function valid<T>(parsed: Parsed<T>): T {
@@ -129,77 +113,14 @@ async function mutate<T extends object = object>(change: (work: Work) => Promise
   }
 }
 
-/** The team member with this slug, if this business has one. */
-async function findMember(tx: Tx, organizationId: string, slug: string) {
-  const rows = await tx.select().from(teamMembers).where(and(eq(teamMembers.organizationId, organizationId), eq(teamMembers.slug, slug))).limit(1);
-  return rows[0];
-}
-
 /* ───────────────────────── bookings ───────────────────────── */
 
 export async function createBookingAction(input: unknown): Promise<ActionResult<Answer & { booking: Booking }>> {
-  return mutate(async ({ tx, organizationId, timeZone, refs, hours, clock, sample, stamp }) => {
+  return mutate(async (work) => {
     const booking = valid(parseNewBooking(input));
-
-    let customerId: string | null = null;
-    let propertyId: string | null = null;
-    if (booking.customerId) {
-      customerId = refs.idBySlug.customers.get(booking.customerId) ?? null;
-      if (!customerId) refuse("That customer is not in your customers any more. Choose another or reload the page.");
-      if (booking.propertyId) {
-        propertyId = refs.idBySlug.properties.get(booking.propertyId) ?? null;
-        if (!propertyId || refs.propertyOwner.get(propertyId) !== customerId) refuse("That property doesn't belong to this customer.");
-      }
-    }
-
-    const service = (await loadServices(tx, organizationId)).find((candidate) => candidate.id === booking.serviceId);
-    if (!service) return refuse("That service is not in your catalog any more. Choose another or reload the page.");
-    if (!service.active) refuse("That service is switched off, so it can't be booked.");
-    if (booking.source === "Website" || booking.source === "Booking link" || booking.source === "Marketplace") {
-      if (service.visibility !== "public-booking") refuse("That service isn't offered for online booking.");
-    }
-
-    let assigneeId: string | null = null;
-    if (booking.assigneeId) {
-      const member = await findMember(tx, organizationId, booking.assigneeId);
-      const problem = assignableError(member);
-      if (problem) refuse(problem);
-      assigneeId = member!.id;
-    }
-
-    const timeProblem = slotError(booking.date, booking.start, booking.end, hours, clock.today);
-    if (timeProblem) refuse(timeProblem, { slot: timeProblem });
-
-    const status = initialBookingStatus(booking.source, service.bookingMethod);
-    const number = await allocateBookingNumber(tx, organizationId, sample ? RESERVED_BOOKING_NUMBERS : {}, booking.planVisit?.visitId);
-    await tx.insert(bookings).values({
-      organizationId,
-      number,
-      customerId,
-      propertyId,
-      serviceId: refs.idBySlug.services.get(service.id)!,
-      assigneeId,
-      contactName: customerId ? null : (booking.contactName ?? null),
-      contactPhone: customerId ? null : (booking.contact?.phone ?? null),
-      contactEmail: customerId ? null : (booking.contact?.email ?? null),
-      contactAddress: customerId ? null : (booking.contact?.address ?? null),
-      source: booking.source,
-      status,
-      serviceDate: booking.date,
-      startTime: booking.start,
-      endTime: booking.end,
-      note: booking.note ?? null,
-      intakeSystemType: booking.intake?.systemType ?? null,
-      intakeEquipment: booking.intake?.equipment ?? null,
-      intakeReportedIssue: booking.intake?.reportedIssue ?? null,
-      internalNotes: booking.internalNotes ?? null,
-      planId: booking.planVisit?.planId ?? null,
-      planVisitId: booking.planVisit?.visitId ?? null,
-      receivedAt: stamp,
-      confirmedAt: status === "confirmed" ? stamp : null,
-    });
+    const { number } = await insertBookingTx(work, booking);
     // The booking as the screens use it, read back.
-    const stored = (await loadOperations(tx, organizationId, timeZone, refs)).bookings.find((candidate) => candidate.id === bookingReference(number));
+    const stored = (await loadOperations(work.tx, work.organizationId, work.timeZone, work.refs)).bookings.find((candidate) => candidate.id === bookingReference(number));
     return { booking: stored! };
   });
 }

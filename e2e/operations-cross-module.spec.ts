@@ -3,7 +3,7 @@
  * with the workspace: Customers, global search, Reviews, Maintenance Plans, switching workspace, logging out, Back.
  */
 import type { Page } from "playwright/test";
-import { REVIEWS } from "../src/data/reviews";
+import { REVIEWS } from "./apex-data";
 import { signInOverHttp } from "./fixtures";
 import { expect, switchWorkspace, test, waitsForHydration } from "./saas";
 
@@ -148,9 +148,10 @@ test.describe("Maintenance Plans: the visit is a real booking", () => {
 
     const stored = await db.query(
       `select b.number, b.status, b.source, b.service_date::text as date, b.start_time::text as start, b.end_time::text as stop,
-              c.name as customer, m.name as technician, b.plan_id, b.plan_visit_id,
+              c.name as customer, m.name as technician, p.slug as plan_id, v.ref as plan_visit_id, v.status as visit_status,
               (select count(*)::int from jobs j where j.booking_id = b.id) as jobs
          from bookings b join customers c on c.id = b.customer_id join team_members m on m.id = b.assignee_id
+         join maintenance_plan_visits v on v.booking_id = b.id join maintenance_plans p on p.id = v.plan_id
         where b.organization_id = $1 and b.number = 1048`,
       [workerTenant.organizationId],
     );
@@ -166,6 +167,7 @@ test.describe("Maintenance Plans: the visit is a real booking", () => {
         technician: "Marcus Vance",
         plan_id: "plan-sarah-comfort-care",
         plan_visit_id: "plan-sarah-comfort-care-v2",
+        visit_status: "scheduled",
         jobs: 0,
       },
     ]);

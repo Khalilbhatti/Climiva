@@ -9,6 +9,8 @@
 import type { Customer, Equipment, Property } from "@/data/customers";
 import type { FinancialData } from "@/data/financials";
 import type { OperationsData } from "@/data/operations";
+import type { ReviewsData } from "@/data/reviews";
+import type { SeedPlans } from "@/db/maint-queries";
 import type { Service } from "@/data/services";
 import { SYSTEM_ROLES, weeklyFromBusinessHours, type TeamMember } from "@/data/team";
 
@@ -288,6 +290,77 @@ export const NORTHSTAR_FINANCIALS: FinancialData = {
       status: "voided",
       recordedBy: "taylor-brooks",
       void: { reason: "Incorrect amount", on: "2024-10-30", by: "taylor-brooks" },
+    },
+  ],
+};
+
+/**
+ * Northstar's maintenance plans: one, different from Apex's in every value. It covers heating only (a furnace-first business), at
+ * a price and a term of its own, and its first visit is the existing confirmed booking BK-1001 (so a visit really is linked to a
+ * Northstar booking, and BK-1001 there is a different record from any Apex booking). Its second visit is still to book. The plan
+ * is not `imported`: Northstar has no reporting history, so its totals are counted from its own plans.
+ */
+export const NORTHSTAR_MAINTENANCE: SeedPlans = {
+  plans: [
+    {
+      id: "plan-marta-olsen-furnace-care",
+      customerId: "marta-olsen",
+      propertyId: "prop-olsen-house",
+      name: "Furnace Care",
+      status: "active",
+      price: 149,
+      cadence: "year",
+      startDate: "2024-09-01",
+      endDate: "2025-09-01",
+      coverage: [{ coverageId: "heating", visits: 2 }],
+      visitsPerYear: 2,
+      visits: [
+        { id: "plan-marta-olsen-furnace-care-v1", sequence: 1, label: "Heating maintenance", coverageId: "heating", bookingId: "BK-1001" },
+        {
+          id: "plan-marta-olsen-furnace-care-v2",
+          sequence: 2,
+          label: "Heating maintenance",
+          coverageId: "heating",
+          windowStart: "2025-03-01",
+          windowEnd: "2025-03-31",
+        },
+      ],
+    },
+  ],
+};
+
+/**
+ * Northstar's reviews: two of its own customers' words (not Apex's), one answered by Taylor Brooks and one awaiting a reply, and
+ * one recorded review request. None names a job (Northstar has no completed job yet). Not `imported`: its totals are counted from
+ * these rows.
+ */
+export const NORTHSTAR_REVIEWS: ReviewsData = {
+  reviews: [
+    {
+      id: "rev-priya-raman",
+      source: "Climvia",
+      customerId: "priya-raman",
+      rating: 4,
+      text: "Quick, clear explanation of the cooling diagnostic and a fair price.",
+      date: "2024-10-28",
+      response: { body: "Thank you, Priya. We are glad the visit was clear and the price felt fair.", by: "Taylor Brooks", at: "2024-10-29T09:15" },
+    },
+    {
+      id: "rev-marta-olsen",
+      source: "Climvia",
+      customerId: "marta-olsen",
+      rating: 5,
+      text: "Easy online booking, and Jordan arrived right on time.",
+      date: "2024-10-26",
+    },
+  ],
+  requests: [
+    {
+      id: "req-1",
+      customerId: "marta-olsen",
+      channel: "email",
+      message: "Thanks for choosing Northstar Heating & Cooling. We’d appreciate your feedback about your recent service.",
+      at: "2024-10-27T10:30",
     },
   ],
 };

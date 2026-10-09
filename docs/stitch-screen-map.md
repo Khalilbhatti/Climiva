@@ -473,6 +473,9 @@ quote; the quote then reads "Invoice #INV-1052" and can't be invoiced again. No 
 
 ## 10. Phase 5: Maintenance Plans and Website
 
+> **Phase 13 update.** Maintenance Plans are stored in PostgreSQL (plans, coverage, included visits; see [saas-architecture.md §26](saas-architecture.md#26-maintenance-plans-and-reviews)). Everything below that says "nothing persists" no longer holds for plans:
+> a created plan and a scheduled visit survive a reload, BK-1048 is the one real booking the visit points at, and `lib/maintenance-plans-state.ts` was replaced by `lib/maintenance-rules.ts` and server actions. The Website part is unchanged.
+
 Two modules on two new typed datasets, `src/data/maintenance-plans.ts` and `src/data/website.ts`, each with pure state
 functions (`src/lib/maintenance-plans-state.ts`, `src/lib/website-state.ts`) and a client provider. All providers now mount
 once at the app root (`components/providers/AppProviders`) instead of in the workspace layout, because the customer-facing
@@ -585,6 +588,9 @@ analytics or traffic, DNS or domain-verification states, and a real contact-form
 4. Plan renewal and end actions need a flow; the totals (3 renewals) are derived from end dates inside 60 days of the prototype date.
 
 ## 11. Phase 6: Marketplace, Reviews and Marketing
+
+> **Phase 13 update.** Reviews are stored in PostgreSQL (reviews, one reply each, review requests; see [saas-architecture.md §26](saas-architecture.md#26-maintenance-plans-and-reviews)). A posted or edited reply and a recorded request survive a reload, a request is only a record
+> (nothing is sent), and `lib/reviews-state.ts` is gone. Marketplace and Marketing are unchanged.
 
 The three Growth modules, each on its own typed dataset (`src/data/marketplace.ts`, `reviews.ts`, `marketing.ts`), pure state
 functions (`src/lib/marketplace-state.ts`, `reviews-state.ts`, `marketing-state.ts`) and a client provider. All three providers
@@ -814,7 +820,7 @@ Reference screens: `settings_business_information` (+ `_unsaved_changes`), `sett
 `components/settings/SettingsProvider` (mounted at the app root with the other stores) → the five forms in `components/settings/*`. There is **no second
 dataset**: the baseline is built from the existing canonical records (`business`, `businessHoursByWeekday`, `BUSINESS_TIME_ZONE`, `currentUser`), and a
 test asserts no component or page imports those directly any more. The data-only readers that remain (`data/customers`, `data/reviews`, `data/team`,
-`lib/booking-slots`, `lib/reviews-state`) read the *baseline* as fixture values or as a default parameter.
+`lib/booking-slots`) read the *baseline* as fixture values or as a default parameter.
 
 **Ownership boundaries.** Settings owns the business name, phone, email and address, the weekly hours, the logo and accent, the time zone / date / time style,
 and the signed-in user's display name and photo. It does **not** own: Services (catalog, prices, booking methods), Team (people, roles, permissions and each

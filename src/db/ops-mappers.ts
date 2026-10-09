@@ -26,7 +26,17 @@ export type SlugLookup = {
   equipment: ReadonlyMap<string, string>;
 };
 
-export function bookingFromRow(row: BookingRow, slugs: SlugLookup, jobNumber: number | undefined, timeZone: string): Booking {
+/**
+ * `planVisit` is the Maintenance Plan visit this booking schedules, when it schedules one. The link is stored on the VISIT (the one
+ * place it lives), so it arrives here already resolved to the plan's and the visit's references.
+ */
+export function bookingFromRow(
+  row: BookingRow,
+  slugs: SlugLookup,
+  jobNumber: number | undefined,
+  timeZone: string,
+  planVisit?: { planId: string; visitId: string },
+): Booking {
   const intake: BookingIntake = {
     systemType: orUndefined(row.intakeSystemType),
     equipment: orUndefined(row.intakeEquipment),
@@ -55,7 +65,7 @@ export function bookingFromRow(row: BookingRow, slugs: SlugLookup, jobNumber: nu
     jobId: jobNumber === undefined ? undefined : jobReference(jobNumber),
     cancellation: row.cancellationReason ? { reason: row.cancellationReason } : undefined,
     contact: hasContact ? contact : undefined,
-    planVisit: row.planId && row.planVisitId ? { planId: row.planId, visitId: row.planVisitId } : undefined,
+    planVisit,
   };
 }
 

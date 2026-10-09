@@ -25,8 +25,9 @@ import { isRecord, text, type Parsed } from "./validation";
 const fail = (error: string, fields?: Record<string, string>): { ok: false; error: string; fields?: Record<string, string> } => ({ ok: false, error, fields });
 
 /**
- * Booking numbers held for one maintenance plan visit, keyed by the visit's id. Sarah Mitchell's included cooling visit is
- * #BK-1048: it gets that number whenever it is scheduled, and no other booking is given it first.
+ * Booking numbers held for one maintenance plan visit, keyed by the visit's reference. Sarah Mitchell's included cooling visit is
+ * #BK-1048: it gets that number whenever it is scheduled, and no other booking is given it first. (The booking is made by
+ * scheduling the visit, which links the two in the database.)
  */
 export const RESERVED_BOOKING_NUMBERS: Readonly<Record<string, number>> = { "plan-sarah-comfort-care-v2": 1048 };
 
@@ -81,7 +82,6 @@ export type NewBookingInput = {
   internalNotes?: string;
   intake?: BookingIntake;
   note?: string;
-  planVisit?: { planId: string; visitId: string };
 };
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -139,16 +139,7 @@ export function parseNewBooking(input: unknown): Parsed<NewBookingInput> {
     intake = systemType || equipment || reportedIssue ? { systemType, equipment, reportedIssue } : undefined;
   }
 
-  let planVisit: NewBookingInput["planVisit"];
-  if (input.planVisit !== undefined) {
-    if (!isRecord(input.planVisit)) return fail("The booking details were not understood.");
-    const planId = text(input.planVisit.planId, 120);
-    const visitId = text(input.planVisit.visitId, 160);
-    if (!planId || !visitId) return fail("The booking details were not understood.");
-    planVisit = { planId, visitId };
-  }
-
-  return { ok: true, value: { customerId, contactName, contact, propertyId, serviceId, source, date, start, end, assigneeId, internalNotes, intake, note, planVisit } };
+  return { ok: true, value: { customerId, contactName, contact, propertyId, serviceId, source, date, start, end, assigneeId, internalNotes, intake, note } };
 }
 
 /**

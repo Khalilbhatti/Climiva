@@ -331,7 +331,6 @@ test.describe("operation rules (the checks the server runs before it writes)", (
       { ...valid, assigneeId: "Marcus Vance" },
       { ...valid, internalNotes: "x".repeat(2001) },
       { ...valid, organizationId: undefined, customerId: 7 },
-      { ...valid, planVisit: { planId: "p" } },
     ];
     for (const input of bad) expect(parseNewBooking(input).ok, JSON.stringify(input)).toBe(false);
   });

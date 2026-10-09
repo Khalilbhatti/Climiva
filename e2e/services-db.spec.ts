@@ -5,8 +5,7 @@
  * every test that changed it. The two seed businesses are only READ here (Alex is Apex, Taylor is Northstar).
  */
 import type { Page } from "playwright/test";
-import { PLANS } from "../src/data/maintenance-plans";
-import { SERVICES } from "./apex-data";
+import { PLANS, SERVICES } from "./apex-data";
 import { completeOnboarding, expect, NOT_SIGNED_IN, signUp, test, toast } from "./saas";
 
 const NORTHSTAR_SERVICES = ["Cooling Diagnostic Visit", "Furnace Tune-Up", "Radiant Heat Estimate"];

@@ -1,31 +1,31 @@
 /**
  * Maintenance Plans: recurring service agreements with included visits.
  *
- * A plan is coverage information, nothing more: no billing, no card charging, no entitlement engine and no
- * predictions. Plans point at the Customers and Properties fixtures by id. A visit that has been scheduled
- * points at its Booking by id, and the Booking points back (`Booking.planVisit`), so there is exactly one
- * appointment record: the Booking, which Bookings and the Schedule already show. Whether a visit is
- * completed, scheduled or still to book is derived from that Booking, never stored twice.
+ * A plan is coverage information, nothing more: no billing, no card charging, no entitlement engine and no predictions. The
+ * records live in PostgreSQL, per organization, and reach the browser for the ACTIVE organization only (src/db/maint-queries,
+ * components/maintenance-plans/MaintenancePlansProvider). The canonical Apex Climate plans are seed data
+ * (scripts/db/seed-data/maintenance.ts) and ship to no browser.
  *
- * "Cooling maintenance" and "Heating maintenance" are plan coverage concepts, not public Services. Each names
- * the canonical Service its visit is booked as (`bookingServiceId`), which is what lets a visit become a
- * Booking without adding anything to the Service catalog.
+ * Plans point at the Customers and Properties by id (a person without a Customers record is a name and address snapshot, like
+ * bookings and jobs). A visit that has been scheduled points at its Booking through the database, and the Booking is the ONE
+ * record of the appointment, which Bookings and the Schedule already show: whether a visit is completed, scheduled or still to
+ * book is derived from that Booking here, so the screens cannot disagree with it. (The database keeps the visit's own status in
+ * step with its booking, so the two agree after a reload too.)
  *
- * Sources: design-reference/stitch/ maintenance_plans_*, maintenance_plan_detail_comfort_care,
- * create_maintenance_plan_flow and schedule_included_maintenance_visit_flow_*. Every conflict is listed in
- * docs/stitch-screen-map.md §10. In short:
+ * "Cooling maintenance" and "Heating maintenance" are plan coverage concepts, not public Services. Each names the canonical
+ * Service its visit is booked as (`bookingServiceId`), which is what lets a visit become a Booking without adding anything to
+ * the Service catalog. A business whose catalog has no such Service books the visit as one of its own Services.
+ *
+ * Sources: design-reference/stitch/ maintenance_plans_*, maintenance_plan_detail_comfort_care, create_maintenance_plan_flow and
+ * schedule_included_maintenance_visit_flow_*. Every conflict is listed in docs/stitch-screen-map.md §10. In short:
  *  - Sarah Mitchell's Comfort Care is locked ($189/year, 2 visits/year, May 14, 2024 to May 14, 2025, Active).
- *  - Plans for people without a Customers record are name and address snapshots, like bookings and jobs.
- *  - The workspace totals (14 active, 5 visits due, 3 renewals, 1 paused, 1 ended) are aggregates: this file
- *    holds representative records only, and getPlanMetrics adds what is created during a session.
- *  - Plans whose Stitch details conflict with other modules (a commercial plan, Elena Rodriguez's address, plans
- *    that name Bookings which do not exist) are left out rather than resolved by invention.
- *
- * Fixtures are read-only. Demo changes (create a plan, schedule a visit) live in
- * components/maintenance-plans/MaintenancePlansProvider and reset on reload.
+ *  - The workspace totals (14 active, 5 visits due, 3 renewals, 1 paused, 1 ended) are the sample business's reporting
+ *    aggregates: its stored plans are a representative sample (marked `imported`), and getPlanMetrics adds the plans created
+ *    since. Any other business's totals are counted from its own plans.
+ *  - Plans that conflict with other modules (a commercial plan, Elena Rodriguez's address, plans that name Bookings which do not
+ *    exist) are left out rather than resolved by invention.
  */
 import { addDays } from "@/lib/dates";
-import { PROTOTYPE_TODAY } from "./fixtures";
 import type { Booking, OperationsData } from "./operations";
 
 /* ───────────────────────── types ───────────────────────── */
@@ -69,7 +69,7 @@ export type PlanVisit = {
   /** Target service window, "2024-11-01" to "2024-11-30". Without one the visit can be booked any time. */
   windowStart?: string;
   windowEnd?: string;
-  /** Fulfilled before this prototype's records; later completions come from the visit's Booking. */
+  /** Fulfilled: before this system kept records, or because its Booking was completed. */
   completed?: boolean;
   completedOn?: string;
 };
@@ -95,144 +95,13 @@ export type MaintenancePlan = {
   /** Why a plan is paused or ended. */
   statusNote?: string;
   note?: string;
+  /** Carried in with the sample business's history: already inside its reported workspace totals. */
+  imported?: boolean;
 };
 
 export type PlansData = { plans: readonly MaintenancePlan[] };
 
-/* ───────────────────────── fixtures ───────────────────────── */
-
-export const PLANS: readonly MaintenancePlan[] = [
-  {
-    id: "plan-sarah-comfort-care",
-    customerId: "sarah-mitchell",
-    propertyId: "prop-sarah-home",
-    name: "Comfort Care",
-    status: "active",
-    price: 189,
-    cadence: "year",
-    startDate: "2024-05-14",
-    endDate: "2025-05-14",
-    coverage: [
-      { coverageId: "cooling", visits: 1 },
-      { coverageId: "heating", visits: 1 },
-    ],
-    visitsPerYear: 2,
-    visits: [
-      // Visit 1 was the heating visit on May 22, 2024. Stitch names a Booking and Job for it that conflict with
-      // other records (BK-1014 is Hannah Wright's), so it is recorded as fulfilled without links.
-      { id: "plan-sarah-comfort-care-v1", sequence: 1, label: COVERAGE.heating.name, coverageId: "heating", completed: true, completedOn: "2024-05-22" },
-      {
-        id: "plan-sarah-comfort-care-v2",
-        sequence: 2,
-        label: COVERAGE.cooling.name,
-        coverageId: "cooling",
-        windowStart: "2024-11-01",
-        windowEnd: "2024-11-30",
-      },
-    ],
-  },
-  {
-    id: "plan-david-seasonal-maintenance",
-    customerId: "david-chen",
-    propertyId: "prop-david-home",
-    name: "Seasonal Maintenance",
-    status: "active",
-    price: 29,
-    cadence: "month",
-    endDate: "2025-01-10",
-    coverage: [],
-    visitsPerYear: 2,
-    visits: [
-      { id: "plan-david-seasonal-maintenance-v1", sequence: 1, label: "Annual Precision Maintenance" },
-      { id: "plan-david-seasonal-maintenance-v2", sequence: 2, label: "Seasonal maintenance visit" },
-    ],
-  },
-  {
-    id: "plan-kevin-heating-cooling-care",
-    contactName: "Kevin Vance",
-    propertyText: "7401 Burnet Rd, Austin, TX",
-    name: "Heating & Cooling Care",
-    status: "active",
-    price: 220,
-    cadence: "year",
-    endDate: "2024-11-30",
-    coverage: [
-      { coverageId: "cooling", visits: 1 },
-      { coverageId: "heating", visits: 1 },
-    ],
-    visitsPerYear: 2,
-    visits: [
-      { id: "plan-kevin-heating-cooling-care-v1", sequence: 1, label: COVERAGE.cooling.name, coverageId: "cooling", completed: true },
-      { id: "plan-kevin-heating-cooling-care-v2", sequence: 2, label: COVERAGE.heating.name, coverageId: "heating", completed: true },
-    ],
-  },
-  {
-    id: "plan-arthur-seasonal-maintenance",
-    contactName: "Arthur Pendleton",
-    propertyText: "1904 Guadalupe St, Austin, TX",
-    name: "Seasonal Maintenance",
-    status: "active",
-    price: 29,
-    cadence: "month",
-    endDate: "2025-08-15",
-    coverage: [],
-    visitsPerYear: 2,
-    visits: [
-      { id: "plan-arthur-seasonal-maintenance-v1", sequence: 1, label: "Seasonal maintenance visit", completed: true },
-      {
-        id: "plan-arthur-seasonal-maintenance-v2",
-        sequence: 2,
-        label: "Heating Safety & Airflow Inspection",
-        windowStart: "2024-12-01",
-        windowEnd: "2024-12-31",
-      },
-    ],
-  },
-  {
-    id: "plan-robert-comfort-care",
-    contactName: "Robert Miller",
-    propertyText: "4502 Travis Heights Blvd, Austin, TX",
-    name: "Comfort Care",
-    status: "paused",
-    price: 189,
-    cadence: "year",
-    endDate: "2025-08-22",
-    coverage: [
-      { coverageId: "cooling", visits: 1 },
-      { coverageId: "heating", visits: 1 },
-    ],
-    visitsPerYear: 2,
-    statusNote: "Paused at customer request (renovations)",
-    visits: [
-      { id: "plan-robert-comfort-care-v1", sequence: 1, label: COVERAGE.cooling.name, coverageId: "cooling" },
-      { id: "plan-robert-comfort-care-v2", sequence: 2, label: COVERAGE.heating.name, coverageId: "heating" },
-    ],
-  },
-  {
-    id: "plan-james-seasonal-maintenance",
-    contactName: "James Thornton",
-    propertyText: "2801 Oakmont Blvd, Austin, TX",
-    name: "Seasonal Maintenance",
-    status: "ended",
-    price: 29,
-    cadence: "month",
-    endDate: "2024-10-15",
-    coverage: [],
-    visitsPerYear: 2,
-    statusNote: "Agreement ended on property sale (Oct 15, 2024)",
-    visits: [
-      { id: "plan-james-seasonal-maintenance-v1", sequence: 1, label: "Seasonal maintenance visit", completed: true },
-      { id: "plan-james-seasonal-maintenance-v2", sequence: 2, label: "Seasonal maintenance visit", completed: true },
-    ],
-  },
-];
-
-export const PLANS_DATA: PlansData = { plans: PLANS };
-
-/** What a business that is not the sample one has: no maintenance plans. */
-export const EMPTY_PLANS_DATA: PlansData = { plans: [] };
-
-/** The workspace-level totals Stitch shows. Detailed records above are a representative sample of them. */
+/** The workspace-level totals Stitch shows for the sample business. Its stored plans are a representative sample of them. */
 export const PLAN_BASELINE = {
   active: 14,
   visitsDue: 5,
@@ -241,17 +110,20 @@ export const PLAN_BASELINE = {
   ended: 1,
 } as const;
 
+/** What a business that has no reporting history starts from: nothing. */
+export const NO_PLAN_BASELINE: PlanBaseline = { active: 0, visitsDue: 0, renewals: 0, paused: 0, ended: 0 };
+
+export type PlanBaseline = { readonly active: number; readonly visitsDue: number; readonly renewals: number; readonly paused: number; readonly ended: number };
+
 /** A plan comes up for renewal when its end date falls within this many days. */
 export const RENEWAL_WINDOW_DAYS = 60;
 
-const CANONICAL_PLAN_IDS = new Set(PLANS.map((plan) => plan.id));
-
 /* ───────────────────────── selectors ───────────────────────── */
 
-export const getPlanById = (id: string, data: PlansData = PLANS_DATA) => data.plans.find((plan) => plan.id === id);
+export const getPlanById = (id: string, data: PlansData) => data.plans.find((plan) => plan.id === id);
 
 /** The plan visit a booking schedules, found through the booking's own pointer. */
-export function getPlanVisitForBooking(booking: Pick<Booking, "planVisit">, data: PlansData = PLANS_DATA): { plan: MaintenancePlan; visit: PlanVisit } | undefined {
+export function getPlanVisitForBooking(booking: Pick<Booking, "planVisit">, data: PlansData): { plan: MaintenancePlan; visit: PlanVisit } | undefined {
   if (!booking.planVisit) return undefined;
   const plan = getPlanById(booking.planVisit.planId, data);
   const visit = plan?.visits.find((item) => item.id === booking.planVisit!.visitId);
@@ -263,7 +135,7 @@ export type PlanSummary = { name: string; status: string; price?: string; visits
 
 export function getCustomerPlanSummary(
   customer: { id: string; maintenancePlan?: { name: string; status: string; pricePerYear?: number; visitsPerYear?: number } },
-  data: PlansData = PLANS_DATA,
+  data: PlansData,
 ): PlanSummary | undefined {
   const plan = getCurrentPlanForCustomer(customer.id, data);
   if (plan) {
@@ -281,12 +153,12 @@ export function getCustomerPlanSummary(
     : undefined;
 }
 
-export function getPlansForCustomer(customerId: string, data: PlansData = PLANS_DATA): MaintenancePlan[] {
+export function getPlansForCustomer(customerId: string, data: PlansData): MaintenancePlan[] {
   return data.plans.filter((plan) => plan.customerId === customerId);
 }
 
 /** The customer's current plan: their first active (or pending) one. */
-export function getCurrentPlanForCustomer(customerId: string, data: PlansData = PLANS_DATA): MaintenancePlan | undefined {
+export function getCurrentPlanForCustomer(customerId: string, data: PlansData): MaintenancePlan | undefined {
   const plans = getPlansForCustomer(customerId, data);
   return plans.find((plan) => plan.status === "active") ?? plans.find((plan) => plan.status === "pending");
 }
@@ -307,8 +179,8 @@ export const VISIT_STATE_LABEL: Record<VisitState, string> = {
 };
 
 /**
- * The visit's Booking: the stored Booking whose `planVisit` points at this visit, unless it was cancelled (the visit is then
- * open to book again). The plan holds no pointer of its own, so what the plan shows is always what is stored.
+ * The visit's Booking: the stored Booking the visit points at, unless it was cancelled (the visit is then open to book again).
+ * The plan holds no copy of the appointment, so what the plan shows is always what is stored.
  */
 export function getVisitBooking(visit: PlanVisit, ops: OperationsData): Booking | undefined {
   return ops.bookings.find((booking) => booking.planVisit?.visitId === visit.id && booking.status !== "cancelled");
@@ -337,8 +209,9 @@ export function getUpcomingVisits(data: PlansData, ops: OperationsData): { plan:
   });
 }
 
-export const isRenewingSoon = (plan: MaintenancePlan) =>
-  plan.status === "active" && plan.endDate !== undefined && plan.endDate >= PROTOTYPE_TODAY && plan.endDate <= addDays(PROTOTYPE_TODAY, RENEWAL_WINDOW_DAYS);
+/** Whether an active plan's end date falls within the renewal window from `today` (the business's own today). */
+export const isRenewingSoon = (plan: MaintenancePlan, today: string) =>
+  plan.status === "active" && plan.endDate !== undefined && plan.endDate >= today && plan.endDate <= addDays(today, RENEWAL_WINDOW_DAYS);
 
 /* ── workspace totals ── */
 
@@ -353,19 +226,20 @@ export type PlanMetrics = {
 };
 
 /**
- * The totals on the Maintenance Plans screens: the approved workspace figures, plus what this session added.
- * Plans created in the session count the way the approved ones do (active plans, plans renewing soon, a due next
- * visit); they are never subtracted from the approved totals.
+ * The totals on the Maintenance Plans screens: the reporting `baseline` (the sample business's approved workspace figures; none
+ * for any other business), plus the plans not carried in with that history, counted the way the approved ones are (active plans,
+ * plans renewing soon, a due next visit). Stored plans marked `imported` are already inside the baseline and are never counted
+ * twice; nothing is ever subtracted from it.
  */
-export function getPlanMetrics(data: PlansData, ops: OperationsData): PlanMetrics {
-  const created = data.plans.filter((plan) => !CANONICAL_PLAN_IDS.has(plan.id));
+export function getPlanMetrics(data: PlansData, ops: OperationsData, today: string, baseline: PlanBaseline = NO_PLAN_BASELINE): PlanMetrics {
+  const created = data.plans.filter((plan) => !plan.imported);
   const active = created.filter((plan) => plan.status === "active");
   const metrics = {
-    active: PLAN_BASELINE.active + active.length,
-    visitsDue: PLAN_BASELINE.visitsDue + active.filter((plan) => getNextVisit(plan, ops)).length,
-    renewals: PLAN_BASELINE.renewals + created.filter(isRenewingSoon).length,
-    paused: PLAN_BASELINE.paused + created.filter((plan) => plan.status === "paused").length,
-    ended: PLAN_BASELINE.ended + created.filter((plan) => plan.status === "ended").length,
+    active: baseline.active + active.length,
+    visitsDue: baseline.visitsDue + active.filter((plan) => getNextVisit(plan, ops)).length,
+    renewals: baseline.renewals + created.filter((plan) => isRenewingSoon(plan, today)).length,
+    paused: baseline.paused + created.filter((plan) => plan.status === "paused").length,
+    ended: baseline.ended + created.filter((plan) => plan.status === "ended").length,
   };
   const pausedOrEnded = metrics.paused + metrics.ended;
   return { ...metrics, pausedOrEnded, all: metrics.active + pausedOrEnded + created.filter((plan) => plan.status === "pending").length };

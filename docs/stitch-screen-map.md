@@ -310,10 +310,11 @@ browser timezone (a test runs the Schedule in four).
 
 ### Demo state
 
-`OperationsProvider` (mounted once in the workspace layout, so it survives navigation between modules) holds an in-memory copy of the dataset.
-Creating a booking, confirming or declining a request, assigning, creating / starting / completing a job, saving work details and adding photos
-all go through pure functions in `src/lib/operations-state.ts` that never mutate their input. Fixtures in `src/data/operations.ts` are never
-written to, and a reload restores them. Photo upload is local to the page session (file name and size only; nothing is read or sent).
+`OperationsProvider` (mounted once in the workspace layout, so it survives navigation between modules) holds the active business's bookings, jobs and
+blocked time as the server read them from PostgreSQL (Phase 11). Creating a booking, confirming or declining a request, assigning, creating / starting /
+completing a job and saving work details each call a server action (`src/server/actions/operations.ts`) that authorizes, validates and stores the change
+in one transaction; the screen adopts the stored result, so a reload keeps it. The canonical records live in `scripts/db/seed-data/operations.ts` (seed
+only). Photo upload is local to the page session (file name and size only; nothing is read or sent) and is labelled so; visibility of a stored photo is stored.
 `/jobs?state=empty` previews the empty state, as `/services?state=empty` does.
 
 ### Unresolved source contradictions (for later phases)

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CircleCheck, Info } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { useOperations } from "@/components/operations/OperationsProvider";
 import { useSettings } from "@/components/settings/SettingsProvider";
 import { useTeam } from "@/components/team/TeamProvider";
@@ -13,16 +14,15 @@ import { OptionCard, OptionGroup } from "@/components/ui/OptionCard";
 import { Select } from "@/components/ui/Select";
 import { StepList } from "@/components/ui/StepList";
 import { Textarea } from "@/components/ui/Textarea";
-import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import { COVERAGE, PLAN_STATUS_LABEL, type MaintenancePlan, type PlanVisit } from "@/data/maintenance-plans";
 import { getServiceById } from "@/data/services";
 import { getAssignableMembers, getAssignedServiceIds, getTeamMemberById } from "@/data/team";
 import { getSlotGroup } from "@/lib/booking-slots";
 import { formatLongDate, formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import { formatDate, formatMonthYear } from "@/lib/format";
-import { useMaintenancePlans } from "./MaintenancePlansProvider";
 import { planCustomerName, planFullAddress, visitTitle } from "./plan-ui";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useClock } from "@/components/workspace/WorkspaceProvider";
 
 const STEPS = [
   { id: "service", label: "Service" },
@@ -42,16 +42,17 @@ type ScheduleVisitModalProps = {
 };
 
 /**
- * Schedule an included visit. It creates one Booking in the shared operations state (which Bookings and the
- * Schedule already read) and records the Booking's id on the plan's visit. It creates no Job, Quote, Invoice or
- * Payment: the visit is included in the plan.
+ * Schedule an included visit. It creates one real Booking (stored in PostgreSQL like any other, which Bookings and the
+ * Schedule already read). The Booking points at the plan visit it schedules, and the plan reads its visit's state from that
+ * Booking, so the plan never holds a second copy that could disagree. It creates no Job, Quote, Invoice or Payment: the
+ * visit is included in the plan.
  */
 export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalProps) {
   const dir = useDirectory();
   const { createBooking } = useOperations();
   const { data: team } = useTeam();
   const { hours } = useSettings().settings;
-  const { linkVisitToBooking } = useMaintenancePlans();
+  const { today } = useClock();
 
   const mappedServiceId = visit.coverageId ? COVERAGE[visit.coverageId].bookingServiceId : undefined;
   const [serviceId, setServiceId] = useState(mappedServiceId ?? "");
@@ -62,13 +63,15 @@ export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalP
   const [stepIndex, setStepIndex] = useState(0);
   const [showErrors, setShowErrors] = useState(false);
   const [bookingId, setBookingId] = useState<string>();
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
 
   const step = STEPS[stepIndex];
   const service = serviceId ? getServiceById(serviceId, dir.services) : undefined;
-  const earliest = visit.windowStart && visit.windowStart > PROTOTYPE_TODAY ? visit.windowStart : PROTOTYPE_TODAY;
-  const slotGroup = date && service ? getSlotGroup("request-appointment", date, service.durationMinutes, hours) : undefined;
+  const earliest = visit.windowStart && visit.windowStart > today ? visit.windowStart : today;
+  const slotGroup = date && service ? getSlotGroup("request-appointment", date, service.durationMinutes, hours, today) : undefined;
   const slot = slotGroup?.slots.find((candidate) => candidate.id === slotId && candidate.available);
   const members = getAssignableMembers(team).filter((member) => !serviceId || getAssignedServiceIds(member, dir.services.map((item) => item.id)).includes(serviceId));
 
@@ -102,10 +105,12 @@ export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalP
     setStepIndex((index) => index + 1);
   }
 
-  function create() {
-    if (!service || !slot) return;
+  async function create() {
+    if (!service || !slot || saving) return;
+    setSaving(true);
+    setProblem(undefined);
     const customer = plan.customerId;
-    const booking = createBooking({
+    const result = await createBooking({
       customerId: customer,
       contactName: customer ? undefined : plan.contactName,
       contact: customer ? undefined : { address: plan.propertyText },
@@ -119,8 +124,9 @@ export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalP
       internalNotes: notes,
       planVisit: { planId: plan.id, visitId: visit.id },
     });
-    linkVisitToBooking(plan.id, visit.id, booking.id);
-    setBookingId(booking.id);
+    setSaving(false);
+    if (!result.ok) return setProblem(result.error);
+    setBookingId(result.data.booking.id);
   }
 
   const title = visitTitle(plan, visit);
@@ -194,7 +200,13 @@ export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalP
               Back
             </Button>
           )}
-          {isLast ? <Button onClick={create}>Create booking</Button> : <Button onClick={next}>Next: {STEPS[stepIndex + 1].label}</Button>}
+          {isLast ? (
+            <Button onClick={create} disabled={saving}>
+              {saving ? "Creating…" : "Create booking"}
+            </Button>
+          ) : (
+            <Button onClick={next}>Next: {STEPS[stepIndex + 1].label}</Button>
+          )}
         </>
       }
     >
@@ -347,6 +359,7 @@ export function ScheduleVisitModal({ plan, visit, onClose }: ScheduleVisitModalP
               ...(notes.trim() ? [{ label: "Internal notes", value: notes.trim() }] : []),
             ]}
           />
+          {problem && <FormAlert>{problem}</FormAlert>}
           <div className="flex flex-wrap gap-2">
             {[0, 1, 2].map((index) => (
               <Button key={index} variant="tertiary" size="sm" onClick={() => setStepIndex(index)} aria-label={`Edit ${STEPS[index].label.toLowerCase()}`}>

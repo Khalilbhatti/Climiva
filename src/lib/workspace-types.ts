@@ -6,6 +6,7 @@
  * active member of, and the settings of the one that is active. Never an id the server did not verify.
  */
 import type { SettingsData } from "@/data/settings";
+import type { BusinessClock } from "./business-time";
 import type { Capability } from "./policy";
 
 export type OrganizationRole = "owner" | "admin" | "member";
@@ -14,9 +15,9 @@ export const ROLE_LABEL: Record<OrganizationRole, string> = { owner: "Owner", ad
 
 /**
  * The transitional switch (see docs/saas-architecture.md): organizations flagged with this value still see the sample
- * content of modules that have not moved to PostgreSQL (Bookings, Schedule, Jobs, the money modules, Reviews, Marketing,
- * Analytics, Website, Marketplace). Any other organization sees those modules as not yet available. Customers, Services
- * and Team are on PostgreSQL and are NOT behind this switch.
+ * content of modules that have not moved to PostgreSQL (the money modules, Maintenance Plans, Reviews, Marketing,
+ * Analytics, Website, Marketplace). Any other organization sees those modules as not yet available. Customers, Services,
+ * Team and operations (Bookings, Schedule, Jobs) are on PostgreSQL and are NOT behind this switch.
  */
 export const SAMPLE_DATA_SET = "apex-demo";
 
@@ -34,4 +35,10 @@ export type WorkspaceSnapshot = {
   /** Everything this person may change in the active workspace (see lib/policy). The server decides again on every write. */
   capabilities: Capability[];
   settings: SettingsData;
+  /**
+   * Today and now in THIS business's time zone, read once on the server for this request. The screens never ask the
+   * browser's clock, so a page renders the same in every browser time zone. The sample business keeps the product's fixed
+   * moment (its records are dated around it); every other business is at the real time.
+   */
+  clock: BusinessClock;
 };

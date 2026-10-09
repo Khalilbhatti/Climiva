@@ -21,7 +21,6 @@ import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
 import { customerHref, jobHref } from "@/config/routes";
 import { formatPropertyAddress, formatPropertyCityLine, getCustomerById, getPropertyById } from "@/data/customers";
-import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import {
   JOB_STATUS_LABEL,
   getAssigneeName,
@@ -34,6 +33,7 @@ import { getTeamMemberById } from "@/data/team";
 import { formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import type { Directory } from "@/data/directory";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useCan, useClock } from "@/components/workspace/WorkspaceProvider";
 
 const TABS = [
   { id: "active", label: "Active" },
@@ -48,8 +48,8 @@ const EMPTY_COPY: Record<TabId, string> = {
   completed: "No completed jobs.",
 };
 
-const inTab = (job: Job, tab: TabId) =>
-  tab === "completed" ? job.status === "completed" : tab === "upcoming" ? job.status === "scheduled" && job.date > PROTOTYPE_TODAY : job.status !== "completed";
+const inTab = (job: Job, tab: TabId, today: string) =>
+  tab === "completed" ? job.status === "completed" : tab === "upcoming" ? job.status === "scheduled" && job.date > today : job.status !== "completed";
 
 /** The secondary line under the service: what was done, or the equipment worked on. */
 function jobSubline(job: Job, dir: Directory): string | undefined {
@@ -72,6 +72,8 @@ export function JobsView() {
   const { data, assign } = useOperations();
   const { data: team } = useTeam();
   const { toast } = useToast();
+  const { today } = useClock();
+  const canManage = useCan("operations:manage");
   const router = useRouter();
   const params = useSearchParams();
   // "?state=empty" previews the approved empty state without needing to delete every job.
@@ -88,12 +90,12 @@ export function JobsView() {
   const tabJobs = useMemo(() => {
     const ascending = tabId !== "completed";
     return jobs
-      .filter((job) => inTab(job, tabId))
+      .filter((job) => inTab(job, tabId, today))
       .sort((a, b) => {
         const order = `${a.date}T${a.start}`.localeCompare(`${b.date}T${b.start}`);
         return ascending ? order : -order;
       });
-  }, [jobs, tabId]);
+  }, [jobs, tabId, today]);
 
   const visible = tabJobs.filter(
     (job) =>
@@ -140,7 +142,7 @@ export function JobsView() {
           idPrefix="jobs"
           value={tabId}
           onChange={(id) => router.replace(`/jobs?tab=${id}` as Route, { scroll: false })}
-          tabs={TABS.map((tab) => ({ id: tab.id, label: tab.label, count: jobs.filter((job) => inTab(job, tab.id)).length }))}
+          tabs={TABS.map((tab) => ({ id: tab.id, label: tab.label, count: jobs.filter((job) => inTab(job, tab.id, today)).length }))}
         />
 
         <div className="flex flex-wrap items-end gap-3">
@@ -252,7 +254,7 @@ export function JobsView() {
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
                         <div className="font-medium">
-                          {job.date === PROTOTYPE_TODAY && "Today, "}
+                          {job.date === today && "Today, "}
                           {formatWeekdayDate(job.date)}
                         </div>
                         <div className="text-xs text-ink-muted">{formatTimeRange(job.start, job.end)}</div>
@@ -272,7 +274,7 @@ export function JobsView() {
                             <UserX aria-hidden className="size-4 text-danger" />
                             <div>
                               <div className="font-medium text-ink">Unassigned</div>
-                              {job.status !== "completed" && (
+                              {job.status !== "completed" && canManage && (
                                 <button
                                   type="button"
                                   onClick={() => setAssigning(job)}
@@ -329,8 +331,9 @@ export function JobsView() {
           description={`${getServiceNameFor(assigning, dir)} for ${getPartyName(assigning, dir)} · ${formatWeekdayDate(assigning.date)}, ${formatTimeRange(assigning.start, assigning.end)}`}
           currentAssigneeId={assigning.assigneeId}
           onClose={() => setAssigning(null)}
-          onAssign={(memberId) => {
-            assign({ jobId: assigning.id }, memberId);
+          onAssign={async (memberId) => {
+            const result = await assign({ jobId: assigning.id }, memberId);
+            if (!result.ok) return result.error;
             setAssigning(null);
             toast(memberId ? `Job #${assigning.id} assigned to ${getAssigneeName({ assigneeId: memberId }, dir)}.` : `Job #${assigning.id} is unassigned.`);
           }}

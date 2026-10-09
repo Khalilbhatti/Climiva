@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Camera, Fan, Thermometer } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Textarea } from "@/components/ui/Textarea";
@@ -11,7 +12,8 @@ import { useDirectory } from "@/components/workspace/DirectoryProvider";
 type CompleteJobModalProps = {
   job: Job;
   onClose: () => void;
-  onComplete: (notes: string) => void;
+  /** Resolves with the reason it failed, or nothing when the job was completed (the caller then closes the modal). */
+  onComplete: (notes: string) => Promise<string | undefined>;
 };
 
 /**
@@ -22,11 +24,23 @@ export function CompleteJobModal({ job, onClose, onComplete }: CompleteJobModalP
   const dir = useDirectory();
   const [notes, setNotes] = useState(job.details.customerSummary ?? "");
   const [showError, setShowError] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
 
   const equipment = dir.equipment.find((item) => item.id === job.equipmentId);
   const customerPhotos = job.files.filter((file) => file.visibility === "customer");
   const error = showError && !notes.trim() ? "Enter the resolution notes." : undefined;
   const EquipmentIcon = equipment?.kind.toLowerCase().includes("thermostat") ? Thermometer : Fan;
+
+  async function complete() {
+    if (saving) return;
+    if (!notes.trim()) return setShowError(true);
+    setSaving(true);
+    setProblem(undefined);
+    const failed = await onComplete(notes);
+    setSaving(false);
+    if (failed) setProblem(failed);
+  }
 
   return (
     <Modal
@@ -40,13 +54,8 @@ export function CompleteJobModal({ job, onClose, onComplete }: CompleteJobModalP
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            onClick={() => {
-              if (!notes.trim()) return setShowError(true);
-              onComplete(notes);
-            }}
-          >
-            Complete job
+          <Button onClick={complete} disabled={saving}>
+            {saving ? "Completing…" : "Complete job"}
           </Button>
         </>
       }
@@ -95,6 +104,7 @@ export function CompleteJobModal({ job, onClose, onComplete }: CompleteJobModalP
           </ul>
         )}
       </div>
+      {problem && <FormAlert>{problem}</FormAlert>}
     </Modal>
   );
 }

@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { CircleCheck, Play, SearchX } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { AssignDialog } from "@/components/operations/AssignDialog";
 import { useOperations } from "@/components/operations/OperationsProvider";
 import { JobStatusBadge } from "@/components/operations/StatusBadges";
@@ -14,7 +15,6 @@ import { TabNav } from "@/components/ui/TabNav";
 import { useToast } from "@/components/ui/Toast";
 import { customerHref, jobTabHref } from "@/config/routes";
 import { formatPropertyCityLine, getCustomerById, getPropertyById } from "@/data/customers";
-import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import {
   BOOKING_TABS,
   getAssigneeName,
@@ -29,6 +29,7 @@ import { getTeamMemberById } from "@/data/team";
 import { formatLocalDateTime, formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import { CompleteJobModal } from "./CompleteJobModal";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useCan, useClock } from "@/components/workspace/WorkspaceProvider";
 
 /** The work-details fields a technician edits. Everything else on a job is read-only here. */
 export type EditableDetails = Pick<JobDetails, "technicianDiagnosis" | "workPerformed" | "customerSummary" | "internalNotes">;
@@ -65,7 +66,7 @@ export function JobWorkspace({ jobId, children }: { jobId: string; children: Rea
         as="h1"
         icon={SearchX}
         title="Job not found"
-        description="This job isn't in the list. Jobs created in this session are cleared when the page reloads."
+        description="This job doesn't exist in this workspace. It may have been removed, or the link may be wrong."
         action={<ButtonLink href="/jobs">Back to Jobs</ButtonLink>}
       />
     );
@@ -81,14 +82,40 @@ function JobEditor({ job, children }: { job: Job; children: ReactNode }) {
   const dir = useDirectory();
   const { data, assign, startJob, updateJobDetails, completeJob } = useOperations();
   const { toast } = useToast();
+  const canManage = useCan("operations:manage");
+  const { today } = useClock();
 
   const [draft, setDraftState] = useState<EditableDetails>(() => pick(job.details));
   const [version, setVersion] = useState(0);
   const [dialog, setDialog] = useState<"assign" | "complete" | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string>();
+  const [startProblem, setStartProblem] = useState<string>();
 
   const saved = pick(job.details);
   const dirty = EDITABLE_KEYS.some((key) => draft[key] !== saved[key]);
-  const locked = job.status === "completed";
+  // A completed job is final, and only an owner or admin changes jobs at all.
+  const locked = job.status === "completed" || !canManage;
+
+  async function start() {
+    if (busy) return;
+    setBusy(true);
+    setStartProblem(undefined);
+    const result = await startJob(job.id);
+    setBusy(false);
+    if (!result.ok) return setStartProblem(result.error);
+    toast(`Job #${job.id} started.`);
+  }
+
+  async function saveDetails() {
+    if (busy) return;
+    setBusy(true);
+    setProblem(undefined);
+    const result = await updateJobDetails(job.id, draft);
+    setBusy(false);
+    if (!result.ok) return setProblem(result.error);
+    toast(`Job #${job.id} work details saved.`);
+  }
 
   const customer = job.customerId ? getCustomerById(job.customerId, dir) : undefined;
   const property = getPropertyById(job.propertyId ?? "", dir);
@@ -115,7 +142,7 @@ function JobEditor({ job, children }: { job: Job; children: ReactNode }) {
       label: "Appointment window",
       value: (
         <>
-          {job.date === PROTOTYPE_TODAY ? "Today, " : ""}
+          {job.date === today ? "Today, " : ""}
           {formatWeekdayDate(job.date)}
           <span className="block text-xs font-normal text-ink-muted">{formatTimeRange(job.start, job.end)}</span>
         </>
@@ -184,23 +211,17 @@ function JobEditor({ job, children }: { job: Job; children: ReactNode }) {
 
           {!locked && (
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="secondary" onClick={() => setDialog("assign")}>
+              <Button variant="secondary" onClick={() => setDialog("assign")} disabled={busy}>
                 {assignee ? "Reassign" : "Assign technician"}
               </Button>
               {job.status === "scheduled" && (
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    startJob(job.id);
-                    toast(`Job #${job.id} started.`);
-                  }}
-                >
+                <Button variant="secondary" onClick={start} disabled={busy}>
                   <Play aria-hidden className="size-4" />
-                  Start job
+                  {busy ? "Starting…" : "Start job"}
                 </Button>
               )}
               {job.status === "in-progress" && (
-                <Button onClick={() => setDialog("complete")}>
+                <Button onClick={() => setDialog("complete")} disabled={busy}>
                   <CircleCheck aria-hidden className="size-[18px]" />
                   Complete job
                 </Button>
@@ -208,6 +229,8 @@ function JobEditor({ job, children }: { job: Job; children: ReactNode }) {
             </div>
           )}
         </div>
+
+        {startProblem && <FormAlert>{startProblem}</FormAlert>}
 
         <dl className="grid grid-cols-1 gap-4 rounded-card bg-surface-low p-4 sm:grid-cols-2 lg:grid-cols-5">
           {facts.map((fact) => (
@@ -237,6 +260,7 @@ function JobEditor({ job, children }: { job: Job; children: ReactNode }) {
           className="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 rounded-card border border-line bg-surface p-4 shadow-overlay"
         >
           <p className="text-sm font-semibold text-ink">You have unsaved changes</p>
+          {problem && <FormAlert>{problem}</FormAlert>}
           <div className="flex items-center gap-3">
             <Button
               variant="secondary"
@@ -247,13 +271,8 @@ function JobEditor({ job, children }: { job: Job; children: ReactNode }) {
             >
               Discard changes
             </Button>
-            <Button
-              onClick={() => {
-                updateJobDetails(job.id, draft);
-                toast(`Job #${job.id} work details saved.`);
-              }}
-            >
-              Save changes
+            <Button onClick={saveDetails} disabled={busy}>
+              {busy ? "Saving…" : "Save changes"}
             </Button>
           </div>
         </div>
@@ -264,8 +283,9 @@ function JobEditor({ job, children }: { job: Job; children: ReactNode }) {
           description={`${getServiceNameFor(job, dir)} for ${getPartyName(job, dir)} · ${formatWeekdayDate(job.date)}, ${formatTimeRange(job.start, job.end)}`}
           currentAssigneeId={job.assigneeId}
           onClose={() => setDialog(null)}
-          onAssign={(memberId) => {
-            assign({ jobId: job.id }, memberId);
+          onAssign={async (memberId) => {
+            const result = await assign({ jobId: job.id }, memberId);
+            if (!result.ok) return result.error;
             setDialog(null);
             toast(memberId ? `Job #${job.id} assigned to ${getAssigneeName({ assigneeId: memberId }, dir)}.` : `Job #${job.id} is unassigned.`);
           }}
@@ -276,10 +296,10 @@ function JobEditor({ job, children }: { job: Job; children: ReactNode }) {
         <CompleteJobModal
           job={{ ...job, details: { ...job.details, ...draft } }}
           onClose={() => setDialog(null)}
-          onComplete={(notes) => {
-            // Any unsaved work-details edits are kept along with the completion.
-            updateJobDetails(job.id, draft);
-            completeJob(job.id, notes);
+          onComplete={async (notes) => {
+            // Any unsaved work-details edits are kept along with the completion, in the same step.
+            const result = await completeJob(job.id, notes, draft);
+            if (!result.ok) return result.error;
             setDialog(null);
             toast(`Job #${job.id} completed.`);
           }}

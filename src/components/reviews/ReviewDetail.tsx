@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight, CircleCheck, MessageSquare, Pencil, Reply } from "lucide-react";
+import { useOperations } from "@/components/operations/OperationsProvider";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { BackLink } from "@/components/ui/BackLink";
 import { cardClasses } from "@/components/ui/Card";
@@ -22,6 +23,7 @@ import { useDirectory } from "@/components/workspace/DirectoryProvider";
 export function ReviewDetail({ reviewId }: { reviewId: string }) {
   const dir = useDirectory();
   const { data } = useReviews();
+  const { data: operations } = useOperations();
   const review = getReviewById(reviewId, data);
   const [dialog, setDialog] = useState<"reply" | "edit" | null>(null);
   const [posted, setPosted] = useState(false);
@@ -41,7 +43,7 @@ export function ReviewDetail({ reviewId }: { reviewId: string }) {
   const name = reviewerName(review, dir);
   const status = getReviewStatus(review);
   const customer = review.customerId ? getCustomerById(review.customerId, dir) : undefined;
-  const job = review.relatedJobId ? getJobById(review.relatedJobId) : undefined;
+  const job = review.relatedJobId ? getJobById(review.relatedJobId, operations) : undefined;
   const response = review.response;
 
   return (

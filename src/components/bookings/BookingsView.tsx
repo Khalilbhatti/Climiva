@@ -37,6 +37,7 @@ import { BookingDrawer } from "./BookingDrawer";
 import { CreateBookingModal } from "./CreateBookingModal";
 import type { Directory } from "@/data/directory";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 
 const EMPTY_COPY: Record<BookingTabId, string> = {
   requests: "No requests are waiting for confirmation.",
@@ -70,12 +71,13 @@ export function BookingsView() {
   const { site } = useWebsite();
   const router = useRouter();
   const params = useSearchParams();
+  const canManage = useCan("operations:manage");
 
   // Tab, selected booking and the create flow live in the URL so each is deep-linkable
   // (Overview's "New booking" opens /bookings?new=1; the Schedule links to ?booking=…).
   const tabId = BOOKING_TABS.find((tab) => tab.id === params.get("tab"))?.id ?? "requests";
   const selectedId = params.get("booking");
-  const creating = params.get("new") === "1";
+  const creating = params.get("new") === "1" && canManage;
   const presetCustomerId = params.get("customer") ?? undefined;
 
   const [query, setQuery] = useState("");
@@ -147,10 +149,12 @@ export function BookingsView() {
               <Link2 aria-hidden className="size-[18px]" />
               Copy booking link
             </Button>
-            <Button size="lg" onClick={() => setParams({ new: "1" })}>
-              <Plus aria-hidden className="size-[18px]" />
-              Create booking
-            </Button>
+            {canManage && (
+              <Button size="lg" onClick={() => setParams({ new: "1" })}>
+                <Plus aria-hidden className="size-[18px]" />
+                Create booking
+              </Button>
+            )}
           </>
         }
       />
@@ -230,7 +234,11 @@ export function BookingsView() {
                 {visible.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-4 py-10 text-center text-sm text-ink-muted">
-                      {filtering ? "No bookings match your search." : EMPTY_COPY[tabId]}
+                      {filtering
+                        ? "No bookings match your search."
+                        : data.bookings.length === 0
+                          ? `No bookings yet.${canManage ? " Create a booking to get started." : ""}`
+                          : EMPTY_COPY[tabId]}
                     </td>
                   </tr>
                 ) : (

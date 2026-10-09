@@ -13,9 +13,10 @@ import {
   getPlanMetrics,
   getPlanVisitForBooking,
   getUpcomingVisits,
+  getVisitBooking,
   getVisitState,
 } from "../src/data/maintenance-plans";
-import { BOOKINGS, JOBS, OPERATIONS } from "../src/data/operations";
+import type { Booking } from "../src/data/operations";
 import {
   FINANCIALS,
   getInvoiceById,
@@ -36,8 +37,7 @@ import {
   hasUnpublishedChanges,
   initialWebsiteState,
 } from "../src/data/website";
-import { createPlan, linkVisitToBooking } from "../src/lib/maintenance-plans-state";
-import { cancelBooking, createBooking } from "../src/lib/operations-state";
+import { createPlan } from "../src/lib/maintenance-plans-state";
 import {
   connectCustomDomain,
   makeClimviaPrimary,
@@ -48,7 +48,8 @@ import {
   savePage,
   unpublish,
 } from "../src/lib/website-state";
-import { BOOK, CUSTOMERS, PROPERTIES, SERVICES } from "./apex-data";
+import { BOOK, BOOKINGS, CUSTOMERS, JOBS, OPERATIONS, PROPERTIES, SERVICES } from "./apex-data";
+import { cancelled, withBooking } from "./operations-edits";
 
 // Pure data/selector/state tests: no browser needed.
 
@@ -66,9 +67,13 @@ const newPlan = {
 
 const visit2 = () => getPlanById("plan-sarah-comfort-care")!.visits[1];
 
-/** The BK-1048 booking exactly as the Schedule Included Visit flow creates it. */
-function scheduleVisit2() {
-  return createBooking(OPERATIONS, {
+/**
+ * BK-1048 as the Schedule Included Visit flow stores it (the booking itself is created by the server action; bookings-db and
+ * operations-bridges check that flow and its number against PostgreSQL). Here it is the record the plan screens READ.
+ */
+function scheduleVisit2(): { data: typeof OPERATIONS; booking: Booking } {
+  const booking: Booking = {
+    id: "BK-1048",
     customerId: "sarah-mitchell",
     propertyId: "prop-sarah-home",
     serviceId: COVERAGE.cooling.bookingServiceId,
@@ -77,8 +82,12 @@ function scheduleVisit2() {
     start: "10:00",
     end: "12:00",
     assigneeId: "marcus-vance",
+    status: "confirmed",
+    receivedAt: "2024-10-25T10:45",
+    confirmedAt: "2024-10-25T10:45",
     planVisit: { planId: "plan-sarah-comfort-care", visitId: visit2().id },
-  });
+  };
+  return { data: withBooking(OPERATIONS, booking), booking };
 }
 
 test.describe("maintenance plan data", () => {
@@ -117,9 +126,9 @@ test.describe("maintenance plan data", () => {
   test("visit 1 is fulfilled; visit 2 is the cooling visit due in November and has no booking yet", () => {
     const [v1, v2] = getPlanById("plan-sarah-comfort-care")!.visits;
     expect(v1).toMatchObject({ coverageId: "heating", completed: true, completedOn: "2024-05-22" });
-    expect(v1.bookingId).toBeUndefined();
+    expect(getVisitBooking(v1, OPERATIONS)).toBeUndefined();
     expect(v2).toMatchObject({ coverageId: "cooling", windowStart: "2024-11-01", windowEnd: "2024-11-30" });
-    expect(v2.bookingId).toBeUndefined();
+    expect(getVisitBooking(v2, OPERATIONS)).toBeUndefined();
     expect(getVisitState(v2, OPERATIONS)).toBe("needs-scheduling");
   });
 
@@ -163,7 +172,7 @@ test.describe("creating a plan and scheduling an included visit", () => {
     expect(data.plans).toHaveLength(PLANS.length + 1);
     expect(plan).toMatchObject({ id: "plan-elena-rodriguez-comfort-care", name: "Comfort Care", status: "active", visitsPerYear: 2 });
     expect(plan.visits.map((visit) => visit.coverageId)).toEqual(["cooling", "heating"]);
-    expect(plan.visits.every((visit) => visit.bookingId === undefined)).toBe(true);
+    expect(plan.visits.every((visit) => getVisitBooking(visit, OPERATIONS) === undefined)).toBe(true);
     // The approved totals grow by exactly what was created.
     expect(getPlanMetrics(data, OPERATIONS)).toMatchObject({ active: 15, visitsDue: 6 });
   });
@@ -174,11 +183,8 @@ test.describe("creating a plan and scheduling an included visit", () => {
     expect(second.plan.id).toBe("plan-elena-rodriguez-comfort-care-2");
   });
 
-  test("scheduling visit 2 creates BK-1048 (Nov 19, 10:00–12:00, Marcus Vance) and no job", () => {
-    const { data, booking } = (() => {
-      const result = scheduleVisit2();
-      return { data: result.data, booking: result.booking };
-    })();
+  test("visit 2's booking is BK-1048 (Nov 19, 10:00–12:00, Marcus Vance) with no job", () => {
+    const { data, booking } = scheduleVisit2();
     expect(booking).toMatchObject({
       id: "BK-1048",
       customerId: "sarah-mitchell",
@@ -197,21 +203,19 @@ test.describe("creating a plan and scheduling an included visit", () => {
     expect(OPERATIONS.bookings).toHaveLength(BOOKINGS.length);
   });
 
-  test("the visit and the booking point at each other, and the visit state follows the booking", () => {
+  test("the plan holds no pointer of its own: the visit state is read from the stored booking that points at it", () => {
     const { data: ops, booking } = scheduleVisit2();
-    const linked = linkVisitToBooking(PLANS_DATA, "plan-sarah-comfort-care", visit2().id, booking.id);
-    const plan = getPlanById("plan-sarah-comfort-care", linked)!;
-    expect(plan.visits[1].bookingId).toBe("BK-1048");
-    expect(getPlanById("plan-sarah-comfort-care")!.visits[1].bookingId).toBeUndefined();
-    expect(getPlanVisitForBooking(booking, linked)).toMatchObject({ visit: { id: visit2().id } });
+    const plan = getPlanById("plan-sarah-comfort-care")!;
+    expect(getVisitBooking(plan.visits[1], ops)?.id).toBe("BK-1048");
+    expect(getVisitBooking(plan.visits[1], OPERATIONS)).toBeUndefined();
+    expect(getPlanVisitForBooking(booking, PLANS_DATA)).toMatchObject({ visit: { id: visit2().id } });
     expect(getVisitState(plan.visits[1], ops)).toBe("scheduled");
     // Still counted as due until it is completed; the approved total does not move.
-    expect(getPlanMetrics(linked, ops).visitsDue).toBe(5);
-    expect(getUpcomingVisits(linked, ops).find(({ plan: item }) => item.id === plan.id)?.visit.id).toBe(visit2().id);
+    expect(getPlanMetrics(PLANS_DATA, ops).visitsDue).toBe(5);
+    expect(getUpcomingVisits(PLANS_DATA, ops).find(({ plan: item }) => item.id === plan.id)?.visit.id).toBe(visit2().id);
 
     // Cancelling the booking reopens the visit rather than leaving it scheduled.
-    const cancelled = cancelBooking(ops, "BK-1048", "Customer asked to rebook");
-    expect(getVisitState(plan.visits[1], cancelled)).toBe("needs-scheduling");
+    expect(getVisitState(plan.visits[1], cancelled(ops, "BK-1048", "Customer asked to rebook"))).toBe("needs-scheduling");
   });
 
   test("scheduling a visit leaves quotes, invoices, payments and the Overview financial baseline untouched", () => {
@@ -224,35 +228,6 @@ test.describe("creating a plan and scheduling an included visit", () => {
     // Locked Phase 4 decisions.
     expect(getInvoiceById("INV-1044")?.quoteId).toBeUndefined();
     expect(getInvoiceById("INV-1050")?.previouslyPaid).toBe(200);
-  });
-
-  test("BK-1048 is held for Sarah's visit: other bookings skip it, and it takes it whenever it is scheduled", () => {
-    const other = { contactName: "Test Person", serviceId: "annual-cooling-tune-up", source: "Website" as const, date: "2024-11-20", start: "09:00", end: "10:00" };
-    // Scheduled first: the next free number is BK-1043, but the visit is BK-1048.
-    expect(createBooking(OPERATIONS, other).booking.id).toBe("BK-1043");
-    expect(scheduleVisit2().booking.id).toBe("BK-1048");
-    // Six bookings made first walk past the held number.
-    let data = OPERATIONS;
-    const ids: string[] = [];
-    for (let index = 0; index < 6; index += 1) {
-      const result = createBooking(data, other);
-      data = result.data;
-      ids.push(result.booking.id);
-    }
-    expect(ids).toEqual(["BK-1043", "BK-1044", "BK-1045", "BK-1046", "BK-1047", "BK-1049"]);
-    const visit = createBooking(data, {
-      customerId: "sarah-mitchell",
-      serviceId: COVERAGE.cooling.bookingServiceId,
-      source: "Maintenance plan",
-      date: "2024-11-19",
-      start: "10:00",
-      end: "12:00",
-      planVisit: { planId: "plan-sarah-comfort-care", visitId: visit2().id },
-    });
-    expect(visit.booking.id).toBe("BK-1048");
-    // A different plan's visit is an ordinary booking.
-    const david = createBooking(visit.data, { ...other, planVisit: { planId: "plan-david-seasonal-maintenance", visitId: "plan-david-seasonal-maintenance-v1" } });
-    expect(david.booking.id).toBe("BK-1050");
   });
 });
 

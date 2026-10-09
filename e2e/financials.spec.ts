@@ -29,7 +29,7 @@ import { getBookingById, getJobById, getPartyName } from "../src/data/operations
 import { getServiceById } from "../src/data/services";
 import { getTeamMemberById } from "../src/data/team";
 import { createInvoiceFromQuote, recordPayment, voidPayment } from "../src/lib/financial-state";
-import { BOOK, CUSTOMERS, DIR, SERVICES, TEAM_DATA } from "./apex-data";
+import { BOOK, CUSTOMERS, DIR, OPERATIONS, SERVICES, TEAM_DATA } from "./apex-data";
 
 // Pure data/selector/state tests: no browser needed.
 
@@ -98,8 +98,8 @@ test.describe("financial records reference the shared records", () => {
       if (record.customerId) expect(getCustomerById(record.customerId, BOOK), `${record.id}: customer`).toBeDefined();
       if (record.propertyId) expect(getPropertyById(record.propertyId, BOOK)?.customerId, `${record.id}: property`).toBe(record.customerId);
       if (record.serviceId) expect(getServiceById(record.serviceId, SERVICES), `${record.id}: service`).toBeDefined();
-      if (record.jobId) expect(getJobById(record.jobId), `${record.id}: job`).toBeDefined();
-      if (record.bookingId) expect(getBookingById(record.bookingId), `${record.id}: booking`).toBeDefined();
+      if (record.jobId) expect(getJobById(record.jobId, OPERATIONS), `${record.id}: job`).toBeDefined();
+      if (record.bookingId) expect(getBookingById(record.bookingId, OPERATIONS), `${record.id}: booking`).toBeDefined();
     }
     for (const invoice of INVOICES) if (invoice.quoteId) expect(getQuoteById(invoice.quoteId), invoice.id).toBeDefined();
     for (const payment of PAYMENTS) {
@@ -114,7 +114,7 @@ test.describe("financial records reference the shared records", () => {
     for (const record of [quote, invoice]) {
       expect(record).toMatchObject({ customerId: "sarah-mitchell", propertyId: "prop-sarah-home", jobId: "JB-204", bookingId: "BK-1042" });
     }
-    expect(getJobById("JB-204")!.customerId).toBe("sarah-mitchell");
+    expect(getJobById("JB-204", OPERATIONS)!.customerId).toBe("sarah-mitchell");
     expect(getQuoteTotal(quote)).toBe(285);
     expect(getInvoiceTotal(invoice)).toBe(285);
     expect(getPartyName(getInvoiceById("INV-1048")!, DIR)).toBe("Elena Rodriguez");

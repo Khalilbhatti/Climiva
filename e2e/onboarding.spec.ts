@@ -175,11 +175,19 @@ test.describe("creating the workspace", () => {
     // Sidebar counts belong to the sample business.
     await expect(page.getByRole("navigation", { name: "Primary" }).locator("a span.font-mono")).toHaveCount(0);
     // The modules that still run on sample data say so.
-    for (const [path, name] of [["/jobs", "Jobs"], ["/payments", "Payments"], ["/bookings", "Bookings"], ["/quotes-invoices", "Quotes & Invoices"]]) {
+    for (const [path, name] of [["/payments", "Payments"], ["/quotes-invoices", "Quotes & Invoices"]]) {
       await page.goto(path);
       await expect(page.getByRole("heading", { level: 2, name: `${name} isn't available for Blank Slate Cooling yet` })).toBeVisible();
       await expect(page.getByText("Sarah Mitchell")).toHaveCount(0);
     }
+    // Bookings, Jobs and the Schedule are the business's own now, and it has none yet: real empty states.
+    await page.goto("/bookings");
+    await expect(page.getByText("No bookings yet. Create a booking to get started.")).toBeVisible();
+    await page.goto("/jobs");
+    await expect(page.getByRole("heading", { name: "No jobs yet" })).toBeVisible();
+    await page.goto("/schedule");
+    await expect(page.getByRole("heading", { name: "Nothing is scheduled yet" })).toBeVisible();
+    await expect(page.getByText("Sarah Mitchell")).toHaveCount(0);
     // Customers and Services are the business's own now, and it has none yet.
     await page.goto("/customers");
     await expect(page.getByRole("heading", { name: "No customers yet" })).toBeVisible();

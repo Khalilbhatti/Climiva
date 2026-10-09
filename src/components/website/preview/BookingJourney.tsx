@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { ArrowLeft, CalendarCheck, CircleCheck, Clock, Info, MapPin } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { useOperations } from "@/components/operations/OperationsProvider";
 import { useBusiness, useSettings } from "@/components/settings/SettingsProvider";
 import { Button, ButtonLink, buttonClasses } from "@/components/ui/Button";
@@ -11,7 +12,6 @@ import { OptionCard, OptionGroup } from "@/components/ui/OptionCard";
 import { Select } from "@/components/ui/Select";
 import { StepList } from "@/components/ui/StepList";
 import { Textarea } from "@/components/ui/Textarea";
-import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import type { Booking } from "@/data/operations";
 import {
   BOOKING_METHOD_LABEL,
@@ -27,6 +27,7 @@ import { toTelHref } from "@/lib/format";
 import { previewHref } from "../site-links";
 import { usePreview } from "./PreviewShell";
 import { useServices } from "@/components/services/ServicesProvider";
+import { useClock } from "@/components/workspace/WorkspaceProvider";
 
 const STEP_LABELS: Record<BookingMethod, readonly string[]> = {
   instant: ["Service", "Date & time", "Your details", "Confirmation"],
@@ -40,8 +41,8 @@ const SUBMIT_LABEL: Record<BookingMethod, string> = {
   "request-quote": "Submit quote request",
 };
 
-/** The first day offered: a few days out, so the picker opens on a business day with slots. */
-const FIRST_DATE = addDays(PROTOTYPE_TODAY, 3);
+/** The first day offered is a few days out, so the picker opens on a business day with slots. */
+const FIRST_DATE_OFFSET = 3;
 
 const slotText = (method: BookingMethod, slot: Slot) =>
   method === "instant" ? formatTimeRange(slot.start, slot.end) : `${slot.label} · ${formatTimeRange(slot.start, slot.end)}`;
@@ -69,23 +70,32 @@ function NotAvailable({ live, service }: { live: boolean; service?: Service }) {
 
 /**
  * The customer's booking journey for one Service. What it asks for follows the Service's booking method (the three
- * approved behaviours). It creates a single Booking in the shared operations store: confirmed for instant booking,
- * pending for a request. It never creates a job, quote, invoice or payment, and it takes no payment.
+ * approved behaviours). It creates a single real Booking in the signed-in business: confirmed for instant booking, pending
+ * for a request (the server decides which, from the Service). It never creates a job, quote, invoice or payment, and it takes
+ * no payment.
+ *
+ * This is a PREVIEW inside the signed-in workspace, so the booking is made as that signed-in owner or admin through the same
+ * authorized server action as every other booking: it names no organization and trusts nothing from the page. A public,
+ * unauthenticated booking page for a business's own domain is not built yet (it needs a verified domain, rate limiting and
+ * spam protection); see docs/saas-architecture.md.
  */
 export function BookingJourney({ serviceId }: { serviceId: string }) {
   const { content, live } = usePreview();
   const { business, hours } = useSettings().settings;
   const { createBooking } = useOperations();
+  const { today } = useClock();
   const { services: catalog } = useServices();
   const service = getShownServices(content.services, catalog).find((item) => item.id === serviceId);
 
   const [stage, setStage] = useState<"time" | "details" | "done">("time");
-  const [date, setDate] = useState(FIRST_DATE);
+  const [date, setDate] = useState(() => addDays(today, FIRST_DATE_OFFSET));
   const [slotId, setSlotId] = useState<string>();
   const [details, setDetails] = useState({ name: "", email: "", phone: "", address: "", notes: "" });
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [showErrors, setShowErrors] = useState(false);
   const [created, setCreated] = useState<Booking>();
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
   const heading = useRef<HTMLHeadingElement>(null);
   const first = useRef(true);
 
@@ -101,7 +111,7 @@ export function BookingJourney({ serviceId }: { serviceId: string }) {
 
   const method = service.bookingMethod;
   const questions = service.intake.filter((question) => question.type === "single-select");
-  const slotGroup = getSlotGroup(method, date, service.durationMinutes, hours);
+  const slotGroup = getSlotGroup(method, date, service.durationMinutes, hours, today);
   const slot = slotGroup.slots.find((candidate) => candidate.id === slotId && candidate.available);
 
   const errors: Errors = {};
@@ -127,27 +137,30 @@ export function BookingJourney({ serviceId }: { serviceId: string }) {
     setStage("details");
   }
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
+    if (saving) return;
     if (!slot || Object.keys(errors).length > 0) return setShowErrors(true);
     const extras = questions
       .filter((question) => !["primary-issue", "system-type"].includes(question.id) && answers[question.id])
       .map((question) => `${question.prompt} ${answers[question.id]}`);
     const note = [details.notes.trim(), ...extras].filter(Boolean).join(" · ");
-    setCreated(
-      createBooking({
-        contactName: details.name.trim(),
-        contact: { phone: details.phone.trim(), email: details.email.trim(), address: details.address.trim() },
-        serviceId: service!.id,
-        source: "Website",
-        date,
-        start: slot.start,
-        end: slot.end,
-        status: method === "instant" ? "confirmed" : "pending",
-        intake: { reportedIssue: answers["primary-issue"], systemType: answers["system-type"] },
-        note: note || undefined,
-      }),
-    );
+    setSaving(true);
+    setProblem(undefined);
+    const result = await createBooking({
+      contactName: details.name.trim(),
+      contact: { phone: details.phone.trim(), email: details.email.trim(), address: details.address.trim() },
+      serviceId: service!.id,
+      source: "Website",
+      date,
+      start: slot.start,
+      end: slot.end,
+      intake: { reportedIssue: answers["primary-issue"], systemType: answers["system-type"] },
+      note: note || undefined,
+    });
+    setSaving(false);
+    if (!result.ok) return setProblem(result.error);
+    setCreated(result.data.booking);
     setShowErrors(false);
     setStage("done");
   }
@@ -180,7 +193,7 @@ export function BookingJourney({ serviceId }: { serviceId: string }) {
             <Input
               label="Date"
               type="date"
-              min={PROTOTYPE_TODAY}
+              min={today}
               value={date}
               onChange={(event) => {
                 setDate(event.target.value);
@@ -262,8 +275,11 @@ export function BookingJourney({ serviceId }: { serviceId: string }) {
                   <ArrowLeft aria-hidden className="size-4" />
                   {method === "instant" ? "Change date & time" : "Change time"}
                 </button>
-                <Button type="submit">{SUBMIT_LABEL[method]}</Button>
+                <Button type="submit" disabled={saving}>
+                  {saving ? "Sending…" : SUBMIT_LABEL[method]}
+                </Button>
               </div>
+              {problem && <FormAlert>{problem}</FormAlert>}
             </form>
 
             <aside aria-label="Booking summary" className="space-y-3 self-start rounded-card bg-surface-low p-5">

@@ -293,7 +293,7 @@ test.describe("Create booking", () => {
     await expect(wizard.getByRole("radio", { name: /^Morning/ })).toHaveCount(0);
   });
 
-  test("creates an in-memory booking, shows success and returns to Bookings with it visible", async ({ page }) => {
+  test("creates a stored booking, shows success and returns to Bookings with it visible", async ({ page }) => {
     await page.goto("/bookings");
     await page.getByRole("button", { name: "Create booking" }).click();
     const wizard = await fillBooking(page);
@@ -322,10 +322,10 @@ test.describe("Create booking", () => {
     await expect(drawer(page)).toContainText("Booking #BK-1043");
     await expect(drawer(page)).toContainText("Marcus Vance");
 
-    // Nothing is persisted: a reload returns to the fixtures.
+    // It is stored: a reload keeps it.
     await page.goto("/bookings?tab=upcoming");
-    await expect(bookingRows(page, "Upcoming")).toHaveCount(5);
-    await expect(page.getByRole("button", { name: /BK-1043/ })).toHaveCount(0);
+    await expect(bookingRows(page, "Upcoming")).toHaveCount(6);
+    await expect(page.getByRole("button", { name: /^Review booking BK-1043 / })).toBeVisible();
   });
 
   test("the new booking appears on the Schedule and Cancel discards the draft", async ({ page }) => {

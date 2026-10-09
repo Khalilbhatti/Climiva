@@ -8,6 +8,7 @@ import { AssignDialog } from "@/components/operations/AssignDialog";
 import { useOperations } from "@/components/operations/OperationsProvider";
 import { ReasonDialog } from "@/components/operations/ReasonDialog";
 import { BookingStatusBadge } from "@/components/operations/StatusBadges";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { KeyValueList } from "@/components/ui/KeyValueList";
 import { useToast } from "@/components/ui/Toast";
@@ -19,6 +20,8 @@ import { BOOKING_METHOD_ARRIVAL, BOOKING_METHOD_LABEL, getServiceById } from "@/
 import { formatLocalDateTime, formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import { toTelHref } from "@/lib/format";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
+import type { ActionResult } from "@/lib/action-result";
 
 const sectionHeading = "mb-2 text-micro font-bold tracking-wider text-ink-muted uppercase";
 
@@ -40,8 +43,22 @@ export function BookingDrawer({
   const { confirmBooking, cancelBooking, assign, createJobForBooking } = useOperations();
   const { toast } = useToast();
   const { data: plans } = useMaintenancePlans();
+  const canManage = useCan("operations:manage");
   const [dialog, setDialog] = useState<"assign" | "cancel" | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string>();
   const headingRef = useRef<HTMLHeadingElement>(null);
+
+  /** Run one change on the server; on a refusal show why, otherwise carry on. */
+  async function run<T>(change: () => Promise<ActionResult<T>>, done: (data: T) => void) {
+    if (busy) return;
+    setBusy(true);
+    setProblem(undefined);
+    const result = await change();
+    setBusy(false);
+    if (!result.ok) return setProblem(result.error);
+    done(result.data);
+  }
 
   // Move focus into the panel when it opens (or switches booking) so keyboard users land on it.
   useEffect(() => {
@@ -238,19 +255,26 @@ export function BookingDrawer({
       </div>
 
       <div className="space-y-3 border-t border-line bg-surface p-5">
-        {pending && (
+        {problem && <FormAlert>{problem}</FormAlert>}
+
+        {pending && canManage && (
           <>
             <Button
               size="lg"
               className="w-full"
-              onClick={() => {
-                confirmBooking(booking.id);
-                onTabChange?.("upcoming");
-                toast(`Booking #${booking.id} confirmed.`);
-              }}
+              disabled={busy}
+              onClick={() =>
+                run(
+                  () => confirmBooking(booking.id),
+                  () => {
+                    onTabChange?.("upcoming");
+                    toast(`Booking #${booking.id} confirmed.`);
+                  },
+                )
+              }
             >
               <Check aria-hidden className="size-[18px]" />
-              Confirm booking
+              {busy ? "Confirming…" : "Confirm booking"}
             </Button>
             <p className="text-center text-xs text-ink-muted">The booking moves to Upcoming and can then be assigned.</p>
           </>
@@ -258,9 +282,11 @@ export function BookingDrawer({
 
         {booking.status === "confirmed" && (
           <div className="flex flex-wrap gap-3">
-            <Button variant="secondary" onClick={() => setDialog("assign")}>
-              {assignee ? "Reassign" : "Assign technician"}
-            </Button>
+            {canManage && (
+              <Button variant="secondary" onClick={() => setDialog("assign")} disabled={busy}>
+                {assignee ? "Reassign" : "Assign technician"}
+              </Button>
+            )}
             {inSchedule ? (
               <ButtonLink variant="secondary" href={`/bookings?tab=upcoming&booking=${booking.id}`}>
                 View booking
@@ -275,14 +301,11 @@ export function BookingDrawer({
                 View job #{booking.jobId}
               </ButtonLink>
             ) : (
-              <Button
-                onClick={() => {
-                  const job = createJobForBooking(booking.id);
-                  if (job) toast(`Job #${job.id} created.`);
-                }}
-              >
-                Create job
-              </Button>
+              canManage && (
+                <Button disabled={busy} onClick={() => run(() => createJobForBooking(booking.id), ({ job }) => toast(`Job #${job.id} created.`))}>
+                  {busy ? "Creating…" : "Create job"}
+                </Button>
+              )
             )}
           </div>
         )}
@@ -293,16 +316,21 @@ export function BookingDrawer({
           </ButtonLink>
         )}
 
-        {canCancel && (
+        {canCancel && canManage && (
           <div className="flex justify-end">
             <button
               type="button"
               onClick={() => setDialog("cancel")}
+              disabled={busy}
               className="rounded-btn px-2 py-1 text-sm font-medium text-danger transition-colors hover:bg-danger-soft"
             >
               {pending ? "Decline request" : "Cancel booking"}
             </button>
           </div>
+        )}
+
+        {!canManage && (booking.status === "pending" || booking.status === "confirmed") && (
+          <p className="text-xs text-ink-muted">Only an owner or admin can confirm, assign or cancel bookings.</p>
         )}
       </div>
 
@@ -311,8 +339,9 @@ export function BookingDrawer({
           description={`${getServiceNameFor(booking, dir)} for ${name} · ${when}`}
           currentAssigneeId={booking.assigneeId}
           onClose={() => setDialog(null)}
-          onAssign={(memberId) => {
-            assign({ bookingId: booking.id }, memberId);
+          onAssign={async (memberId) => {
+            const result = await assign({ bookingId: booking.id }, memberId);
+            if (!result.ok) return result.error;
             setDialog(null);
             toast(memberId ? `Booking #${booking.id} assigned.` : `Booking #${booking.id} is unassigned.`);
           }}
@@ -326,8 +355,9 @@ export function BookingDrawer({
           confirmLabel={pending ? "Decline request" : "Cancel booking"}
           keepLabel={pending ? "Keep request" : "Keep booking"}
           onClose={() => setDialog(null)}
-          onConfirm={(reason) => {
-            cancelBooking(booking.id, reason);
+          onConfirm={async (reason) => {
+            const result = await cancelBooking(booking.id, reason);
+            if (!result.ok) return result.error;
             onTabChange?.("cancelled");
             setDialog(null);
             toast(pending ? `Request #${booking.id} declined.` : `Booking #${booking.id} cancelled.`);

@@ -26,7 +26,7 @@ import {
   isAnyContactShown,
   sameConfig,
 } from "../src/data/marketplace";
-import { JOBS, getJobById } from "../src/data/operations";
+import { getJobById } from "../src/data/operations";
 import {
   REVIEWS,
   REVIEWS_DATA,
@@ -40,7 +40,7 @@ import { getPublicActiveServices } from "../src/data/services";
 import { cancelSchedule, createDraft, duplicateCampaign, saveAsDraft, scheduleCampaign, sendCampaign, updateCampaign } from "../src/lib/marketing-state";
 import { hideListing, moveService, publishListing, saveListing, setUpListing, toggleService } from "../src/lib/marketplace-state";
 import { addReviewRequest, editResponse, postResponse } from "../src/lib/reviews-state";
-import { SERVICES } from "./apex-data";
+import { OPERATIONS, SERVICES } from "./apex-data";
 
 // Pure data/selector/state tests: no browser needed.
 
@@ -145,16 +145,16 @@ test.describe("reviews data", () => {
     });
     expect(getReviewStatus(review)).toBe("awaiting");
     expect(review.replyDraft).toBe(SARAH_REPLY);
-    const job = getJobById("JB-204")!;
+    const job = getJobById("JB-204", OPERATIONS)!;
     expect(job).toMatchObject({ customerId: "sarah-mitchell", serviceId: "ac-repair-diagnostics" });
-    expect(JOBS.map((item) => item.id)).toContain("JB-204");
+    expect(OPERATIONS.jobs.map((item) => item.id)).toContain("JB-204");
   });
 
   test("every review points at a real customer and job, or carries a name; the only source is Climvia", () => {
     for (const review of REVIEWS) {
       expect(Boolean(review.customerId) !== Boolean(review.contactName), review.id).toBe(true);
       expect(review.source).toBe("Climvia");
-      if (review.relatedJobId) expect(getJobById(review.relatedJobId), review.id).toBeDefined();
+      if (review.relatedJobId) expect(getJobById(review.relatedJobId, OPERATIONS), review.id).toBeDefined();
       expect(review.date <= "2024-10-25", `${review.id} is not dated in the future`).toBe(true);
     }
     expect(REVIEWS.map((review) => review.customerId ?? "").join(" ")).not.toContain("rostova");

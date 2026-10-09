@@ -11,11 +11,12 @@ The **front end is complete** and the **SaaS foundation is in place**: real acco
 workspace switching, and a PostgreSQL database that keeps businesses apart. Not every module is on the database yet.
 
 - **On PostgreSQL now:** accounts and sessions, organizations, memberships and roles, the Business information, Business
-  hours and Workspace preferences of each business, each person's profile name, and the `sites` a business owns.
-- **Still on built-in sample data** (in memory for the visit, gone on reload): Customers, Services, Team, Bookings,
-  Schedule, Jobs, Quotes & Invoices, Payments, Maintenance Plans, Website, Marketplace, Reviews, Marketing and Analytics.
-  That sample belongs to **one** business, Apex Climate Heating & Air; every other business sees those modules as "not
-  available yet", never Apex's records.
+  hours and Workspace preferences of each business, each person's profile name, the `sites` a business owns, its
+  customers (with properties and equipment), Services and team, and its **operations**: bookings, jobs (work details and
+  photo records), the schedule (derived from them) and blocked time. Each business sees only its own.
+- **Still on built-in sample data** (in memory for the visit, gone on reload): Quotes & Invoices, Payments, Maintenance
+  Plans, Website, Marketplace, Reviews, Marketing and Analytics. That sample belongs to **one** business, Apex Climate
+  Heating & Air; every other business sees those modules as "not available yet", never Apex's records.
 - **Not built:** email (so no verification, password reset or invitations by email), billing for Climvia itself, a payment
   processor, SMS, real domain connection, file storage (logo and photo last for the session), the Website Builder, deployment to AWS.
 
@@ -68,9 +69,9 @@ All use the `SEED_PASSWORD` from your `.env`.
 
 | Email | Workspaces |
 | --- | --- |
-| `alex.morgan@apex.test` | Apex Climate Heating & Air, owner (has the sample operations data, and the canonical customers, Services and team) |
+| `alex.morgan@apex.test` | Apex Climate Heating & Air, owner (has the canonical customers, Services, team, bookings and jobs, and the sample data of the modules not yet on the database) |
 | `jamie.rivera@apex.test` | Apex, member (can view Settings, not change them) |
-| `taylor.brooks@northstar.test` | Northstar Heating & Cooling, owner (a small set of its own customers, Services and team; none of Apex's, and no sample operations data) |
+| `taylor.brooks@northstar.test` | Northstar Heating & Cooling, owner (a small set of its own customers, Services, team, two bookings and a job; none of Apex's, and no sample data) |
 | `casey.nguyen@climvia.test` | admin in **both** (use the workspace switcher) |
 
 Or sign up with a new email and the setup flow creates a business of your own.
@@ -108,10 +109,10 @@ src/
     layout.tsx      fonts, global styles, and the providers for the signed-in workspace
   components/       one folder per module, plus auth/, shell/ (layout), workspace/ and ui/ (shared primitives)
   config/           navigation (the sidebar) and typed route helpers
-  data/             types and selectors per module; the sample operations records (customers, Services and the team are read from PostgreSQL)
+  data/             types and selectors per module; the sample records of the modules not yet on the database (customers, Services, the team and the operations are read from PostgreSQL)
   db/               the PostgreSQL schema (Drizzle), the connection, and the tenant-context helpers
-  lib/              auth setup, validation, state transitions, date and display helpers
-  server/           server-only code: session, active workspace, organizations, Server Actions, the sample-data gate
+  lib/              auth setup, validation, state transitions, the operations rules, business-time conversions, date and display helpers
+  server/           server-only code: session, active workspace, organizations, Server Actions (including bookings and jobs), the sample-data gate
   proxy.ts          the early "no session cookie" redirect (not the security boundary)
 drizzle/            SQL migrations, including the Row Level Security policies
 scripts/db/         migrate, seed (and seed-data/, the canonical Apex and the Northstar records), reset and test-database preparation
@@ -127,10 +128,13 @@ docs/               SaaS architecture, design map, visual audit, production hand
 - **Providers.** One provider per area is mounted once at the root, around the signed-in workspace only, so the public
   previews read the same session as the workspace. Signing in or out and switching workspace are full page loads, so one
   business's state can never carry into another's.
-- **Records and selectors.** `src/data/*` holds the sample records as typed objects and the pure selectors that derive
-  everything shown. Modules on sample data change them in memory only; reloading restores the sample.
-- **A fixed clock.** The sample data's "today" is Friday, October 25, 2024, in the business's time zone. Nothing reads
-  the system clock or the browser's time zone, so the server and browser always render the same text.
+- **Records and selectors.** `src/data/*` holds the types, the pure selectors that derive everything shown, and the sample
+  records of the modules not yet on the database. Those change in memory only; reloading restores the sample. Customers,
+  Services, the team, bookings, jobs and blocked time come from PostgreSQL for the active business.
+- **A clock per business.** The sample business's "today" is Friday, October 25, 2024, 10:45, in its time zone; every
+  other business's is the real time in its own zone, worked out on the server (`useClock()`). Appointments are stored as
+  local dates and times and never converted. The browser never reads the system clock or its own time zone, so the server
+  and every browser time zone render the same text.
 
 ### Which module owns which fact
 
@@ -141,7 +145,9 @@ docs/               SaaS architecture, design map, visual audit, production hand
 | Date, time and time zone display | Settings → Workspace preferences | PostgreSQL (`organizations`) |
 | Signed-in person's name | Settings → My profile | PostgreSQL (`profiles`) |
 | Logo and accent | Settings → Branding | the session only (needs file storage) |
-| Everything else (services, team, customers, jobs, money, website, marketplace, reviews, marketing) | its module | the sample data, sample business only |
+| Customers, Services, Team | their module | PostgreSQL (`customers`, `services`, `team_members` …) |
+| Bookings, Jobs, work details, photo records, blocked time | Bookings, Jobs | PostgreSQL (`bookings`, `jobs`, `job_files`, `schedule_blocks`); the Schedule is derived, not stored |
+| Everything else (money, website, marketplace, reviews, marketing) | its module | the sample data, sample business only |
 
 Analytics owns nothing: it reads the other modules.
 
@@ -156,7 +162,7 @@ expiry, business set-up, workspace switching, tenant isolation (through the brow
 the restricted runtime role), Settings persistence, and source-level checks of the server boundaries. Each worker signs
 in as the owner of its own copy of the Apex workspace, restored before every test.
 
-At the last run all 1902 tests passed (45 spec files, about seven minutes on six workers): the 1725 front-end tests, none removed or skipped and adapted only where Settings is now stored, the top bar has menus and every page needs a sign-in, plus 177 for the SaaS foundation.
+At the last run all 2118 tests passed (58 spec files, about nine minutes on six workers): the earlier front-end and SaaS tests, none skipped and adapted only where Settings, customers, Services, the team and now bookings and jobs are stored or every page needs a sign-in, plus the operations specs (SQL as the restricted role, bookings, jobs, the schedule, the cross-module checks and the business-time conversions).
 See [docs/production-handoff.md](docs/production-handoff.md#testing-status) for what each group covers.
 
 ## Deploying

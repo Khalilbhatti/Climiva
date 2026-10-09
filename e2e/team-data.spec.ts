@@ -1,5 +1,5 @@
 import { expect, test } from "playwright/test";
-import { BOOKINGS, JOBS, OPERATIONS, SCHEDULE_BLOCKS, getJobById } from "../src/data/operations";
+import { getJobById } from "../src/data/operations";
 import { CLASSIFICATION_LABEL, MODULE_IDS, buildPermissions, countAccessibleModules, describeAvailability, getAssignableMembers, getAssignedServiceIds, getClassification, getEffectivePermissions, getMemberById, getMembersForRole, getRoleById, getTeamMemberById, summarizeWeek, weeklyFromBusinessHours } from "../src/data/team";
 import { businessHoursByWeekday } from "../src/data/fixtures";
 import { formatTime } from "../src/lib/dates";
@@ -15,7 +15,7 @@ import {
   slugify,
   updateRole,
 } from "../src/lib/team-state";
-import { ROLES, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
+import { BOOKINGS, JOBS, OPERATIONS, ROLES, SCHEDULE_BLOCKS, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
 
 // Pure data/selector/state tests: no browser needed.
 
@@ -133,7 +133,7 @@ test.describe("availability and services", () => {
   test("activity entries reference real jobs and team members", () => {
     for (const member of TEAM) {
       for (const entry of member.activity) {
-        if (entry.jobId) expect(getJobById(entry.jobId), entry.id).toBeDefined();
+        if (entry.jobId) expect(getJobById(entry.jobId, OPERATIONS), entry.id).toBeDefined();
         if (entry.byId) expect(getTeamMemberById(entry.byId, TEAM_DATA), entry.id).toBeDefined();
       }
     }
@@ -171,7 +171,7 @@ test.describe("team state transitions (pure)", () => {
 
     // The name still resolves, and the completed job that names Marcus is exactly as it was.
     expect(getTeamMemberById("marcus-vance", TEAM_DATA)?.name).toBe("Marcus Vance");
-    expect(getJobById("JB-186")).toMatchObject({ assigneeId: "marcus-vance", status: "completed" });
+    expect(getJobById("JB-186", OPERATIONS)).toMatchObject({ assigneeId: "marcus-vance", status: "completed" });
     expect(JSON.stringify(OPERATIONS)).toBe(opsBefore);
 
     // The workspace owner can't be deactivated; doing it twice changes nothing more.

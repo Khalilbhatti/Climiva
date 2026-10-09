@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { OptionCard, OptionGroup } from "@/components/ui/OptionCard";
@@ -14,7 +15,8 @@ type AssignDialogProps = {
   /** A member who must not be offered, e.g. the one being deactivated. */
   excludeMemberId?: string;
   onClose: () => void;
-  onAssign: (memberId: string | undefined) => void;
+  /** Resolves with the reason it failed, or nothing when the assignment was saved (the caller then closes the dialog). */
+  onAssign: (memberId: string | undefined) => Promise<string | undefined>;
 };
 
 const UNASSIGNED = "unassigned";
@@ -25,6 +27,17 @@ export function AssignDialog({ description, currentAssigneeId, excludeMemberId, 
   // Only active, field-assignable members can be given work; a deactivated member still shows on past records.
   const members = getAssignableMembers(team).filter((member) => member.id !== excludeMemberId);
   const [choice, setChoice] = useState(members.some((member) => member.id === currentAssigneeId) ? currentAssigneeId! : UNASSIGNED);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
+
+  async function save() {
+    if (saving) return;
+    setSaving(true);
+    setProblem(undefined);
+    const error = await onAssign(choice === UNASSIGNED ? undefined : choice);
+    setSaving(false);
+    if (error) setProblem(error);
+  }
 
   return (
     <Modal
@@ -37,7 +50,9 @@ export function AssignDialog({ description, currentAssigneeId, excludeMemberId, 
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={() => onAssign(choice === UNASSIGNED ? undefined : choice)}>Save assignment</Button>
+          <Button onClick={save} disabled={saving}>
+            {saving ? "Saving…" : "Save assignment"}
+          </Button>
         </>
       }
     >
@@ -62,6 +77,7 @@ export function AssignDialog({ description, currentAssigneeId, excludeMemberId, 
           onChange={() => setChoice(UNASSIGNED)}
         />
       </OptionGroup>
+      {problem && <FormAlert>{problem}</FormAlert>}
     </Modal>
   );
 }

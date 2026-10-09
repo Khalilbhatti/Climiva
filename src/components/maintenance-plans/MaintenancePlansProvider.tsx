@@ -8,7 +8,6 @@ type PlansContextValue = {
   /** The working data: canonical fixtures plus any demo changes made in this session. */
   data: PlansData;
   createPlan: (input: state.NewPlanInput, customerSlug: string) => MaintenancePlan;
-  linkVisitToBooking: (planId: string, visitId: string, bookingId: string) => void;
 };
 
 const PlansContext = createContext<PlansContextValue | null>(null);
@@ -36,7 +35,6 @@ export function MaintenancePlansProvider({ initial = PLANS_DATA, children }: { i
         commit(result.data);
         return result.plan;
       },
-      linkVisitToBooking: (planId, visitId, bookingId) => commit(state.linkVisitToBooking(latest.current, planId, visitId, bookingId)),
     }),
     [data, commit],
   );

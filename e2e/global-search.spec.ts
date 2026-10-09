@@ -8,10 +8,9 @@ import type { Page } from "playwright/test";
 import { structuralIssues, unnamedControls } from "./a11y-lint";
 import { findLowContrast } from "./contrast";
 import { expect as fixtureExpect, test as fixtureTest } from "./fixtures";
-import { OPERATIONS } from "../src/data/operations";
 import { MIN_QUERY, PER_GROUP, SEARCH_GROUPS, searchWorkspace } from "../src/lib/global-search";
-import { assign } from "../src/lib/operations-state";
-import { DIR } from "./apex-data";
+import { DIR, OPERATIONS } from "./apex-data";
+import { assigned } from "./operations-edits";
 
 const titles = (query: string, group?: string, data = OPERATIONS) =>
   searchWorkspace(query, data, DIR)
@@ -70,11 +69,11 @@ test.describe("what the search finds", () => {
     for (const group of SEARCH_GROUPS) expect(results.filter((result) => result.group === group).length).toBeLessThanOrEqual(PER_GROUP);
   });
 
-  test("it reads the session: reassigned work is found under its new technician", () => {
+  test("it reads the records it is given: reassigned work is found under its new technician", () => {
     expect(titles("samira", "Schedule").length).toBeGreaterThan(0);
     const before = searchWorkspace("samira", OPERATIONS, DIR).filter((result) => result.id === "JB-198");
     expect(before).toEqual([]);
-    const after = assign(OPERATIONS, { jobId: "JB-198" }, "samira-patel");
+    const after = assigned(OPERATIONS, { jobId: "JB-198" }, "samira-patel");
     expect(searchWorkspace("samira", after, DIR).filter((result) => result.id === "JB-198")).toHaveLength(1);
   });
 });
@@ -175,12 +174,13 @@ fixtureTest.describe("the search field", () => {
     await expect(list(page)).toHaveCount(0);
   });
 
-  fixtureTest("it follows the session: after assigning Elena's visit to Samira, searching Samira finds it on the Schedule", async ({ page }) => {
+  fixtureTest("it follows what is saved: after assigning Elena's visit to Samira, searching Samira finds it on the Schedule", async ({ page }) => {
     await page.goto("/schedule");
     await page.getByRole("button", { name: "Assign technician to Elena Rodriguez" }).click();
     const dialog = page.getByRole("dialog", { name: "Assign technician" });
     await dialog.getByRole("radio", { name: /^Samira Patel/ }).check();
     await dialog.getByRole("button", { name: "Save assignment" }).click();
+    await fixtureExpect(dialog).toBeHidden();
     await box(page).fill("samira");
     const entry = list(page).getByRole("option", { name: /Samira Patel · Elena Rodriguez/ });
     await expect(entry).toBeVisible();

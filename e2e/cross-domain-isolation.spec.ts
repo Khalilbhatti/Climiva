@@ -79,7 +79,7 @@ test.describe("switching business", () => {
     const { page, problems } = await openAs("casey");
     await page.goto("/");
     // Visit every foundation in Apex first, so every provider has been filled.
-    for (const link of ["Customers", "Services", "Team"]) {
+    for (const link of ["Customers", "Services", "Team", "Bookings", "Jobs", "Schedule"]) {
       await primary(page).getByRole("link", { name: new RegExp(`^${link}`) }).click();
       await expect(page.getByRole("heading", { level: 1, name: link })).toBeVisible();
     }
@@ -87,7 +87,7 @@ test.describe("switching business", () => {
     await switchWorkspace(page, new RegExp(NORTHSTAR));
 
     // Move around by client navigation (no page load), the way a person does, and look at every step.
-    for (const link of ["Customers", "Services", "Team", "Customers"]) {
+    for (const link of ["Customers", "Services", "Team", "Bookings", "Jobs", "Schedule", "Customers"]) {
       await primary(page).getByRole("link", { name: new RegExp(`^${link}`) }).click();
       await expect(page.getByRole("heading", { level: 1, name: link })).toBeVisible();
       expect(leaksIn(await everythingOn(page), APEX), link).toEqual([]);
@@ -97,7 +97,7 @@ test.describe("switching business", () => {
     await search.fill("Sarah");
     await expect(page.getByText("No matches for")).toBeVisible();
     await search.fill("Marta");
-    await expect(page.getByRole("option", { name: /Marta Olsen/ })).toBeVisible();
+    await expect(page.getByRole("option", { name: /Marta Olsen/ }).first()).toBeVisible();
     expect(problems).toEqual([]);
   });
 

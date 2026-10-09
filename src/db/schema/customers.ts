@@ -119,6 +119,8 @@ export const customerProperties = pgTable(
   (table) => [
     foreignKey({ name: "customer_properties_customer_fk", columns: [table.organizationId, table.customerId], foreignColumns: [customers.organizationId, customers.id] }).onDelete("cascade"),
     unique("customer_properties_org_id_unique").on(table.organizationId, table.id),
+    // Lets a Booking or Job reference (organization, customer, property) together: the property has to be that customer's own.
+    unique("customer_properties_org_customer_id_unique").on(table.organizationId, table.customerId, table.id),
     unique("customer_properties_org_slug_unique").on(table.organizationId, table.slug),
     uniqueIndex("customer_properties_one_primary").on(table.organizationId, table.customerId).where(sql`${table.isPrimary}`),
     index("customer_properties_customer_idx").on(table.organizationId, table.customerId),
@@ -166,6 +168,7 @@ export const equipment = pgTable(
   },
   (table) => [
     foreignKey({ name: "equipment_property_fk", columns: [table.organizationId, table.propertyId], foreignColumns: [customerProperties.organizationId, customerProperties.id] }).onDelete("cascade"),
+    unique("equipment_org_id_unique").on(table.organizationId, table.id),
     unique("equipment_org_slug_unique").on(table.organizationId, table.slug),
     index("equipment_property_idx").on(table.organizationId, table.propertyId),
     check("equipment_slug_format", sql`${table.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and char_length(${table.slug}) <= 80`),

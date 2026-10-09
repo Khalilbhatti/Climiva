@@ -6,7 +6,8 @@
  */
 import type { Page } from "playwright/test";
 import { overviewMetrics, PROTOTYPE_NOW } from "../src/data/fixtures";
-import { BOOKINGS, JOBS, getBookingById, getJobById } from "../src/data/operations";
+import { getBookingById, getJobById } from "../src/data/operations";
+import { BOOKINGS, JOBS, OPERATIONS } from "./apex-data";
 import { expect, test } from "./fixtures";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
@@ -16,12 +17,12 @@ const tab = (page: Page, name: string) => page.getByRole("tab", { name: new RegE
 
 test.describe("JB-204 is Completed in the one operational fixture", () => {
   test("the Job and its Booking are Completed, with a completion record, and nothing in the fixture is in progress", () => {
-    const job = getJobById("JB-204")!;
+    const job = getJobById("JB-204", OPERATIONS)!;
     expect(job.status).toBe("completed");
     expect(job.completion?.at).toBe(PROTOTYPE_NOW);
     expect(job.completion?.notes.length).toBeGreaterThan(20);
     expect(job.bookingId).toBe("BK-1042");
-    expect(getBookingById("BK-1042")).toMatchObject({ status: "completed", jobId: "JB-204", customerId: "sarah-mitchell" });
+    expect(getBookingById("BK-1042", OPERATIONS)).toMatchObject({ status: "completed", jobId: "JB-204", customerId: "sarah-mitchell" });
     expect(JOBS.filter((item) => item.status === "in-progress")).toEqual([]);
   });
 

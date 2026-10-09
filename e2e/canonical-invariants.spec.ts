@@ -33,13 +33,14 @@ import { BUSINESS_TIME_ZONE, PROTOTYPE_NOW, PROTOTYPE_TODAY, business, businessH
 import { COVERAGE, PLANS, PLANS_DATA, PLAN_BASELINE, getCurrentPlanForCustomer, getPlanById, getPlanMetrics } from "../src/data/maintenance-plans";
 import { CAMPAIGN_BASELINE, MARKETING_DATA, getCampaignMetrics } from "../src/data/marketing";
 import { BASELINE_EXCLUDED_SERVICE_ID, getEligibleServices, getListingServices, initialMarketplaceState } from "../src/data/marketplace";
-import { BOOKINGS, JOBS, OPERATIONS, SCHEDULE_BLOCKS, RESERVED_BOOKING_NUMBERS, getBookingById, getJobById } from "../src/data/operations";
+import { getBookingById, getJobById } from "../src/data/operations";
 import { REVIEWS, REVIEWS_DATA, REVIEW_BASELINE, getReviewById, getReviewMetrics } from "../src/data/reviews";
 import { getPublicActiveServices } from "../src/data/services";
 import { initialSettings } from "../src/data/settings";
 import { getTeamMemberById } from "../src/data/team";
 import { WEBSITE_PAGES, defaultSiteContent, getShownServices } from "../src/data/website";
-import { BOOK, CUSTOMERS, ROLES, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
+import { RESERVED_BOOKING_NUMBERS } from "../src/lib/operations-rules";
+import { BOOK, BOOKINGS, CUSTOMERS, JOBS, OPERATIONS, ROLES, SCHEDULE_BLOCKS, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
 
 const SIX_SERVICES = [
   "AC Repair & Diagnostics",
@@ -167,10 +168,10 @@ test.describe("the Services", () => {
 
 test.describe("Job #JB-204 and Sarah's record", () => {
   test("JB-204 is Sarah Mitchell's AC Repair & Diagnostics at her one property, Completed, from BK-1042", () => {
-    const job = getJobById("JB-204")!;
+    const job = getJobById("JB-204", OPERATIONS)!;
     expect(job).toMatchObject({ customerId: "sarah-mitchell", serviceId: "ac-repair-diagnostics", propertyId: "prop-sarah-home", status: "completed", bookingId: "BK-1042" });
     expect(getPropertyById(job.propertyId!, BOOK)?.street).toBe("1402 Kinney Ave");
-    expect(getBookingById("BK-1042")).toMatchObject({ customerId: "sarah-mitchell", status: "completed", jobId: "JB-204" });
+    expect(getBookingById("BK-1042", OPERATIONS)).toMatchObject({ customerId: "sarah-mitchell", status: "completed", jobId: "JB-204" });
   });
 
   test("Sarah's review points at JB-204, and her last service is JB-204", () => {
@@ -185,7 +186,7 @@ test.describe("Job #JB-204 and Sarah's record", () => {
     expect(getPlanById("plan-sarah-comfort-care", PLANS_DATA)).toBe(plan);
     expect(RESERVED_BOOKING_NUMBERS).toEqual({ "plan-sarah-comfort-care-v2": 1048 });
     // Not scheduled yet: the number is held, not used.
-    expect(getBookingById("BK-1048")).toBeUndefined();
+    expect(getBookingById("BK-1048", OPERATIONS)).toBeUndefined();
   });
 });
 

@@ -9,11 +9,11 @@ import { useOperations } from "@/components/operations/OperationsProvider";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { jobHref } from "@/config/routes";
-import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import { getPartyName, getScheduleEvents, getServiceNameFor, type WorkEvent } from "@/data/operations";
 import type { TeamMember } from "@/data/team";
 import { formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useClock } from "@/components/workspace/WorkspaceProvider";
 
 type DeactivateMemberModalProps = {
   member: TeamMember;
@@ -31,6 +31,7 @@ type DeactivateMemberModalProps = {
 export function DeactivateMemberModal({ member, onClose, onConfirm }: DeactivateMemberModalProps) {
   const dir = useDirectory();
   const { data, assign } = useOperations();
+  const { today } = useClock();
   const [reassigning, setReassigning] = useState<WorkEvent | null>(null);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string>();
@@ -101,7 +102,7 @@ export function DeactivateMemberModal({ member, onClose, onConfirm }: Deactivate
                       #{event.id} · {getPartyName(event, dir)}
                     </p>
                     <p className="text-xs text-ink-muted">
-                      {getServiceNameFor(event, dir)} · {event.date === PROTOTYPE_TODAY ? "Today" : formatWeekdayDate(event.date)},{" "}
+                      {getServiceNameFor(event, dir)} · {event.date === today ? "Today" : formatWeekdayDate(event.date)},{" "}
                       {formatTimeRange(event.start, event.end)}
                     </p>
                   </div>
@@ -143,8 +144,9 @@ export function DeactivateMemberModal({ member, onClose, onConfirm }: Deactivate
           description={`${getServiceNameFor(reassigning, dir)} for ${getPartyName(reassigning, dir)} · ${formatWeekdayDate(reassigning.date)}, ${formatTimeRange(reassigning.start, reassigning.end)}`}
           excludeMemberId={member.id}
           onClose={() => setReassigning(null)}
-          onAssign={(memberId) => {
-            assign({ bookingId: reassigning.bookingId, jobId: reassigning.jobId }, memberId);
+          onAssign={async (memberId) => {
+            const result = await assign({ bookingId: reassigning.bookingId, jobId: reassigning.jobId }, memberId);
+            if (!result.ok) return result.error;
             setReassigning(null);
           }}
         />

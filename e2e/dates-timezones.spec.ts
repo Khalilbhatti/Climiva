@@ -121,11 +121,26 @@ test.describe("the source never reads the real clock or the browser's time zone"
       [/Math\.random\(/, "Math.random()"],
       [/performance\.now\(/, "performance.now()"],
     ];
+    // src/lib/business-time.ts is the one deliberate exception: it converts instants to a business's wall-clock time with Intl and a
+    // NAMED zone, on the server, so no browser ever does. The next test holds it there.
+    const SERVER_ONLY_CLOCK = join("src", "lib", "business-time.ts");
     const hits: string[] = [];
     for (const file of sourceFiles("src")) {
+      if (file === SERVER_ONLY_CLOCK) continue;
       const text = stripped(file);
       for (const [pattern, label] of banned) if (pattern.test(text)) hits.push(`${file}: ${label}`);
     }
     expect(hits).toEqual([]);
+  });
+
+  test("the server-only clock is never imported as a value by code that runs in a browser", () => {
+    const offenders: string[] = [];
+    for (const file of sourceFiles("src")) {
+      const text = readFileSync(file, "utf8");
+      const runsInBrowser = /^\s*(["'])use client\1/.test(text.replace(/^\s*\/\*[\s\S]*?\*\/\s*/, ""));
+      if (!runsInBrowser) continue;
+      for (const match of text.matchAll(/import\s+(type\s+)?[^;]*?from\s+["']@\/lib\/business-time["']/g)) if (!match[1]) offenders.push(file);
+    }
+    expect(offenders).toEqual([]);
   });
 });

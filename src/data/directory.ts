@@ -2,13 +2,15 @@
  * The directory: the business's customers, properties, equipment, Services and team, as the browser holds them.
  *
  * The workspace's server code reads these from PostgreSQL for the ACTIVE organization only and hands them to the providers
- * (components/workspace/DirectoryProvider). The modules that are not on the database yet (Bookings, Jobs, Schedule, the
- * money modules …) look people, places and Services up here by id, so none of them keeps its own copy of a name.
+ * (components/workspace/DirectoryProvider). Bookings, Jobs, the Schedule and the modules that are not on the database yet
+ * (the money modules …) look people, places and Services up here by id, so none of them keeps its own copy of a name.
  *
- * Customers, properties and equipment are only loaded for a business that still runs on the sample operations data: they
- * are what that sample data points at. Any other business reads its customers page by page on the server.
+ * At this scale the whole customer book is sent with the page, because Bookings and Jobs point at customers, properties and
+ * equipment and show their names. Windowing the book (and the operations) by date and page is the next scaling step; see
+ * docs/saas-architecture.md.
  */
 import type { CustomerBook } from "./customers";
+import type { OperationsData } from "./operations";
 import type { Service } from "./services";
 import type { TeamData } from "./team";
 
@@ -22,4 +24,6 @@ export type CoreSnapshot = {
   services: readonly Service[];
   team: TeamData;
   book: CustomerBook;
+  /** The business's Bookings, Jobs and blocked time: the Schedule is derived from these. */
+  operations: OperationsData;
 };

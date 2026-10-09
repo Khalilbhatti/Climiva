@@ -153,7 +153,7 @@ Final verification, run on the finished source:
 | `npm run typecheck` | clean |
 | `npm run lint` (zero warnings allowed) | clean |
 | `npm run build` | succeeds with no warnings; every page is rendered on request (`ƒ`), none is prerendered |
-| `npm run test:e2e` (production build, own `climvia_test` database, Chromium) | **1902 passed, 0 failed, 0 flaky, 0 skipped**, 45 spec files, about 7 minutes on six workers (Phase 9: the 1725 earlier tests all kept, plus 177 for the SaaS foundation) |
+| `npm run test:e2e` (production build, own `climvia_test` database, Chromium) | **2118 passed, 0 failed, 0 flaky, 0 skipped**, 58 spec files, about 9 minutes on six workers (Phase 11: the earlier tests kept and adapted where operations are now stored, plus the operations specs). One test, the Schedule's keyboard-open check, can miss its keypress when forty copies of it run at once on six workers (it also did before Phase 11); on its own it passed 30 of 30 |
 | Repeats for flakiness | session flows, navigation, search, payments and financial transitions, quotes and invoices, Settings and the unsaved-changes guard, Website, Marketplace, Marketing, plans, jobs, reviews, bookings and schedule ×3 (1101 runs); responsive shell, dates and time zones, accessibility, route crawl and invariants ×2 (1128 runs). No failure in any. Phase 9: the SaaS specs, Settings, shell, session flows, navigation, Schedule, dates and search ×3 (927 runs), no failure. One existing test (Schedule: opening an event by keyboard) failed about once in thirty when run in parallel hundreds of times, because the address now changes only after a server round trip; it waits for that explicitly |
 
 Every test runs behind a guard (`e2e/fixtures.ts`) that fails it on any console error, console warning (hydration mismatches included) or uncaught page error.
@@ -232,13 +232,13 @@ The code is arranged so these are the only places that change:
 | Reading records | `src/data/*` exports typed arrays and selectors that accept the data as an argument | Replace the arrays with fetched data; the selectors already work on any `…Data` value passed in |
 | Changing records | `src/lib/*-state.ts` pure functions: `(data, input) → next data` | Each is one API mutation; the provider keeps calling it optimistically or replaces it with a server call |
 | Holding state | `components/*/…Provider.tsx` (React state, ref for synchronous reads) | Swap for a data-fetching cache; the `use…()` hooks are the only interface components use |
-| Identifiers | `nextId` and `RESERVED_BOOKING_NUMBERS` in `lib/operations-state.ts` | Server-assigned ids; the reserved number becomes a server rule |
+| Identifiers | **Done in Phase 11 for bookings and jobs:** `BK-` / `JB-` numbers are allocated per business by `app_next_number()`; `nextId` (`lib/next-id.ts`) still numbers the not-yet-migrated money records | Server-assigned ids for the rest, as bookings and jobs have them |
 | Business facts | **Done in Phase 9:** `SettingsProvider` is fed by PostgreSQL through `resolveWorkspace()` and saves through Server Actions | Settings stays the single owner |
-| The clock | `PROTOTYPE_TODAY` / `PROTOTYPE_NOW` | A business-time-zone "now"; formatters already take business-local strings |
+| The clock | **Done in Phase 11 for operations:** `useClock()` (the business's own "today", computed on the server); the not-yet-migrated modules still use `PROTOTYPE_TODAY` / `PROTOTYPE_NOW` | A business-time-zone "now" for the rest; formatters already take business-local strings |
 | Sign-in and roles | **Done in Phase 9:** Better Auth + `organization_memberships` (owner / admin / member) | The Team module's own permissions still become enforced when Team moves to the database |
 | Public pages | `src/app/(site)`: the Website and Marketplace renderers read the same providers | Render per tenant from stored content; the renderers take content as props |
 | Sending and billing | Record-only actions in `reviews-state`, `marketing-state`, `financial-state` | Server-side delivery and a payment processor behind the same actions |
-| Files | Name and size in `operations-state.addJobFiles` | Upload to storage and keep the reference |
+| Files | Photo **metadata** is stored (`job_files`); a file chosen in the browser lives for the visit only (`OperationsProvider.addSessionFiles`) | Upload to storage and keep the reference in `job_files.storage_key` |
 | Reports | `lib/report-export.ts` builds CSV and a PDF in the browser | Keep, or generate server-side from the same model |
 
 The pure-function shape means a backend can be introduced one module at a time without touching the screens.

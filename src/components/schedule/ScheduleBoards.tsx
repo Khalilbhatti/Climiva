@@ -6,7 +6,6 @@ import { useSettings } from "@/components/settings/SettingsProvider";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
-import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import {
   EVENT_STATUS_LABEL,
   getPartyName,
@@ -27,6 +26,7 @@ import {
   weekdayIndex,
 } from "@/lib/dates";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useClock } from "@/components/workspace/WorkspaceProvider";
 
 /** Left accent colour per status, matching the StatusBadge tones. */
 const STATUS_ACCENT: Record<ScheduleEventStatus, string> = {
@@ -47,12 +47,13 @@ type BoardProps = {
 export function WeekBoard({ date, events, selectedId, onSelect }: BoardProps & { date: string }) {
   // A day is closed when the saved business hours say so.
   const { hours } = useSettings().settings;
+  const clock = useClock();
   return (
     <ol aria-label="Week schedule" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-7">
       {weekDates(date).map((day) => {
         const dayEvents = events.filter((event) => event.date === day);
         const closed = hours[weekdayIndex(day)] === null;
-        const today = day === PROTOTYPE_TODAY;
+        const today = day === clock.today;
 
         return (
           <li
@@ -306,7 +307,8 @@ function TimelineBlock({
 
 /* ───────────────────────── unassigned ───────────────────────── */
 
-type UnassignedProps = { events: WorkEvent[]; onAssign: (event: WorkEvent) => void };
+/** `onAssign` is left out for someone who may not assign (a member): the list is then information only. */
+type UnassignedProps = { events: WorkEvent[]; onAssign?: (event: WorkEvent) => void };
 
 /** Confirmed work that still needs a technician. Assigning is a button, not a drag. */
 export function UnassignedPanel({ events, onAssign }: UnassignedProps) {
@@ -335,9 +337,11 @@ export function UnassignedPanel({ events, onAssign }: UnassignedProps) {
                 <Clock aria-hidden className="size-3" />
                 {formatTimeRange(event.start, event.end)}
               </p>
-              <Button size="sm" className="mt-2" onClick={() => onAssign(event)} aria-label={`Assign technician to ${getPartyName(event, dir)}`}>
-                Assign
-              </Button>
+              {onAssign && (
+                <Button size="sm" className="mt-2" onClick={() => onAssign(event)} aria-label={`Assign technician to ${getPartyName(event, dir)}`}>
+                  Assign
+                </Button>
+              )}
             </li>
           ))}
         </ul>
@@ -362,9 +366,11 @@ export function UnassignedBanner({ events, onAssign }: UnassignedProps) {
             <span className="text-ink">
               {getPartyName(event, dir)} <span className="text-ink-muted">({formatMonthDay(event.date)})</span>
             </span>
-            <Button size="sm" onClick={() => onAssign(event)} aria-label={`Assign technician to ${getPartyName(event, dir)}`}>
-              Assign
-            </Button>
+            {onAssign && (
+              <Button size="sm" onClick={() => onAssign(event)} aria-label={`Assign technician to ${getPartyName(event, dir)}`}>
+                Assign
+              </Button>
+            )}
           </li>
         ))}
       </ul>

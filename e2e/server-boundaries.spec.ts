@@ -7,8 +7,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { expect, test } from "playwright/test";
-import { NORTHSTAR_CUSTOMERS, NORTHSTAR_SERVICES, NORTHSTAR_TEAM } from "../scripts/db/seed-data/northstar";
-import { CUSTOMERS, PROPERTIES, SERVICES, TEAM } from "./apex-data";
+import { NORTHSTAR_CUSTOMERS, NORTHSTAR_OPERATIONS, NORTHSTAR_SERVICES, NORTHSTAR_TEAM } from "../scripts/db/seed-data/northstar";
+import { BOOKINGS, CUSTOMERS, JOBS, PROPERTIES, SERVICES, TEAM } from "./apex-data";
 
 const ROOT = process.cwd();
 const SRC = join(ROOT, "src");
@@ -73,9 +73,10 @@ test.describe("nothing server-only reaches the browser", () => {
     }
   });
 
-  test("no customer, property, Service or team record is compiled into the browser's JavaScript", () => {
-    // The foundations are read from PostgreSQL for the verified business and sent to that business's browser only. Their seed
-    // lives in scripts/db/seed-data, which nothing under src imports; this checks the built result, where a stray import would show.
+  test("no customer, property, Service, team, booking or job record is compiled into the browser's JavaScript", () => {
+    // The foundations and the operations are read from PostgreSQL for the verified business and sent to that business's browser
+    // only. Their seed lives in scripts/db/seed-data, which nothing under src imports; this checks the built result, where a stray
+    // import would show.
     const staticDir = join(ROOT, ".next", "static");
     expect(existsSync(staticDir), "run a production build first (npm run build)").toBe(true);
     const bundle = walk(staticDir, (path) => path.endsWith(".js")).map(read).join("\n");
@@ -91,6 +92,25 @@ test.describe("nothing server-only reaches the browser", () => {
     ].filter(Boolean);
     expect(distinctive.length).toBeGreaterThan(30);
     expect(distinctive.filter((value) => bundle.includes(value) || bundle.includes(JSON.stringify(value).slice(1, -1)))).toEqual([]);
+
+    // The operations: the people on bookings that have no customer record, and the free text of jobs and bookings.
+    const fixtureText = walk(join(SRC, "data"), (path) => path.endsWith(".ts")).map(read).join("\n");
+    const operations = [
+      ...BOOKINGS.flatMap((booking) => [booking.contactName ?? "", booking.intake?.reportedIssue ?? "", booking.contact?.address ?? ""]),
+      ...JOBS.flatMap((job) => [
+        job.details.technicianDiagnosis ?? "",
+        job.details.workPerformed ?? "",
+        job.details.customerSummary ?? "",
+        job.details.safetyNote ?? "",
+        job.completion?.notes ?? "",
+        ...job.files.map((file) => file.caption ?? ""),
+      ]),
+      ...NORTHSTAR_OPERATIONS.bookings.flatMap((booking) => [booking.contactName ?? "", booking.contact?.email ?? "", booking.contact?.address ?? ""]),
+    ]
+      // A name that the not-yet-migrated modules' own sample records also use (Claire Dubois on a quote) legitimately ships.
+      .filter((value) => value.length > 12 && !fixtureText.includes(value));
+    expect(operations.length).toBeGreaterThan(20);
+    expect(operations.filter((value) => bundle.includes(value) || bundle.includes(JSON.stringify(value).slice(1, -1)))).toEqual([]);
   });
 
   test("no secret is exposed to the browser through NEXT_PUBLIC_ variables", () => {
@@ -111,12 +131,12 @@ test.describe("every Server Action authorizes its caller", () => {
       const source = read(path);
       const exported = [...source.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)];
       expect(exported.length, `${posix(path)} exports no actions`).toBeGreaterThan(0);
-      // team.ts routes every write through one helper whose first step is the authorization; it is checked below.
-      const helper = /async function change<[\s\S]*?\n}\n/.exec(source)?.[0];
+      // team.ts and operations.ts route every write through one helper whose first step is the authorization; it is checked below.
+      const helper = /async function (?:change|mutate)<[\s\S]*?\n}\n/.exec(source)?.[0];
       for (const [, name, body] of exported) {
         if (exempt.has(name)) continue;
         const direct = CHECKS.test(body);
-        const viaHelper = helper !== undefined && /\bchange\(/.test(body) && /await authorize\(/.test(helper);
+        const viaHelper = helper !== undefined && /\b(?:change|mutate)\(/.test(body) && /await authorize\(/.test(helper);
         expect(direct || viaHelper, `${name} in ${posix(path)} does not check the session`).toBe(true);
       }
     }
@@ -135,16 +155,26 @@ test.describe("every Server Action authorizes its caller", () => {
     }
   });
 
-  test("Services and Team writes need the owner/admin capability, and customer reads need a verified member", () => {
+  test("Services, Team and operations writes need the owner/admin capability", () => {
     const services = read(join(SRC, "server", "actions", "services.ts"));
     expect(services.match(/authorize\("services:manage"/g)?.length).toBe(2);
     expect(services).not.toMatch(/requireMember\(/);
     const team = read(join(SRC, "server", "actions", "team.ts"));
     expect(team).toMatch(/authorize\("team:manage"/);
-    expect(read(join(SRC, "server", "actions", "customers.ts"))).toMatch(/requireMember\(/);
+    // Every booking and job write goes through the one helper that authorizes "operations:manage" first.
+    const operations = read(join(SRC, "server", "actions", "operations.ts"));
+    expect(operations.match(/authorize\("operations:manage"/g)?.length).toBe(1);
+    expect(operations).not.toMatch(/requireMember\(/);
+    const exported = [...operations.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)];
+    expect(exported.map(([, name]) => name).sort()).toEqual(
+      ["assignAction", "cancelBookingAction", "completeJobAction", "confirmBookingAction", "createBookingAction", "createJobAction", "setFileVisibilityAction", "startJobAction", "updateJobDetailsAction"].sort(),
+    );
+    // Each one hands everything it does to mutate(): nothing is parsed, looked up or written before the caller is authorized.
+    for (const [, name, body] of exported) expect(/>\s\{\s+return mutate\(/.test(body), `${name} must start by handing everything to mutate()`).toBe(true);
     // The capabilities are decided in one place.
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"services:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"team:manage": \["owner", "admin"\]/);
+    expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"operations:manage": \["owner", "admin"\]/);
   });
 
   test("no action takes an organization id from the client and trusts it", () => {
@@ -189,17 +219,17 @@ test.describe("tenant data is never cached or prerendered", () => {
 });
 
 test.describe("every fixture-backed page checks its caller and its tenant", () => {
-  const FIXTURE_MODULES = ["analytics", "bookings", "jobs", "maintenance-plans", "marketing", "marketplace", "payments", "quotes-invoices", "reviews", "schedule", "website"];
-  /** Customers, Services and Team moved to PostgreSQL: they work for every workspace, with that workspace's own rows. */
-  const DATABASE_MODULES = ["customers", "services", "team"];
+  const FIXTURE_MODULES = ["analytics", "maintenance-plans", "marketing", "marketplace", "payments", "quotes-invoices", "reviews", "website"];
+  /** Customers, Services, Team, Bookings, Jobs and Schedule are on PostgreSQL: they work for every workspace, with that workspace's own rows. */
+  const DATABASE_MODULES = ["bookings", "customers", "jobs", "schedule", "services", "team"];
   const workspaceDir = join(SRC, "app", "(workspace)");
   const entries = FIXTURE_MODULES.flatMap((module) => walk(join(workspaceDir, module), (path) => /(page|layout)\.tsx$/.test(path)));
 
   test("the module list matches the sidebar", () => {
-    // Settings, Help and the three database-backed modules are real for every workspace; every other module folder still runs on the sample dataset and must be listed here.
+    // Settings, Help and the six database-backed modules are real for every workspace; every other module folder still runs on the sample dataset and must be listed here.
     const present = readdirSync(workspaceDir).filter((entry) => statSync(join(workspaceDir, entry)).isDirectory() && !["settings", "help", ...DATABASE_MODULES].includes(entry));
     expect(present.sort()).toEqual([...FIXTURE_MODULES].sort());
-    expect(entries.length).toBeGreaterThan(25);
+    expect(entries.length).toBeGreaterThan(15);
   });
 
   test("each page and layout calls fixtureGate() before it renders anything", () => {
@@ -212,12 +242,12 @@ test.describe("every fixture-backed page checks its caller and its tenant", () =
     expect(missing).toEqual([]);
   });
 
-  test("Customers, Services and Team read the database for the verified workspace: no sample gate, no sample data", () => {
+  test("Customers, Services, Team, Bookings, Jobs and Schedule read the database for the verified workspace: no sample gate, no sample data", () => {
     const pages = DATABASE_MODULES.flatMap((module) => walk(join(workspaceDir, module), (path) => /(page|layout)\.tsx$/.test(path)));
-    expect(pages.length).toBeGreaterThan(15);
+    expect(pages.length).toBeGreaterThan(20);
     const ASKS_THE_SERVER = /await requireWorkspaceContext\(\)|await getCustomerBook\(\)|await getCustomerDetail\(|await getServices\(\)|await getTeam\(\)/;
     expect(pages.filter((path) => !ASKS_THE_SERVER.test(read(path))).map(posix), "pages that do not verify the workspace next to their data").toEqual([]);
-    expect(pages.filter((path) => /fixtureGate|hasSampleDataAccess|@\/data\/(operations|financials|fixtures)/.test(read(path))).map(posix)).toEqual([]);
+    expect(pages.filter((path) => /fixtureGate|hasSampleDataAccess|@\/data\/(financials|fixtures)/.test(read(path))).map(posix)).toEqual([]);
     // A record is asked for by its reference, and the answer for one the active business does not have is "not found".
     for (const file of [
       "customers/[customerId]/layout.tsx",

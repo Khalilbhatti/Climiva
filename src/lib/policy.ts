@@ -6,17 +6,20 @@
  * server allows. Every server action asks `can(...)`, the pages read the same answers from the workspace snapshot to
  * disable what the person may not use, and PostgreSQL's Row Level Security enforces the owner/admin rule a third time.
  *
- * Today owners and admins change the business's settings, Services and Team; members read everything they can see.
+ * Today owners and admins change the business's settings, Services, Team and operations (bookings, jobs, assignments);
+ * members read everything they can see.
  * (Customers have no editing flow yet; when one ships it gets a capability here and a matching database policy.)
  */
 import type { OrganizationRole } from "./workspace-types";
 
-export type Capability = "settings:manage" | "services:manage" | "team:manage";
+export type Capability = "settings:manage" | "services:manage" | "team:manage" | "operations:manage";
 
 const GRANTS: Record<Capability, readonly OrganizationRole[]> = {
   "settings:manage": ["owner", "admin"],
   "services:manage": ["owner", "admin"],
   "team:manage": ["owner", "admin"],
+  // Bookings, Jobs, assignments and the Schedule. Members read them.
+  "operations:manage": ["owner", "admin"],
 };
 
 export const CAPABILITIES = Object.keys(GRANTS) as Capability[];

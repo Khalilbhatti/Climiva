@@ -75,15 +75,3 @@ export function createPlan(data: PlansData, input: NewPlanInput, customerSlug: s
   };
   return { data: { ...data, plans: [...data.plans, plan] }, plan };
 }
-
-/** Records which Booking schedules a visit. The Booking itself is created through the operations state. */
-export function linkVisitToBooking(data: PlansData, planId: string, visitId: string, bookingId: string): PlansData {
-  return {
-    ...data,
-    plans: data.plans.map((plan) =>
-      plan.id === planId
-        ? { ...plan, visits: plan.visits.map((visit) => (visit.id === visitId ? { ...visit, bookingId } : visit)) }
-        : plan,
-    ),
-  };
-}

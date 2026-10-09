@@ -10,7 +10,7 @@
  * No `server-only` import on purpose: scripts and tests use these too. Nothing under src/ that is a Client Component may
  * import this file (a test enforces it).
  */
-import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { Customer, CustomerBook, Equipment, Property } from "@/data/customers";
 import type { Service } from "@/data/services";
 import type { Role, TeamData, TeamMember } from "@/data/team";
@@ -129,40 +129,6 @@ export async function loadCustomerDetail(tx: Tx, organizationId: string, slug: s
     .orderBy(asc(customerNotes.position));
   const book = assembleBook({ customerRows, propertyRows, equipmentRows, noteRows });
   return { customer: book.customers[0], properties: book.properties, equipment: book.equipment };
-}
-
-export type CustomerHit = { customer: Customer; property: Property | undefined };
-
-/** Customers whose name, phone, email or primary address contains `query` (case-insensitive). At most `limit`. */
-export async function searchCustomers(tx: Tx, organizationId: string, query: string, limit = 20): Promise<CustomerHit[]> {
-  // % and _ are wildcards in LIKE: a person typing them means the characters.
-  const pattern = `%${query.trim().replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
-  const matches = await tx
-    .select({ id: customers.id })
-    .from(customers)
-    .leftJoin(
-      customerProperties,
-      and(eq(customerProperties.organizationId, customers.organizationId), eq(customerProperties.customerId, customers.id), eq(customerProperties.isPrimary, true)),
-    )
-    .where(
-      and(
-        eq(customers.organizationId, organizationId),
-        or(
-          ilike(customers.name, pattern),
-          ilike(customers.phone, pattern),
-          ilike(customers.email, pattern),
-          ilike(sql`concat_ws(', ', ${customerProperties.addressLine1}, ${customerProperties.city}, ${customerProperties.stateRegion}, ${customerProperties.postalCode})`, pattern),
-        ),
-      ),
-    )
-    .orderBy(asc(customers.position))
-    .limit(limit);
-  if (matches.length === 0) return [];
-  const ids = matches.map((match) => match.id);
-  const customerRows = await tx.select().from(customers).where(and(eq(customers.organizationId, organizationId), inArray(customers.id, ids))).orderBy(asc(customers.position));
-  const propertyRows = await tx.select().from(customerProperties).where(and(eq(customerProperties.organizationId, organizationId), inArray(customerProperties.customerId, ids))).orderBy(asc(customerProperties.position));
-  const book = assembleBook({ customerRows, propertyRows, equipmentRows: [], noteRows: [] });
-  return book.customers.map((customer) => ({ customer, property: book.properties.find((property) => property.id === customer.propertyIds[0]) }));
 }
 
 /** Seed and tests: write a customer book (customers, notes, properties, equipment). Not used by the application. */

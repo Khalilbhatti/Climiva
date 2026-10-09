@@ -26,7 +26,7 @@
  */
 import { addDays } from "@/lib/dates";
 import { PROTOTYPE_TODAY } from "./fixtures";
-import { getBookingById, type Booking, type OperationsData } from "./operations";
+import type { Booking, OperationsData } from "./operations";
 
 /* ───────────────────────── types ───────────────────────── */
 
@@ -72,8 +72,6 @@ export type PlanVisit = {
   /** Fulfilled before this prototype's records; later completions come from the visit's Booking. */
   completed?: boolean;
   completedOn?: string;
-  /** The Booking that schedules this visit (the Booking points back with `planVisit`). */
-  bookingId?: string;
 };
 
 export type MaintenancePlan = {
@@ -308,10 +306,12 @@ export const VISIT_STATE_LABEL: Record<VisitState, string> = {
   "not-scheduled": "Not scheduled",
 };
 
-/** The visit's Booking, unless that Booking was cancelled (the visit is then open to book again). */
+/**
+ * The visit's Booking: the stored Booking whose `planVisit` points at this visit, unless it was cancelled (the visit is then
+ * open to book again). The plan holds no pointer of its own, so what the plan shows is always what is stored.
+ */
 export function getVisitBooking(visit: PlanVisit, ops: OperationsData): Booking | undefined {
-  const booking = visit.bookingId ? getBookingById(visit.bookingId, ops) : undefined;
-  return booking && booking.status !== "cancelled" ? booking : undefined;
+  return ops.bookings.find((booking) => booking.planVisit?.visitId === visit.id && booking.status !== "cancelled");
 }
 
 export function getVisitState(visit: PlanVisit, ops: OperationsData): VisitState {

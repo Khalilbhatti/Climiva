@@ -16,12 +16,11 @@ import {
 import { FINANCIALS, INVOICES, QUOTES, getInvoicesForQuote } from "../src/data/financials";
 import { overviewMetrics } from "../src/data/fixtures";
 import { PLANS_DATA, getPlanMetrics } from "../src/data/maintenance-plans";
-import { OPERATIONS } from "../src/data/operations";
 import { buildAnalytics, formatRange, hasActivity, isReportPeriod, resolveRange, validateCustomRange } from "../src/lib/analytics-state";
 import { createInvoiceFromQuote, recordPayment, voidPayment } from "../src/lib/financial-state";
-import { completeJob, startJob } from "../src/lib/operations-state";
 import { buildReport, reportFileName, toCsv, toPdf } from "../src/lib/report-export";
-import { SERVICES } from "./apex-data";
+import { OPERATIONS, SERVICES } from "./apex-data";
+import { completedJob } from "./operations-edits";
 
 const sum = (values: readonly number[]) => values.reduce((total, value) => total + value, 0);
 const baseline = () => buildAnalytics(FINANCIALS, PLANS_DATA, OPERATIONS, SERVICES);
@@ -115,7 +114,7 @@ test.describe("what follows the session", () => {
   });
 
   test("Bookings, Jobs, Quotes, the chart and the Service table are aggregates: working jobs does not move them", () => {
-    const worked = completeJob(startJob(OPERATIONS, "JB-201"), "JB-201", "Done.");
+    const worked = completedJob(OPERATIONS, "JB-201", "Done.");
     const model = buildAnalytics(FINANCIALS, PLANS_DATA, worked, SERVICES);
     const before = baseline();
     expect(model.kpis).toEqual(before.kpis);

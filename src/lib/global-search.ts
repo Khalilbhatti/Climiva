@@ -1,8 +1,7 @@
 /**
  * The top-bar search: finds Customers, Jobs, Bookings and Schedule entries by what a person would type to look them
- * up, from the same records the modules show, so it follows whatever has happened this session. It owns no records
- * and builds no index; it is a pure function of the data it is given. A business that is not on the sample operations data
- * has no Jobs, Bookings or Schedule to search; its Customers are searched in PostgreSQL by actions/customers.ts instead.
+ * up, from the same records the modules show, so it follows whatever has been saved. It owns no records and builds no
+ * index; it is a pure function of the data it is given, and that data is the active business's own, read from PostgreSQL.
  */
 import type { AppHref } from "@/config/routes";
 import { formatPropertyAddress, getPrimaryProperty, getPropertyById } from "@/data/customers";

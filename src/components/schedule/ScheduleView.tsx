@@ -3,17 +3,17 @@
 import { useState } from "react";
 import type { Route } from "next";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { AssignDialog } from "@/components/operations/AssignDialog";
 import { useOperations } from "@/components/operations/OperationsProvider";
 import { useTimeZoneLabel } from "@/components/settings/SettingsProvider";
-import { Button } from "@/components/ui/Button";
+import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Select } from "@/components/ui/Select";
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
-import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import {
   getPartyName,
   getScheduleEvents,
@@ -27,6 +27,7 @@ import { addDays, formatLongDate, formatTimeRange, formatWeekdayDate, formatWeek
 import { EventDetails } from "./EventDetails";
 import { DayTimeline, UnassignedBanner, UnassignedPanel, WeekBoard } from "./ScheduleBoards";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useCan, useClock } from "@/components/workspace/WorkspaceProvider";
 
 type View = "day" | "week";
 
@@ -36,13 +37,15 @@ export function ScheduleView() {
   const { data: team } = useTeam();
   const { toast } = useToast();
   const timeZone = useTimeZoneLabel();
+  const { today } = useClock();
+  const canManage = useCan("operations:manage");
   const router = useRouter();
   const params = useSearchParams();
 
   // View, date and selected event live in the URL so a schedule position can be linked to.
   const view: View = params.get("view") === "day" ? "day" : "week";
   const dateParam = params.get("date");
-  const date = isValidDate(dateParam) ? dateParam : PROTOTYPE_TODAY;
+  const date = isValidDate(dateParam) ? dateParam : today;
   const selectedId = params.get("event");
 
   const [technician, setTechnician] = useState("all");
@@ -78,7 +81,7 @@ export function ScheduleView() {
     : undefined;
   const step = view === "day" ? 1 : 7;
   const weekStart = startOfWeek(date);
-  const isCurrent = view === "day" ? date === PROTOTYPE_TODAY : startOfWeek(PROTOTYPE_TODAY) === weekStart;
+  const isCurrent = view === "day" ? date === today : startOfWeek(today) === weekStart;
   // Timeline rows: everyone who can take work, plus anyone no longer assignable (deactivated) who still has
   // work on the days shown, so history is never hidden.
   const worksInView = (id: string) =>
@@ -98,9 +101,9 @@ export function ScheduleView() {
   }
 
   const select = (event: ScheduleEvent) => setParams({ event: event.id });
-  const goTo = (target: string) => setParams({ date: target === PROTOTYPE_TODAY ? null : target, event: null });
+  const goTo = (target: string) => setParams({ date: target === today ? null : target, event: null });
 
-  const heading = view === "day" ? `${date === PROTOTYPE_TODAY ? "Today, " : ""}${formatLongDate(date)}` : formatWeekRange(weekStart);
+  const heading = view === "day" ? `${date === today ? "Today, " : ""}${formatLongDate(date)}` : formatWeekRange(weekStart);
   const details = selectedEvent ? <EventDetails event={selectedEvent} onClose={closeDetails} /> : null;
 
   return (
@@ -111,7 +114,7 @@ export function ScheduleView() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1 rounded-btn border border-line p-1">
-              <Button variant="tertiary" size="sm" onClick={() => goTo(PROTOTYPE_TODAY)} disabled={isCurrent && !dateParam}>
+              <Button variant="tertiary" size="sm" onClick={() => goTo(today)} disabled={isCurrent && !dateParam}>
                 Today
               </Button>
               <button
@@ -193,10 +196,25 @@ export function ScheduleView() {
         </div>
       </Card>
 
+      {allEvents.length === 0 && (
+        <EmptyState
+          icon={CalendarDays}
+          title="Nothing is scheduled yet"
+          description="Confirmed bookings and jobs appear here as soon as they exist."
+          action={
+            canManage ? (
+              <ButtonLink href="/bookings?new=1" size="lg">
+                Create a booking
+              </ButtonLink>
+            ) : undefined
+          }
+        />
+      )}
+
       <div role="tabpanel" id={`schedule-panel-${view}`} aria-labelledby={`schedule-tab-${view}`} className="space-y-4">
         {view === "week" ? (
           <>
-            <UnassignedBanner events={unassigned} onAssign={setAssigning} />
+            <UnassignedBanner events={unassigned} onAssign={canManage ? setAssigning : undefined} />
             <WeekBoard date={date} events={visibleEvents} selectedId={selectedEvent?.id ?? null} onSelect={select} />
             {details}
           </>
@@ -208,7 +226,7 @@ export function ScheduleView() {
                 : "grid grid-cols-[minmax(0,1fr)] items-start gap-5 xl:grid-cols-[14rem_minmax(0,1fr)]"
             }
           >
-            <UnassignedPanel events={unassigned} onAssign={setAssigning} />
+            <UnassignedPanel events={unassigned} onAssign={canManage ? setAssigning : undefined} />
             <div className="space-y-3">
               <DayTimeline events={visibleEvents} members={members} selectedId={selectedEvent?.id ?? null} onSelect={select} />
               <p className="text-xs text-ink-muted">Select any block to see its details.</p>
@@ -223,8 +241,9 @@ export function ScheduleView() {
           description={`${getServiceNameFor(assigning, dir)} for ${getPartyName(assigning, dir)} · ${formatWeekdayDate(assigning.date)}, ${formatTimeRange(assigning.start, assigning.end)}`}
           currentAssigneeId={assigning.assigneeId}
           onClose={() => setAssigning(null)}
-          onAssign={(memberId) => {
-            assign({ bookingId: assigning.bookingId, jobId: assigning.jobId }, memberId);
+          onAssign={async (memberId) => {
+            const result = await assign({ bookingId: assigning.bookingId, jobId: assigning.jobId }, memberId);
+            if (!result.ok) return result.error;
             setAssigning(null);
             toast(memberId ? `${getPartyName(assigning, dir)} assigned.` : `${getPartyName(assigning, dir)} is unassigned.`);
           }}

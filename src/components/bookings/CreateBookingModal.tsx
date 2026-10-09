@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CircleCheck } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { useOperations } from "@/components/operations/OperationsProvider";
 import { useSettings } from "@/components/settings/SettingsProvider";
 import { useTeam } from "@/components/team/TeamProvider";
@@ -20,7 +21,6 @@ import {
   getPropertiesForCustomer,
   getPropertyById,
 } from "@/data/customers";
-import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import { OFFLINE_BOOKING_SOURCES, type Booking, type BookingSource } from "@/data/operations";
 import {
   BOOKING_METHOD_ARRIVAL,
@@ -33,6 +33,7 @@ import { getAssignableMembers, getTeamMemberById } from "@/data/team";
 import { getSlotGroup } from "@/lib/booking-slots";
 import { addDays, formatLongDate, formatTime, formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useClock } from "@/components/workspace/WorkspaceProvider";
 
 const STEPS = [
   { id: "customer", label: "Customer" },
@@ -67,8 +68,8 @@ type CreateBookingModalProps = {
 
 /**
  * The one Create booking flow. Overview's "New booking" and the Bookings page both open this
- * (via /bookings?new=1); there is no second implementation. Nothing is saved until the last step,
- * and the booking only joins this session's in-memory data.
+ * (via /bookings?new=1); there is no second implementation. Nothing is saved until the last step: then the server checks the
+ * customer, property, service, technician and time against the active business's records, numbers the booking and stores it.
  */
 export function CreateBookingModal({ presetCustomerId, onClose, onFinished }: CreateBookingModalProps) {
   const dir = useDirectory();
@@ -76,19 +77,22 @@ export function CreateBookingModal({ presetCustomerId, onClose, onFinished }: Cr
   const { data: team } = useTeam();
   const { hours } = useSettings().settings;
   const router = useRouter();
+  const { today } = useClock();
 
   const preset = presetCustomerId ? getCustomerById(presetCustomerId, dir) : undefined;
   const [draft, setDraft] = useState<Draft>({
     customerId: preset?.id,
     propertyId: preset?.propertyIds[0],
     source: "Phone / Front desk",
-    date: PROTOTYPE_TODAY,
+    date: today,
     assignee: LATER,
     notes: "",
   });
   const [stepIndex, setStepIndex] = useState(0);
   const [showErrors, setShowErrors] = useState(false);
   const [created, setCreated] = useState<Booking | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string>();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
 
@@ -96,7 +100,7 @@ export function CreateBookingModal({ presetCustomerId, onClose, onFinished }: Cr
   const customer = draft.customerId ? getCustomerById(draft.customerId, dir) : undefined;
   const properties = customer ? getPropertiesForCustomer(customer.id, dir) : [];
   const service = draft.serviceId ? getServiceById(draft.serviceId, dir.services) : undefined;
-  const slotGroup = service ? getSlotGroup(service.bookingMethod, draft.date, service.durationMinutes, hours) : undefined;
+  const slotGroup = service ? getSlotGroup(service.bookingMethod, draft.date, service.durationMinutes, hours, today) : undefined;
   const slot = slotGroup?.slots.find((candidate) => candidate.id === draft.slotId && candidate.available);
 
   const errors: Errors = {};
@@ -134,9 +138,11 @@ export function CreateBookingModal({ presetCustomerId, onClose, onFinished }: Cr
     setStepIndex((index) => index + 1);
   }
 
-  function create() {
-    if (!customer || !service || !slot) return;
-    const booking = createBooking({
+  async function create() {
+    if (!customer || !service || !slot || saving) return;
+    setSaving(true);
+    setProblem(undefined);
+    const result = await createBooking({
       customerId: customer.id,
       propertyId: draft.propertyId,
       serviceId: service.id,
@@ -147,7 +153,9 @@ export function CreateBookingModal({ presetCustomerId, onClose, onFinished }: Cr
       assigneeId: draft.assignee === LATER ? undefined : draft.assignee,
       internalNotes: draft.notes,
     });
-    setCreated(booking);
+    setSaving(false);
+    if (!result.ok) return setProblem(result.error);
+    setCreated(result.data.booking);
   }
 
   /* ───────── success ───────── */
@@ -204,9 +212,9 @@ export function CreateBookingModal({ presetCustomerId, onClose, onFinished }: Cr
   /* ───────── wizard ───────── */
   const isLast = stepIndex === STEPS.length - 1;
   const dateOptions = [
-    { label: "Today", date: PROTOTYPE_TODAY },
-    { label: "Tomorrow", date: addDays(PROTOTYPE_TODAY, 1) },
-    { label: "In 2 days", date: addDays(PROTOTYPE_TODAY, 2) },
+    { label: "Today", date: today },
+    { label: "Tomorrow", date: addDays(today, 1) },
+    { label: "In 2 days", date: addDays(today, 2) },
   ];
 
   return (
@@ -232,7 +240,13 @@ export function CreateBookingModal({ presetCustomerId, onClose, onFinished }: Cr
               Back
             </Button>
           )}
-          {isLast ? <Button onClick={create}>Create booking</Button> : <Button onClick={next}>Next: {STEPS[stepIndex + 1].label}</Button>}
+          {isLast ? (
+            <Button onClick={create} disabled={saving}>
+              {saving ? "Creating…" : "Create booking"}
+            </Button>
+          ) : (
+            <Button onClick={next}>Next: {STEPS[stepIndex + 1].label}</Button>
+          )}
         </>
       }
     >
@@ -368,7 +382,7 @@ export function CreateBookingModal({ presetCustomerId, onClose, onFinished }: Cr
                 <input
                   id="booking-date"
                   type="date"
-                  min={PROTOTYPE_TODAY}
+                  min={today}
                   value={draft.date}
                   onChange={(event) => event.target.value && update({ date: event.target.value, slotId: undefined })}
                   className="rounded-btn border border-line bg-canvas px-3 py-2 text-sm text-ink focus:bg-surface focus:ring-2 focus:ring-primary focus:outline-none"
@@ -469,6 +483,7 @@ export function CreateBookingModal({ presetCustomerId, onClose, onFinished }: Cr
             {draft.notes.trim() && <span className="block text-xs font-normal text-ink-muted">“{draft.notes.trim()}”</span>}
           </ReviewRow>
           <p className="text-xs text-ink-muted">This booking will be added directly to your schedule and booking records.</p>
+          {problem && <FormAlert>{problem}</FormAlert>}
         </div>
       )}
     </Modal>

@@ -19,7 +19,7 @@ import {
   type PaymentMethod,
   type PaymentTerms,
 } from "@/data/financials";
-import { nextId } from "./operations-state";
+import { nextId } from "./next-id";
 
 /** Every demo change is made by the signed-in user. */
 const ACTOR_ID = "alex-morgan";

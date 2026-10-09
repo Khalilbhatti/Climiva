@@ -3,10 +3,12 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { and, asc, eq } from "drizzle-orm";
+import { PROTOTYPE_NOW } from "@/data/fixtures";
 import { initialSettings, type SettingsData } from "@/data/settings";
 import { businessFromOrganization, preferencesFromOrganization, weeklyHoursFromRows } from "@/db/settings-mappers";
 import { organizationBusinessHours, organizationMemberships, organizations, profiles, type OrganizationRow } from "@/db/schema";
 import { withTenant, withUser } from "@/db/tenant";
+import { businessClock } from "@/lib/business-time";
 import { can, capabilitiesOf } from "@/lib/policy";
 import { ROLE_LABEL, SAMPLE_DATA_SET, type OrganizationRole, type WorkspaceSnapshot } from "@/lib/workspace-types";
 import { getSessionUser, type SessionUser } from "./session";
@@ -105,6 +107,7 @@ export const resolveWorkspace = cache(async (): Promise<WorkspaceState> => {
         canEditSettings: can(role, "settings:manage"),
         capabilities: capabilitiesOf(role),
         settings,
+        clock: businessClock(hasSampleData, active.organization.timezone, PROTOTYPE_NOW),
       },
     },
   };

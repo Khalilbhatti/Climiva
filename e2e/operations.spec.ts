@@ -3,11 +3,7 @@ import { join } from "node:path";
 import { expect, test } from "playwright/test";
 import { formatPropertyAddress, getCustomerById, getPropertyById } from "../src/data/customers";
 import {
-  BOOKINGS,
   BOOKING_TABS,
-  JOBS,
-  OPERATIONS,
-  SCHEDULE_BLOCKS,
   getAssigneeName,
   getBookingById,
   getBookingsForCustomer,
@@ -18,7 +14,6 @@ import {
   getScheduleEventsForDate,
   getServiceNameFor,
   getUnassignedEvents,
-  type OperationsData,
 } from "../src/data/operations";
 import { PROTOTYPE_NOW, PROTOTYPE_TODAY, BUSINESS_TIME_ZONE, business, businessHoursByWeekday, overviewMetrics } from "../src/data/fixtures";
 import { getServiceById } from "../src/data/services";
@@ -26,23 +21,30 @@ import { getTeamMemberById } from "../src/data/team";
 import { getSlotGroup } from "../src/lib/booking-slots";
 import { addDays, formatLongDate, formatTime, formatTimeRange, startOfWeek, weekDates, weekdayIndex } from "../src/lib/dates";
 import {
-  addJobFiles,
-  assign,
-  cancelBooking,
-  completeJob,
-  confirmBooking,
-  createBooking,
-  createJobForBooking,
-  nextId,
-  setFileVisibility,
-  startJob,
-  updateJobDetails,
-} from "../src/lib/operations-state";
-import { BOOK, CUSTOMERS, DIR, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
+  RESERVED_BOOKING_NUMBERS,
+  assignBookingError,
+  assignJobError,
+  assignableError,
+  bookingReference,
+  cancelError,
+  completeJobError,
+  confirmError,
+  createJobError,
+  detailsError,
+  initialBookingStatus,
+  jobReference,
+  numberOf,
+  parseCompletionNotes,
+  parseDetailsPatch,
+  parseNewBooking,
+  parseReason,
+  slotError,
+  slugOf,
+  startJobError,
+} from "../src/lib/operations-rules";
+import { BOOK, BOOKINGS, CUSTOMERS, DIR, JOBS, OPERATIONS, SCHEDULE_BLOCKS, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
 
-// Pure data/selector/state tests: no browser needed.
-
-const snapshot = () => JSON.stringify(OPERATIONS);
+// Pure data/selector/rules tests: no browser needed.
 
 test.describe("operational fixtures reference the shared records", () => {
   test("every booking resolves its customer or snapshot name, property, service and technician", () => {
@@ -69,7 +71,7 @@ test.describe("operational fixtures reference the shared records", () => {
       if (job.assigneeId) expect(getTeamMemberById(job.assigneeId, TEAM_DATA), `${job.id}: assignee`).toBeDefined();
 
       if (!job.bookingId) continue;
-      const booking = getBookingById(job.bookingId);
+      const booking = getBookingById(job.bookingId, OPERATIONS);
       expect(booking, `${job.id}: booking`).toBeDefined();
       expect(booking!.jobId, `${job.id}: booking points back`).toBe(job.id);
       expect(
@@ -87,7 +89,7 @@ test.describe("operational fixtures reference the shared records", () => {
     }
     // Every booking that names a job has that job.
     for (const booking of BOOKINGS.filter((item) => item.jobId)) {
-      expect(getJobById(booking.jobId!)?.bookingId, `${booking.id}: job points back`).toBe(booking.id);
+      expect(getJobById(booking.jobId!, OPERATIONS)?.bookingId, `${booking.id}: job points back`).toBe(booking.id);
     }
   });
 
@@ -99,21 +101,21 @@ test.describe("operational fixtures reference the shared records", () => {
   });
 
   test("JB-204 belongs to Sarah Mitchell, AC Repair & Diagnostics, 1402 Kinney Ave", () => {
-    const job = getJobById("JB-204")!;
+    const job = getJobById("JB-204", OPERATIONS)!;
     expect(getPartyName(job, DIR)).toBe("Sarah Mitchell");
     expect(getServiceNameFor(job, DIR)).toBe("AC Repair & Diagnostics");
     expect(formatPropertyAddress(getPropertyById(job.propertyId!, BOOK)!)).toBe("1402 Kinney Ave, Austin, TX 78704");
     expect(job.bookingId).toBe("BK-1042");
     expect(job.status).toBe("completed");
     expect(job.completion?.at).toBe(PROTOTYPE_NOW);
-    expect(getBookingById("BK-1042")?.status).toBe("completed");
+    expect(getBookingById("BK-1042", OPERATIONS)?.status).toBe("completed");
     expect(job.files).toHaveLength(4);
   });
 
   test("Elena Rodriguez is canonical; the stale name appears nowhere", () => {
     expect(getCustomerById("elena-rodriguez", BOOK)?.name).toBe("Elena Rodriguez");
-    expect(getPartyName(getBookingById("BK-1035")!, DIR)).toBe("Elena Rodriguez");
-    expect(getPartyName(getJobById("JB-198")!, DIR)).toBe("Elena Rodriguez");
+    expect(getPartyName(getBookingById("BK-1035", OPERATIONS)!, DIR)).toBe("Elena Rodriguez");
+    expect(getPartyName(getJobById("JB-198", OPERATIONS)!, DIR)).toBe("Elena Rodriguez");
     expect(JSON.stringify({ CUSTOMERS, BOOKINGS, JOBS })).not.toContain("Rostova");
   });
 
@@ -126,21 +128,21 @@ test.describe("operational fixtures reference the shared records", () => {
 
   test("customer 'upcoming' text agrees with the confirmed bookings", () => {
     for (const customer of CUSTOMERS.filter((item) => item.upcoming)) {
-      const match = getBookingsForCustomer(customer.id).find(
+      const match = getBookingsForCustomer(customer.id, OPERATIONS).find(
         (booking) => booking.status === "confirmed" && `${booking.date}T${booking.start}` === customer.upcoming!.at.slice(0, 16),
       );
       expect(match, `${customer.name}: confirmed booking at ${customer.upcoming!.at}`).toBeDefined();
     }
     // Sarah's last service is a real job.
-    expect(getJobById(getCustomerById("sarah-mitchell", BOOK)!.lastService!.jobId!)?.customerId).toBe("sarah-mitchell");
+    expect(getJobById(getCustomerById("sarah-mitchell", BOOK)!.lastService!.jobId!, OPERATIONS)?.customerId).toBe("sarah-mitchell");
   });
 
   test("selectors group records by customer; jobs are newest first", () => {
-    expect(getBookingsForCustomer("sarah-mitchell").map((booking) => booking.id)).toEqual(["BK-1042"]);
-    expect(getJobsForCustomer("sarah-mitchell").map((job) => job.id)).toEqual(["JB-204", "JB-142"]);
-    expect(getJobsForCustomer("david-chen").map((job) => job.id)).toEqual(["JB-201", "JB-178"]);
-    expect(getAssigneeName(getJobById("JB-204")!, DIR)).toBe("Alex Morgan");
-    expect(getAssigneeName(getJobById("JB-198")!, DIR)).toBeUndefined();
+    expect(getBookingsForCustomer("sarah-mitchell", OPERATIONS).map((booking) => booking.id)).toEqual(["BK-1042"]);
+    expect(getJobsForCustomer("sarah-mitchell", OPERATIONS).map((job) => job.id)).toEqual(["JB-204", "JB-142"]);
+    expect(getJobsForCustomer("david-chen", OPERATIONS).map((job) => job.id)).toEqual(["JB-201", "JB-178"]);
+    expect(getAssigneeName(getJobById("JB-204", OPERATIONS)!, DIR)).toBe("Alex Morgan");
+    expect(getAssigneeName(getJobById("JB-198", OPERATIONS)!, DIR)).toBeUndefined();
   });
 });
 
@@ -154,7 +156,7 @@ test.describe("team", () => {
 
 test.describe("schedule events", () => {
   test("are derived from jobs and bookings, never from pending or cancelled bookings", () => {
-    const events = getScheduleEvents();
+    const events = getScheduleEvents(OPERATIONS);
     const work = events.filter((event) => event.kind === "work");
     expect(work.map((event) => event.id)).toEqual(expect.arrayContaining(["JB-204", "JB-201", "JB-198", "JB-195", "JB-189"]));
     // BK-1041 is confirmed with no job: it appears as the booking.
@@ -167,18 +169,18 @@ test.describe("schedule events", () => {
   });
 
   test("are ordered by date and start", () => {
-    const keys = getScheduleEvents().map((event) => `${event.date}T${event.start}`);
+    const keys = getScheduleEvents(OPERATIONS).map((event) => `${event.date}T${event.start}`);
     expect(keys).toEqual([...keys].sort());
   });
 
   test("getScheduleEventsForDate returns exactly that day, with no drift", () => {
-    expect(getScheduleEventsForDate("2024-10-25").map((event) => event.id)).toEqual(["JB-186", "BLK-2", "JB-204", "JB-201", "JB-198"]);
-    expect(getScheduleEventsForDate("2024-10-27")).toEqual([]);
-    expect(getScheduleEventsForDate("2024-10-22").map((event) => event.id)).toEqual(["BLK-1"]);
+    expect(getScheduleEventsForDate("2024-10-25", OPERATIONS).map((event) => event.id)).toEqual(["JB-186", "BLK-2", "JB-204", "JB-201", "JB-198"]);
+    expect(getScheduleEventsForDate("2024-10-27", OPERATIONS)).toEqual([]);
+    expect(getScheduleEventsForDate("2024-10-22", OPERATIONS).map((event) => event.id)).toEqual(["BLK-1"]);
   });
 
   test("unassigned work is confirmed or scheduled work with no technician", () => {
-    expect(getUnassignedEvents().map((event) => event.id)).toEqual(["JB-198", "BK-1041"]);
+    expect(getUnassignedEvents(OPERATIONS).map((event) => event.id)).toEqual(["JB-198", "BK-1041"]);
   });
 });
 
@@ -256,12 +258,12 @@ test.describe("dates, times and timezone", () => {
   });
 });
 
-test.describe("in-memory state transitions", () => {
-  const input = {
+test.describe("operation rules (the checks the server runs before it writes)", () => {
+  const valid = {
     customerId: "sarah-mitchell",
     propertyId: "prop-sarah-home",
     serviceId: "annual-cooling-tune-up",
-    source: "Phone / Front desk" as const,
+    source: "Phone / Front desk",
     date: "2024-10-29",
     start: "09:00",
     end: "10:00",
@@ -269,138 +271,157 @@ test.describe("in-memory state transitions", () => {
     internalNotes: "  Gate code on file.  ",
   };
 
-  test("nextId continues after the highest id", () => {
-    expect(nextId("BK", BOOKINGS.map((booking) => booking.id))).toBe("BK-1043");
-    expect(nextId("JB", JOBS.map((job) => job.id))).toBe("JB-205");
-    expect(nextId("BK", [])).toBe("BK-1");
+  test("display numbers are BK-/JB- plus a positive integer, and nothing else is a reference", () => {
+    expect(numberOf("BK", "BK-1042")).toBe(1042);
+    expect(numberOf("JB", "JB-204")).toBe(204);
+    expect(bookingReference(1043)).toBe("BK-1043");
+    expect(jobReference(205)).toBe("JB-205");
+    for (const bad of ["JB-204", "BK-0", "BK-", "bk-1042", "BK-1042 ", "BK-1e3", "BK--1", "BK-99999999999", "", undefined, null, 1042, {}]) {
+      expect(numberOf("BK", bad), String(bad)).toBeUndefined();
+    }
+    expect(numberOf("JB", "BK-1042")).toBeUndefined();
+    // Public references of customers, services and team members are slugs.
+    expect(slugOf("sarah-mitchell")).toBe("sarah-mitchell");
+    for (const bad of ["Sarah Mitchell", "../x", "", "a".repeat(101), 5, undefined]) expect(slugOf(bad), String(bad)).toBeUndefined();
   });
 
-  test("createBooking adds a confirmed booking and never mutates the fixtures", () => {
-    const before = snapshot();
-    const { data, booking } = createBooking(OPERATIONS, input);
-    expect(booking).toMatchObject({
-      id: "BK-1043",
-      status: "confirmed",
-      customerId: "sarah-mitchell",
-      propertyId: "prop-sarah-home",
-      receivedAt: PROTOTYPE_NOW,
-      internalNotes: "Gate code on file.",
-    });
-    expect(data.bookings).toHaveLength(BOOKINGS.length + 1);
-    expect(getBookingsForCustomer("sarah-mitchell", data).map((item) => item.id)).toEqual(["BK-1042", "BK-1043"]);
-    // The new booking is on the calendar on its date, with the chosen technician.
-    expect(getScheduleEventsForDate("2024-10-29", data)).toMatchObject([{ id: "BK-1043", assigneeId: "marcus-vance", status: "confirmed" }]);
-    expect(snapshot()).toBe(before);
-    expect(OPERATIONS.bookings).toHaveLength(BOOKINGS.length);
+  test("a booking entered by staff, or for a plan, is confirmed; a customer's own request waits unless the service books instantly", () => {
+    for (const source of ["Phone / Front desk", "Email", "Walk-in", "Other", "Maintenance plan"] as const) {
+      for (const method of ["instant", "request-appointment", "request-quote"] as const) expect(initialBookingStatus(source, method), `${source} / ${method}`).toBe("confirmed");
+    }
+    for (const source of ["Website", "Booking link", "Marketplace"] as const) {
+      expect(initialBookingStatus(source, "instant"), source).toBe("confirmed");
+      expect(initialBookingStatus(source, "request-appointment"), source).toBe("pending");
+      expect(initialBookingStatus(source, "request-quote"), source).toBe("pending");
+    }
   });
 
-  test("confirm and decline/cancel only apply where they make sense", () => {
-    const confirmed = confirmBooking(OPERATIONS, "BK-1040");
-    expect(getBookingById("BK-1040", confirmed)).toMatchObject({ status: "confirmed", confirmedAt: PROTOTYPE_NOW });
-    expect(getScheduleEvents(confirmed).some((event) => event.id === "BK-1040")).toBe(true);
-
-    const declined = cancelBooking(OPERATIONS, "BK-1038", "  Outside service area.  ");
-    expect(getBookingById("BK-1038", declined)).toMatchObject({ status: "cancelled", cancellation: { reason: "Outside service area." } });
-    expect(getScheduleEvents(declined).some((event) => event.id === "BK-1038")).toBe(false);
-
-    // A booking with a job, and a booking that is already completed, cannot be cancelled.
-    expect(getBookingById("BK-1039", cancelBooking(OPERATIONS, "BK-1039", "x"))?.status).toBe("confirmed");
-    expect(getBookingById("BK-1042", cancelBooking(OPERATIONS, "BK-1042", "x"))?.status).toBe("completed");
-    expect(getBookingById("BK-1006", cancelBooking(OPERATIONS, "BK-1006", "x"))?.status).toBe("completed");
-    // Confirming something that isn't pending changes nothing.
-    expect(getBookingById("BK-1041", confirmBooking(OPERATIONS, "BK-1041"))).toEqual(getBookingById("BK-1041"));
+  test("a complete booking is understood, and its free text is trimmed", () => {
+    const parsed = parseNewBooking(valid);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.value).toMatchObject({ customerId: "sarah-mitchell", propertyId: "prop-sarah-home", serviceId: "annual-cooling-tune-up", date: "2024-10-29", internalNotes: "Gate code on file." });
   });
 
-  test("assign updates the booking and its job together", () => {
-    const viaBooking = assign(OPERATIONS, { bookingId: "BK-1035" }, "samira-patel");
-    expect(getBookingById("BK-1035", viaBooking)?.assigneeId).toBe("samira-patel");
-    expect(getJobById("JB-198", viaBooking)?.assigneeId).toBe("samira-patel");
-    expect(getUnassignedEvents(viaBooking).map((event) => event.id)).toEqual(["BK-1041"]);
-
-    const viaJob = assign(OPERATIONS, { jobId: "JB-201" }, undefined);
-    expect(getJobById("JB-201", viaJob)?.assigneeId).toBeUndefined();
-    expect(getBookingById("BK-1039", viaJob)?.assigneeId).toBeUndefined();
-    expect(getUnassignedEvents(viaJob).map((event) => event.id)).toContain("JB-201");
+  test("a booking is for a customer or for a named person, never both and never neither; a property needs its customer", () => {
+    const { customerId, propertyId, ...rest } = valid;
+    expect(customerId && propertyId).toBeTruthy();
+    expect(parseNewBooking({ ...rest, contactName: "Claire Dubois" }).ok).toBe(true);
+    expect(parseNewBooking({ ...rest }).ok).toBe(false);
+    expect(parseNewBooking({ ...valid, contactName: "Claire Dubois" }).ok).toBe(false);
+    expect(parseNewBooking({ ...rest, propertyId: "prop-sarah-home", contactName: "Claire Dubois" }).ok).toBe(false);
+    // A customer's contact details come from their record, not from the request.
+    expect(parseNewBooking({ ...valid, contact: { phone: "5125550100" } }).ok).toBe(false);
+    expect(parseNewBooking({ ...rest, contactName: "Claire Dubois", contact: { email: "not-an-email" } }).ok).toBe(false);
   });
 
-  test("createJobForBooking links a scheduled job to a confirmed booking, once", () => {
-    const { data, job } = createJobForBooking(OPERATIONS, "BK-1041");
-    expect(job).toMatchObject({
-      id: "JB-205",
-      bookingId: "BK-1041",
-      contactName: "Robert Ramirez",
-      serviceId: "furnace-safety-inspection",
-      status: "scheduled",
-      date: "2024-10-28",
-    });
-    expect(getBookingById("BK-1041", data)?.jobId).toBe("JB-205");
-    // The calendar still shows one event for the work, now keyed by the job.
-    const events = getScheduleEventsForDate("2024-10-28", data);
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ id: "JB-205", bookingId: "BK-1041" });
-
-    expect(createJobForBooking(data, "BK-1041").job).toBeUndefined(); // already has a job
-    expect(createJobForBooking(OPERATIONS, "BK-1040").job).toBeUndefined(); // pending, not confirmed
-    expect(createJobForBooking(OPERATIONS, "BK-1006").job).toBeUndefined(); // completed
+  test("malformed bookings are refused, whatever the browser sends", () => {
+    const bad: unknown[] = [
+      null,
+      "booking",
+      [],
+      { ...valid, serviceId: "Annual Cooling Tune-Up" },
+      { ...valid, serviceId: undefined },
+      { ...valid, source: "Telepathy" },
+      { ...valid, date: "2024-02-30" },
+      { ...valid, date: "10/29/2024" },
+      { ...valid, start: "9:00" },
+      { ...valid, start: "25:00" },
+      { ...valid, end: "09:00" },
+      { ...valid, end: "08:00" },
+      { ...valid, assigneeId: "Marcus Vance" },
+      { ...valid, internalNotes: "x".repeat(2001) },
+      { ...valid, organizationId: undefined, customerId: 7 },
+      { ...valid, planVisit: { planId: "p" } },
+    ];
+    for (const input of bad) expect(parseNewBooking(input).ok, JSON.stringify(input)).toBe(false);
   });
 
-  test("start and complete a job: statuses stay consistent, nothing financial is created", () => {
-    const before = snapshot();
-    const started = startJob(OPERATIONS, "JB-201");
-    expect(getJobById("JB-201", started)?.status).toBe("in-progress");
-    // JB-204 is already completed at the baseline: starting or completing it again changes nothing.
-    expect(getJobById("JB-204", startJob(OPERATIONS, "JB-204"))?.status).toBe("completed");
-    expect(completeJob(OPERATIONS, "JB-204", "again")).toBe(OPERATIONS);
-
-    const completed = completeJob(started, "JB-201", "  Replaced the run capacitor.  ");
-    expect(getJobById("JB-201", completed)).toMatchObject({
-      status: "completed",
-      completion: { notes: "Replaced the run capacitor.", at: PROTOTYPE_NOW },
-    });
-    expect(getBookingById("BK-1039", completed)?.status).toBe("completed");
-    expect(getScheduleEventsForDate("2024-10-25", completed).find((event) => event.id === "JB-201")).toMatchObject({ status: "completed" });
-    expect(getUnassignedEvents(completed).some((event) => event.id === "JB-201")).toBe(false);
-
-    // A completion only touches jobs and bookings: the data shape has no quote, invoice or payment.
-    expect(Object.keys(completed).sort()).toEqual(["blocks", "bookings", "jobs"]);
-    expect(completed.bookings).toHaveLength(BOOKINGS.length);
-    expect(completed.jobs).toHaveLength(JOBS.length);
-    expect(JSON.stringify(completed)).not.toMatch(/invoice|quote|payment/i);
-
-    // Completing again does nothing; the fixtures are untouched.
-    expect(completeJob(completed, "JB-201", "again")).toBe(completed);
-    expect(snapshot()).toBe(before);
+  test("no organization is read from the request: a stray organizationId field is ignored, never trusted", () => {
+    const parsed = parseNewBooking({ ...valid, organizationId: "00000000-0000-0000-0000-000000000000", organization_id: "x" });
+    expect(parsed.ok).toBe(true);
+    expect(JSON.stringify(parsed)).not.toContain("0000-0000");
   });
 
-  test("work details and photos update only the targeted job", () => {
-    const before = snapshot();
-    const edited = updateJobDetails(OPERATIONS, "JB-204", { internalNotes: "New note" });
-    expect(getJobById("JB-204", edited)?.details.internalNotes).toBe("New note");
-    expect(getJobById("JB-204", edited)?.details.technicianDiagnosis).toBe(getJobById("JB-204")!.details.technicianDiagnosis);
-
-    const file = { id: "file-new", name: "IMG_9999.jpg", sizeKb: 800, visibility: "internal" as const };
-    const withFile = addJobFiles(OPERATIONS, "JB-204", [file]);
-    expect(getJobById("JB-204", withFile)!.files).toHaveLength(5);
-    expect(getJobById("JB-201", withFile)!.files).toHaveLength(0);
-
-    const shared = setFileVisibility(withFile, "JB-204", "file-new", "customer");
-    expect(getJobById("JB-204", shared)!.files.find((item) => item.id === "file-new")?.visibility).toBe("customer");
-    expect(snapshot()).toBe(before);
+  test("a time is bookable only on an open day, inside the saved hours, and not in the past", () => {
+    const hours = businessHoursByWeekday;
+    const today = "2024-10-25";
+    expect(slotError("2024-10-28", "09:00", "11:00", hours, today)).toBeUndefined();
+    expect(slotError("2024-10-25", "09:00", "11:00", hours, today)).toBeUndefined();
+    expect(slotError("2024-10-24", "09:00", "11:00", hours, today)).toMatch(/already passed/);
+    expect(slotError("2024-10-27", "09:00", "11:00", hours, today)).toMatch(/closed/);
+    expect(slotError("2024-10-28", "06:00", "08:00", hours, today)).toMatch(/outside the business hours/);
+    expect(slotError("2024-10-28", "17:00", "19:00", hours, today)).toMatch(/outside the business hours/);
+    // Saturday closes at 2 PM.
+    expect(slotError("2024-10-26", "13:00", "15:00", hours, today)).toMatch(/outside the business hours/);
+    // The same rule against another business's clock: the day is "today" in ITS time zone.
+    expect(slotError("2024-10-25", "09:00", "11:00", hours, "2026-10-09")).toMatch(/already passed/);
   });
 
-  test("a state transition never mutates the data it is given", () => {
-    const start: OperationsData = JSON.parse(snapshot());
-    const frozen = JSON.stringify(start);
-    let data: OperationsData = start;
-    data = createBooking(data, input).data;
-    data = confirmBooking(data, "BK-1040");
-    data = cancelBooking(data, "BK-1038", "reason");
-    data = assign(data, { bookingId: "BK-1041" }, "alex-morgan");
-    data = createJobForBooking(data, "BK-1041").data;
-    data = startJob(data, "JB-205");
-    data = completeJob(data, "JB-205", "Done");
-    expect(data).not.toBe(start);
-    expect(JSON.stringify(start)).toBe(frozen);
+  test("confirming: only a pending request", () => {
+    expect(confirmError({ status: "pending" })).toBeUndefined();
+    expect(confirmError({ status: "confirmed" })).toMatch(/already confirmed/);
+    expect(confirmError({ status: "completed" })).toBeTruthy();
+    expect(confirmError({ status: "cancelled" })).toBeTruthy();
+  });
+
+  test("declining or cancelling: pending or confirmed, with no job, with a reason", () => {
+    expect(cancelError({ status: "pending" })).toBeUndefined();
+    expect(cancelError({ status: "confirmed" })).toBeUndefined();
+    expect(cancelError({ status: "confirmed", jobId: "JB-201" })).toMatch(/has a job/);
+    expect(cancelError({ status: "completed", jobId: "JB-204" })).toMatch(/completed/);
+    expect(cancelError({ status: "cancelled" })).toMatch(/already cancelled/);
+    expect(parseReason("  Outside service area.  ")).toEqual({ ok: true, value: "Outside service area." });
+    for (const bad of ["", "   ", undefined, 5, "x".repeat(1001)]) expect(parseReason(bad).ok, String(bad)).toBe(false);
+  });
+
+  test("assigning: not a pending request, and never completed or cancelled work; only an active, field-assignable member", () => {
+    expect(assignBookingError({ status: "confirmed" })).toBeUndefined();
+    for (const status of ["pending", "completed", "cancelled"] as const) expect(assignBookingError({ status }), status).toBeTruthy();
+    expect(assignJobError({ status: "scheduled" })).toBeUndefined();
+    expect(assignJobError({ status: "in-progress" })).toBeUndefined();
+    expect(assignJobError({ status: "completed" })).toBeTruthy();
+    expect(assignableError({ status: "active", fieldAssignable: true })).toBeUndefined();
+    expect(assignableError({ status: "inactive", fieldAssignable: true })).toBeTruthy();
+    expect(assignableError({ status: "invited", fieldAssignable: true })).toBeTruthy();
+    expect(assignableError({ status: "active", fieldAssignable: false })).toBeTruthy();
+    expect(assignableError(undefined)).toMatch(/isn't on your team/);
+  });
+
+  test("a job is created from a confirmed booking that has none; the job life cycle only moves forward and completed is final", () => {
+    expect(createJobError({ status: "confirmed" })).toBeUndefined();
+    expect(createJobError({ status: "confirmed", jobId: "JB-205" })).toMatch(/already has a job/);
+    for (const status of ["pending", "completed", "cancelled"] as const) expect(createJobError({ status }), status).toBeTruthy();
+
+    expect(startJobError({ status: "scheduled" })).toBeUndefined();
+    expect(startJobError({ status: "in-progress" })).toBeTruthy();
+    expect(startJobError({ status: "completed" })).toBeTruthy();
+    expect(completeJobError({ status: "in-progress" })).toBeUndefined();
+    expect(completeJobError({ status: "scheduled" })).toMatch(/Start the job/);
+    expect(completeJobError({ status: "completed" })).toMatch(/already completed/);
+    expect(detailsError({ status: "scheduled" })).toBeUndefined();
+    expect(detailsError({ status: "in-progress" })).toBeUndefined();
+    expect(detailsError({ status: "completed" })).toMatch(/final/);
+  });
+
+  test("work details: only the four editable fields, bounded; completion needs resolution notes", () => {
+    expect(parseDetailsPatch({ internalNotes: "New note", workPerformed: "" })).toEqual({ ok: true, value: { internalNotes: "New note", workPerformed: "" } });
+    expect(parseDetailsPatch({}).ok).toBe(true);
+    for (const bad of [null, "x", [], { status: "completed" }, { checklist: [] }, { customerRequest: "x" }, { internalNotes: 5 }, { internalNotes: "x".repeat(10_001) }]) {
+      expect(parseDetailsPatch(bad).ok, JSON.stringify(bad)).toBe(false);
+    }
+    expect(parseCompletionNotes("  Replaced the run capacitor.  ")).toEqual({ ok: true, value: "Replaced the run capacitor." });
+    for (const bad of ["", "  ", undefined, 3, "x".repeat(10_001)]) expect(parseCompletionNotes(bad).ok, String(bad)).toBe(false);
+  });
+
+  test("BK-1048 is held for Sarah's included cooling visit", () => {
+    expect(RESERVED_BOOKING_NUMBERS).toEqual({ "plan-sarah-comfort-care-v2": 1048 });
+  });
+
+  test("the rules never mutate their input", () => {
+    const frozen = JSON.stringify(valid);
+    parseNewBooking(valid);
+    expect(JSON.stringify(valid)).toBe(frozen);
+    expect(JSON.stringify(OPERATIONS)).toBe(JSON.stringify(OPERATIONS));
   });
 });
 
@@ -438,7 +459,7 @@ test.describe("source guardrails (operations)", () => {
 
   test("operational code never reads the real clock or the browser's timezone", () => {
     const files = [...sourceFiles("src/components/operations"), ...sourceFiles("src/components/bookings"), ...sourceFiles("src/components/schedule"), ...sourceFiles("src/components/jobs")]
-      .concat(["src/data/operations.ts", "src/lib/operations-state.ts", "src/lib/booking-slots.ts", "src/lib/dates.ts"]);
+      .concat(["src/data/operations.ts", "src/lib/operations-rules.ts", "src/lib/booking-slots.ts", "src/lib/dates.ts"]);
     const hits: string[] = [];
     for (const file of files) {
       const text = readFileSync(file, "utf8");

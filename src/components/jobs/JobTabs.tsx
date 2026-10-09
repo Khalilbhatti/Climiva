@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Camera, ClipboardList, Eye, FileText, Home, Lock, ShieldAlert, Upload, User } from "lucide-react";
+import { FormAlert } from "@/components/auth/AuthShell";
 import { EquipmentCard } from "@/components/customers/EquipmentCard";
 import { useOperations } from "@/components/operations/OperationsProvider";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -308,11 +309,12 @@ const ACCEPT = "image/jpeg,image/png,application/pdf";
 export function JobFilesTab() {
   const dir = useDirectory();
   const { job, locked } = useJob();
-  const { addJobFiles, setFileVisibility } = useOperations();
+  const { addSessionFiles, setFileVisibility } = useOperations();
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const [category, setCategory] = useState<"all" | FileCategory>("all");
   const [dragging, setDragging] = useState(false);
+  const [problem, setProblem] = useState<string>();
 
   const files = job.files;
   const shown = files.filter((file) => category === "all" || file.category === category);
@@ -324,17 +326,25 @@ export function JobFilesTab() {
     if (accepted.length < incoming.length) toast("Only JPG, PNG and PDF files up to 25 MB can be added.");
     if (accepted.length === 0) return;
 
+    // There is no file storage yet: only the name and size are kept, in this browser, until the page is reloaded.
     const firstNumber = files.length + 1;
-    addJobFiles(
+    addSessionFiles(
       job.id,
       accepted.map<JobFile>((file, index) => ({
-        id: `file-${job.id}-${firstNumber + index}`,
+        id: `session-${job.id}-${firstNumber + index}`,
         name: file.name,
         sizeKb: Math.max(1, Math.round(file.size / 1024)),
         visibility: "internal",
+        sessionOnly: true,
       })),
     );
-    toast(`${accepted.length} ${accepted.length === 1 ? "file" : "files"} added to job #${job.id}.`);
+    toast(`${accepted.length} ${accepted.length === 1 ? "file" : "files"} added to job #${job.id}. Kept for this session only: file storage is not set up yet.`);
+  }
+
+  async function changeVisibility(file: JobFile) {
+    setProblem(undefined);
+    const result = await setFileVisibility(job.id, file.id, file.visibility === "customer" ? "internal" : "customer");
+    if (!result.ok) setProblem(result.error);
   }
 
   return (
@@ -398,11 +408,13 @@ export function JobFilesTab() {
         </div>
       </SectionCard>
 
+      {problem && <FormAlert>{problem}</FormAlert>}
+
       {files.length === 0 ? (
         <EmptyState
           icon={Camera}
           title="No photos or files yet"
-          description="Photos and documents added to this job appear here."
+          description="Photos and documents added to this job appear here. File storage is not set up yet, so files added now are kept for this session only."
         />
       ) : (
         <ul aria-label="Photos and files" className="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -439,11 +451,12 @@ export function JobFilesTab() {
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-surface-low px-4 py-3 text-xs text-ink-muted">
                 <span>
                   {getAssigneeName(job, dir) ?? "Team"} · <span className="font-mono">{file.name}</span> · {formatFileSize(file.sizeKb)}
+                  {file.sessionOnly && <span className="block font-semibold text-warning">This browser only: not saved, gone when the page reloads.</span>}
                 </span>
                 {!locked && (
                   <button
                     type="button"
-                    onClick={() => setFileVisibility(job.id, file.id, file.visibility === "customer" ? "internal" : "customer")}
+                    onClick={() => changeVisibility(file)}
                     aria-label={`${file.visibility === "customer" ? "Make internal only" : "Show to customer"}: ${file.name}`}
                     className="rounded-btn px-2 py-1 font-semibold text-primary transition-colors hover:bg-primary-subtle"
                   >
@@ -483,6 +496,7 @@ export function JobFilesTab() {
             from your device
           </p>
           <p className="mt-3 text-xs text-ink-muted">JPG, PNG, PDF up to 25 MB each · Visibility defaults to internal only</p>
+          <p className="mt-1 text-xs text-ink-muted">File storage is not set up yet, so files you add stay on this page until you reload it.</p>
         </div>
       )}
     </div>

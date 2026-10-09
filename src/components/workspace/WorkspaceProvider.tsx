@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, type ReactNode } from "react";
+import type { BusinessClock } from "@/lib/business-time";
 import type { Capability } from "@/lib/policy";
 import type { WorkspaceSnapshot } from "@/lib/workspace-types";
 
@@ -23,4 +24,12 @@ export function useWorkspace(): WorkspaceSnapshot {
 /** Whether the signed-in person may do this in the active workspace. A convenience for the screen; the server still decides. */
 export function useCan(capability: Capability): boolean {
   return useWorkspace().capabilities.includes(capability);
+}
+
+/**
+ * Today and now in the active business's time zone ("2024-10-25", "2024-10-25T10:45"), computed on the server for this page
+ * load. Every "today" on a screen comes from here, never from the browser's clock, so every browser time zone agrees.
+ */
+export function useClock(): BusinessClock {
+  return useWorkspace().clock;
 }

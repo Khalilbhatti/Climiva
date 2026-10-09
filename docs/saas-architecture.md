@@ -31,6 +31,7 @@ Read [production-handoff.md](production-handoff.md) for the front end, which thi
 21. [Deferred domain migrations](#21-deferred-domain-migrations)
 22. [Testing](#22-testing)
 23. [Known limitations](#23-known-limitations)
+24. [Operations: bookings, jobs and the schedule](#24-operations-bookings-jobs-and-the-schedule)
 
 ## 1. Status and scope
 
@@ -42,9 +43,10 @@ reload. Now:
 | Real sign-up, log-in, log-out (Better Auth, sessions in PostgreSQL) | Email verification, password reset, invitations by email (no mail service yet) |
 | Organizations, memberships, owner / admin / member roles | A UI to invite or remove members, or to change roles |
 | Many people ↔ many businesses; a workspace switcher | Billing for Climvia itself |
-| New-business onboarding in one transaction | Jobs, bookings, payments, quotes, invoices and the other operational modules (still sample data, see §12) |
+| New-business onboarding in one transaction | Quotes, invoices, payments and the other money, growth and website modules (still sample data, see §12) |
 | Business information, Business hours, Workspace preferences and the profile name stored in PostgreSQL | Logo / branding / avatar storage (needs object storage) |
 | Customers, properties, equipment, Services, the team and its roles stored in PostgreSQL per organization (§13) | A flow to add or edit a customer, email invitations for team members |
+| Bookings, Jobs (with work details and photo metadata), the Schedule (derived) and blocked time stored per organization (§24) | Rescheduling a booking, file storage for photos, a public booking page for a business's own domain |
 | Strict tenant isolation: server authorization **and** PostgreSQL Row Level Security | The visual Website Builder, templates, domains |
 | `sites` table: one organization owns many sites | Deployment to AWS |
 
@@ -135,6 +137,8 @@ business's own employees and stay product data.
 | Change Business information, hours, preferences | ✓ | ✓ | ✗ |
 | Add, edit or deactivate a Service; change the team, its roles, availability and assigned Services (§13) | ✓ | ✓ | ✗ |
 | Read customers, Services and the team | ✓ | ✓ | ✓ |
+| Read bookings, jobs and the schedule | ✓ | ✓ | ✓ |
+| Create or change a booking or job: confirm, decline, cancel, assign, create a job, start, complete, edit work details (§24) | ✓ | ✓ | ✗ |
 | Change their own profile name | ✓ | ✓ | ✓ |
 | Invite admins / members (database-level; no UI yet) | ✓ | ✓ | ✗ |
 | Change a member's role (database-level; no UI yet) | ✓ | ✗ | ✗ |
@@ -208,13 +212,16 @@ verified the session and membership, as bound parameters.
 | `customers`, `customer_notes`, `customer_properties`, `equipment` | members of the active org | **nobody**: the runtime role has no write privilege (§13) |
 | `services`, `team_roles`, `team_members`, `team_activity` | members of the active org | owner/admin of the active org (INSERT, column-limited UPDATE; no DELETE) |
 | `team_member_services`, `team_member_availability`, `team_member_unavailable_periods` | members of the active org | owner/admin of the active org |
+| `bookings`, `jobs` | members of the active org | owner/admin of the active org: INSERT, and UPDATE of a few columns only (§24); **nobody deletes** |
+| `job_files` | members of the active org | owner/admin: UPDATE of `visibility` only; no INSERT until an object store exists |
+| `schedule_blocks`, `schedule_block_members`, `organization_sequences` | members of the active org | nobody directly; numbers are taken only through `app_next_number()` (§24) |
 | `auth_*` | Better Auth manages these before anyone is signed in | |
 
 **Least privilege.** Column-level grants mean the runtime role cannot set `fixture_set` or rewrite ids; it has no DELETE on organizations, no UPDATE/DELETE on memberships.
 
-The core business tables (`0003_core_data_rls.sql`, §13) use the same helpers; their composite `(organization_id, id)` foreign keys make a cross-organization reference impossible, and two triggers guard a team member's login and the protected Owner role.
+The core business tables (`0003_core_data_rls.sql`, §13) and the operational tables (`0005_operations_rls.sql`, §24) use the same helpers; their composite `(organization_id, id)` foreign keys make a cross-organization reference impossible, and triggers guard a team member's login, the protected Owner role, and the status of bookings and jobs.
 
-**Verified by tests** (`e2e/database-isolation.spec.ts`, and `e2e/core-data-isolation.spec.ts` for the core tables), connecting as `climvia_app` to a freshly migrated database: no context → no rows; user A sees only A's organization; user B only B's; a forged
+**Verified by tests** (`e2e/database-isolation.spec.ts`, `e2e/core-data-isolation.spec.ts` for the core tables and `e2e/operations-database.spec.ts` for the operational ones), connecting as `climvia_app` to a freshly migrated database: no context → no rows; user A sees only A's organization; user B only B's; a forged
 `app.org_id` for an organization the user is not in → no rows; cross-tenant INSERT / UPDATE / DELETE blocked; the last owner cannot be removed; the runtime role cannot change `fixture_set`.
 
 What RLS does **not** protect against: a database superuser or the owner role (keep their credentials out of the app and the browser), and a mistake that grants a new table to `climvia_app` without a policy.
@@ -239,18 +246,18 @@ after hydration, which remounts the tree once. The first render is always the de
 
 ## 12. Transitional fixtures
 
-Bookings, Schedule, Jobs, Quotes & Invoices, Payments, Maintenance Plans, Website, Marketplace, Reviews, Marketing, Analytics and the customer-facing previews still run on
-the sample dataset in `src/data/*`, held in React state for the visit. (Customers, Services and Team moved to PostgreSQL in §13 and are not gated.)
+Quotes & Invoices, Payments, Maintenance Plans, Website, Marketplace, Reviews, Marketing, Analytics and the customer-facing previews still run on
+the sample dataset in `src/data/*`, held in React state for the visit. (Customers, Services and Team moved to PostgreSQL in §13, and Bookings, the Schedule and Jobs in §24; none of them is gated.)
 
 - That dataset belongs to **one** business. An organization flagged `fixture_set = 'apex-demo'` sees it; **any other organization sees "isn't available for *Name* yet"**. The flag is set by the seed only
   (the runtime role has no column grant to set it).
 - Every page and layout of those modules calls `await fixtureGate("Module")` first (`src/server/fixture-gate.tsx`) and returns the replacement if it is not the sample business.
   The public previews use `publicGate()`; metadata uses `hasSampleDataAccess()`. A test fails if a fixture-backed page forgets it.
-- Overview shows a plain "Your workspace is ready" state with the real business card for any other workspace; sidebar counts are sample-business only, and global search finds the active business's own customers (§13).
+- Overview shows a plain "Your workspace is ready" state with the real business card for any other workspace; sidebar counts are sample-business only, and global search finds the active business's own customers, jobs, bookings and schedule (§13, §24).
 - **No silent fallback.** If sign-in, the database, the organization or the membership fails, the app redirects to Log in, shows an error, or shows the unavailable state. It never falls back to
   showing the Apex sample.
-- The operational sample dataset is compiled into the browser JavaScript (it is static, fictional demo data, not tenant data). It is removed module by module as each moves to PostgreSQL (§21). The *foundations* it
-  points at (customers, Services, team) are not compiled in: they are read from PostgreSQL and reach the browser only for the business that owns them (§13, "Fixture compatibility bridge").
+- The remaining sample dataset (money, plans, reviews, marketing, website …) is compiled into the browser JavaScript (it is static, fictional demo data, not tenant data). It is removed module by module as each moves to PostgreSQL (§21). The *foundations* it
+  points at (customers, Services, team) and the operations (bookings, jobs, blocked time) are not compiled in: they are read from PostgreSQL and reach the browser only for the business that owns them (§13, "Fixture compatibility bridge", §24).
 
 ## 13. Core business data: customers, services, team
 
@@ -341,25 +348,25 @@ in a request is never read; the organization is the one the server resolved. The
 
 ### Fixture compatibility bridge
 
-Bookings, Schedule, Jobs, Quotes & Invoices, Payments, Maintenance Plans, Reviews, Marketing, Analytics and the Website still run on the sample dataset (§12), and they reference customers, Services and team members by id. The bridge:
+Quotes & Invoices, Payments, Maintenance Plans, Reviews, Marketing, Analytics and the Website still run on the sample dataset (§12), and they reference customers, Services and team members by id (Bookings, Jobs and the Schedule now point at the same records through composite foreign keys, §24). The bridge:
 
 - Those ids are the **slugs**, and the Apex seed writes the same slugs, with deterministic UUIDv5 primary keys (`src/db/stable-id.ts`: `stableId(organization, kind, slug)`), so a booking that names `sarah-mitchell` and `ac-repair-diagnostics`
   resolves to the same people and Services after a re-seed.
 - The directory of the active business (customers, properties, equipment, Services, team) is loaded **on the server** and given to the browser by `DirectoryProvider`, which `useDirectory()` reads. The selectors in `src/data/{customers,services,team}.ts`
   take that data as an argument: there is **no module-level registry** to fill, because one server process serves many businesses and a shared registry would be a cross-tenant leak.
-- Only the sample business (`fixture_set = 'apex-demo'`) is given the customer book to the browser, because only its sample Jobs and Bookings point at customers. Every other business starts the not-yet-migrated modules **empty**
-  (`EMPTY_OPERATIONS`, `EMPTY_FINANCIALS`, …), so a Northstar or a brand-new workspace can never match another business's sample jobs, and none of the Apex sample is sent to its browser as data. The Customers pages load their own book on the server.
+- Every business is given **its own** customer book, Services, team and operations: Bookings and Jobs show a customer's name and address, so they need the book. At this scale the whole lists are sent with the page (windowing them by date and page is the next scaling step). Every
+  other business starts the not-yet-migrated modules **empty** (`EMPTY_FINANCIALS`, `EMPTY_PLANS_DATA`, …), so a Northstar or a brand-new workspace can never match another business's sample records, and none of the Apex sample is sent to its browser as data.
 - The seed data for all of this lives in `scripts/db/seed-data` (seed and test infrastructure); `src/` does not import it.
 
 ### A new organization
 
 Onboarding creates, in the same transaction as before, the six system roles and one team member for the owner. It creates no customers, no Services and none of Apex's records. Customers and Services show proper empty states; Team shows the owner;
-Bookings, Jobs and the other fixture-backed modules still say "isn't available for *Name* yet" (§12).
+Bookings, the Schedule and Jobs show proper empty states with no sample records and no counters of another business (§24); the other fixture-backed modules still say "isn't available for *Name* yet" (§12).
 
 ### Global search and the public previews
 
-Global search is the active business's: the sample business searches its customers, Jobs, Bookings and Schedule in the browser; any other business searches its own customers on the server (`searchCustomersAction`, scoped to the verified active
-organization, no Jobs or Bookings yet). The Website and Marketplace read the active business's **Services** from PostgreSQL and handle an empty list; their other content is still session data. Booking slot logic is given the business's
+Global search is the active business's: it searches that business's customers, Jobs, Bookings and Schedule in the browser, over the records the server read from PostgreSQL for the verified active organization, so another business's records cannot be found whatever is typed.
+(The server-side customer search of Phase 10 was removed: with Bookings and Jobs loaded alongside the book, one search over the same records is the simpler and consistent behaviour.) The Website and Marketplace read the active business's **Services** from PostgreSQL and handle an empty list; their other content is still session data. Booking slot logic is given the business's
 Services and hours.
 
 ### Tests
@@ -513,8 +520,9 @@ Not built. The intended design: a request's host name selects the **site**, and 
 
 Each of these moves from sample data to PostgreSQL in its own phase, with `organization_id`, RLS and tests as in §9–§10. When a module moves, its `fixtureGate` call is deleted and it works for every organization.
 
-Done: Services, Customers (+ properties, equipment), Team (staff, roles) (§13). Suggested order for the rest (dependencies first): Bookings → Schedule → Jobs → Quotes & Invoices → Payments → Maintenance Plans → Reviews →
-Marketing → Website (then the Builder) → Marketplace → Analytics (derived last). Also pending: branding / logo / avatar storage, invitations and member management, email.
+Done: Services, Customers (+ properties, equipment), Team (staff, roles) (§13); Bookings, Jobs, the Schedule (derived) and blocked time (§24). Suggested order for the rest (dependencies first): **Quotes & Invoices → Payments** (next: they point at jobs and bookings, which now have
+stable organization-scoped numbers and composite keys to reference, and need their own price snapshots) → Maintenance Plans (then `bookings.plan_id` / `plan_visit_id` become real foreign keys) → Reviews →
+Marketing → Website (then the Builder) → Marketplace → Analytics (derived last: its Bookings 24 / Completed Jobs 18 aggregates are still baselines, not counts of the stored records). Also pending: branding / logo / avatar storage and photo files (an object store), invitations and member management, email, a public booking page.
 
 ## 22. Testing
 
@@ -527,12 +535,17 @@ The Playwright suite runs against a **production build** and a **separate databa
 - Core data (§13): `core-data-isolation.spec.ts` (SQL as `climvia_app`: reads, writes, grants, composite foreign keys, triggers), `core-data-roundtrip.spec.ts` (what the seed wrote is what the application reads, and stable ids),
   `customers-db.spec.ts`, `services-db.spec.ts`, `team-db.spec.ts` (the numbered required tests 1–37) and `cross-domain-isolation.spec.ts` (38–46: switching, back/forward, reload, logout, forged cookies). The canonical Apex records
   that the pure-data specs read live in the seed (`scripts/db/seed-data`, re-exported for tests by `e2e/apex-data.ts`), not in `src/`.
+- Operations (§24): `operations-database.spec.ts` (SQL as `climvia_app`: reads, writes, column grants, status transitions, no DELETE, cross-business relations, numbering and concurrency), `bookings-db.spec.ts`, `jobs-db.spec.ts`, `schedule-db.spec.ts` (the real
+  application: persistence after reload, the seeds, empty states, forged and stale requests, atomic completion), `operations-cross-module.spec.ts` (Customers, search, Reviews, Maintenance Plans, switching, logout, Back), `business-time.spec.ts`
+  (daylight-saving and zone conversions) and the pure rules in `operations.spec.ts`. The test database is rebuilt from the migrations and the seed on every run; `operations-edits.ts` holds the small pure edits the specs of other modules use to ask "what if this job were completed?".
 
 ## 23. Known limitations
 
 - Email verification, password reset, invitations and member management have no UI: they need a mail service and are the next SaaS work.
 - Branding, logo and avatar are session-only until object storage exists.
-- The operational sample dataset (bookings, jobs, money …) ships in the browser bundle (fictional, public, not tenant data) until its modules migrate. Customers, Services and the team do not.
+- The money, plans, reviews, marketing and website sample dataset ships in the browser bundle (fictional, public, not tenant data) until its modules migrate. Customers, Services, the team, bookings, jobs and blocked time do not.
+- A booking's date and time cannot be changed after it is created (there is no rescheduling flow). When one is built it must change the booking and its job in the same transaction. Nothing creates blocked time yet either: the blocks are seeded and read.
+- Photos on a job: the database holds their **metadata** (name, size, category, caption, visibility); the file itself has no home until an object store exists, so a file chosen in the browser lasts for the visit and is labelled so. The whole booking, job and customer lists are sent to the browser with the page.
 - Customers, properties and equipment can be read but not yet added or edited (no flow exists, so the database grants none). Team members are added without an email or a sign-in; there is no resend and no invitation.
 - A business has zero Services until its owner adds them: there are no starter templates yet.
 - Docker artifacts are authored but were not executed in the development environment (see §17).
@@ -543,3 +556,123 @@ The Playwright suite runs against a **production build** and a **separate databa
   not prefetched. Next.js cancels some of its other link prefetches, and the server then logs `The destination stream closed early`; that is the framework's own housekeeping, not a failure.
 - There is no UI for inviting people, changing roles or removing members, although the database rules for them exist and are tested.
 - A deleted account's sessions end with the account (foreign keys cascade), but there is no "delete my account" screen.
+
+## 24. Operations: bookings, jobs and the schedule
+
+Phase 11 moved the operational core to PostgreSQL. Everything below belongs to exactly one organization, follows the rules of §9 and §13, and is read for the **active** business only.
+
+| Domain | Tables | Written by | Read by |
+| --- | --- | --- | --- |
+| Bookings | `bookings` | owner, admin (server actions) | every member |
+| Jobs | `jobs`, `job_files` (metadata only) | owner, admin | every member |
+| Schedule | **no table of its own**: derived from `bookings`, `jobs` and the blocks | | every member |
+| Blocked time | `schedule_blocks`, `schedule_block_members` | the seed only (no flow writes a block yet) | every member |
+| Numbering | `organization_sequences` | `app_next_number()` only | every member |
+
+Migrations: `0004_operations.sql` (tables, constraints, indexes; generated by drizzle-kit from `src/db/schema/operations.ts`; the two `UNIQUE` constraints the new composite keys need were moved to the top by hand, redo that if it is regenerated) and `0005_operations_rls.sql`
+(policies, grants, the numbering function and the status guards; hand-written).
+
+### Schema in one view
+
+```
+organization ──< bookings ──(at most one)── jobs ──< job_files
+      │             │  └─ customer, property (the customer's own), service, assignee ─┐
+      │             └──────────────────────────────────────────────────────────────┘ (composite keys)
+      ├──< schedule_blocks ──< schedule_block_members >── team_members
+      └──< organization_sequences (kind: booking | job)
+```
+
+- **A booking** has: its number, who it is for (a `customer_id`, **or** a `contact_name` with optional phone, email and address: exactly one, by a CHECK), a property (only with a customer, and it must be that customer's own), a service, an assignee, the source,
+  the status, the local date and start and end times, a customer note, the intake answers, internal notes, the cancellation reason (present exactly when cancelled), the maintenance-plan visit it schedules (`plan_id`, `plan_visit_id`, plain references until plans move),
+  and `received_at` / `confirmed_at` instants. `source` and `received_at` are `NULL` for an older record that never had them (the sample bookings from before the system existed); every booking made through the application has both, and nothing invents a value.
+- **A job** has: its number, the booking it came from (`UNIQUE (organization_id, booking_id)`: **at most one job per booking**; a historical visit has none), the same party, property, service and assignee, the equipment worked on, the appointment, and the work details as **explicit columns**
+  (`technician_diagnosis`, `work_performed`, `customer_summary`, `internal_notes`, `customer_request`, `safety_note`, `completion_notes`, `completed_at`). Only the diagnostics checklist, a list the technician's record carries, is JSONB.
+  A CHECK makes "completed" mean exactly "has its completion notes and time".
+- **Job files** are metadata: name, size, category, caption, time taken, visibility, a thumbnail label. `storage_key` is reserved for the object store and is always `NULL`: no file content is ever in PostgreSQL, and no INSERT is granted until there is somewhere to put one.
+- **Statuses** are the approved sets and nothing else (CHECK constraints): bookings `pending`, `confirmed`, `completed`, `cancelled`; jobs `scheduled`, `in-progress`, `completed`. "Needs assignment" is simply "no assignee". "En route", "Waiting for parts" and the like do not exist.
+
+### Snapshot or reference
+
+| What | Stored as | Why |
+| --- | --- | --- |
+| Customer, property, service, team member, equipment | a **reference** (composite foreign key to the business's own row) | A rename or an address correction shows everywhere; history keeps pointing at the same person. Nothing is copied |
+| A person with no customer record | a **snapshot** (`contact_name` and optional contact details) | They are not a record anywhere yet; the booking is where they exist |
+| The appointment (date, start, end) on a job | a **copy** of the booking's at the moment the job is created | A job is the work; the booking is the request. There is no rescheduling flow yet, so they cannot differ; when there is, it changes both in one transaction |
+| Assignee on a booking and its job | stored on both, **kept equal by the server** | Whichever is named, both change in the same transaction, so Bookings, the Schedule and Jobs never disagree |
+| Price, tax, totals | not stored here | Money is the next migration and will snapshot the price lines it quotes |
+| A service's name | a reference, shown current | History reads "AC Repair & Diagnostics" because that is what the service is called |
+
+### Schedule is derived
+
+There is no `schedule_events` table. `getScheduleEvents()` (`src/data/operations.ts`) lays out, for a day or a week: each **job**, each **confirmed or completed booking that has no job**, and the blocks. Pending and cancelled bookings never appear. A mutation on the Schedule
+(assigning) calls the same server action as on a booking or a job and changes the same rows, so the three screens agree by construction. Day and Week views, the technician and service filters, the unassigned list and the details panel all read the data
+the server sent for the active business. There is no drag and drop, no routing, GPS or dispatch.
+
+### Dates, times and time zones
+
+An **appointment** is a local `date` plus local `start_time` and `end_time`, read in the organization's IANA time zone (`organizations.timezone`) and **never converted**: it cannot move when a server, a browser or the time-zone database changes, a Daylight-Saving
+change cannot shift it, and the historical demo dates (Oct 2024) are what they are. Only the system's own events (received, confirmed, completed) are instants (`timestamptz`); `src/lib/business-time.ts` turns them back into the business's local `YYYY-MM-DDTHH:mm` **on
+the server**, before anything reaches a browser, using `Intl` with the named zone. The browser never parses a date: `src/lib/dates.ts` formats the strings by hand, so every browser time zone shows the same text (a test opens the pages in Auckland, Los Angeles and
+Kiritimati and compares).
+
+"Today" is also the business's: `WorkspaceSnapshot.clock` is computed on the server for the request (`useClock()` in the browser). The **sample business** lives at the product's fixed moment (Friday, October 25, 2024, 10:45), because its records are dated around it; every
+other business uses the real time in its own zone. Booking slots, "Today" labels, the unavailable-past rule and the Schedule's current week all read that clock. A wall-clock time that does not exist (spring forward) is read as the same wall-clock after the gap; one that happens twice
+(fall back) as its first occurrence.
+
+### Human identifiers are the business's own
+
+"BK-1042" and "JB-204" are an integer `number` unique **within the organization** (`UNIQUE (organization_id, number)`), shown with a prefix. Two businesses may both have BK-1001 and do (Northstar's seed and every new workspace). The UI uses the display number as
+the record's id and the database uses a uuid, which never leaves the server.
+
+Numbers are **allocated, never computed** with `MAX(number) + 1`. `app_next_number(kind)` is a `SECURITY DEFINER` function that takes the organization **from the verified context**, requires owner or admin of it, creates the counter at 1001 if the business has none, and increments it
+under a row lock, so concurrent requests are serialized (sixteen at once get sixteen different numbers), a rolled-back transaction gives its number back, and one business can neither read nor move another's counter (the runtime role has no UPDATE on the table). A business starts
+at 1001; a seeded one starts above its largest seeded number. `BK-1048` is **held** for Sarah Mitchell's included cooling visit (`RESERVED_BOOKING_NUMBERS`): in the sample business, other bookings walk past it and that visit takes it whenever it is scheduled. Any other business holds no number back.
+
+### Status transitions
+
+Checked in three places so a forged request cannot do what a screen would never offer: the pure rules in `src/lib/operations-rules.ts` (run by the server action first, with a message for the person), the action's checks against the locked rows, and PostgreSQL triggers
+(`bookings_guard_transition`, `jobs_guard_transition`):
+
+- booking: `pending → confirmed | cancelled`; `confirmed → completed | cancelled`; `completed` and `cancelled` are **final** (nothing about them changes again). A booking that has a job cannot be cancelled. A decline or cancel needs a reason. Assigning is only for a confirmed booking.
+- job: `scheduled → in-progress → completed`. A completed job never returns to scheduled and its record is not rewritten.
+- **Complete Job is one transaction**: the job is completed with its resolution notes and time, any work details the technician had not saved are kept with it, and the booking it came from is completed. If any step fails, none happens. It creates no quote, invoice or payment.
+- A job is created from a confirmed booking that has none; nothing creates a job by itself (confirming a request does not).
+
+### Authorization
+
+`operations:manage` (`src/lib/policy.ts`) is owner and admin. A **member reads** bookings, jobs and the schedule and changes nothing. The pipeline is the one of §13: **authenticated user → active organization (verified, never taken from the request) → active membership → capability →
+validation → tenant transaction → safe error**. In `src/server/actions/operations.ts` every action hands everything it does to one helper, `mutate()`, whose first step is `authorize("operations:manage")`; nothing is read from the arguments, parsed or looked up before it. Every id a request names
+(a customer, property, service, team member, booking, job, file) is resolved **inside the transaction, within the verified organization**: one that belongs to another business is indistinguishable from one that never existed. The assignee must be active and field-assignable (a
+deactivated member still shows on past records and gets nothing new). Errors are values with a message for the person; a database error is never shown (the detail is logged on the server).
+
+The same rule is enforced again by PostgreSQL (`0005_operations_rls.sql`): members of the **active** organization read; owner or admin of it INSERT and UPDATE; **no one DELETEs** (history is kept: a booking is cancelled, a job completed). `UPDATE` is granted per column: a booking may
+have its status, assignee, confirmation time and cancellation reason changed, a job its assignee, status, the four editable work details and its completion; ids, numbers, `organization_id`, the party, the service, the date and time and the booking link are never rewritten. Composite
+`(organization_id, id)` foreign keys make a cross-business reference impossible rather than merely checked (an Apex booking cannot name a Northstar customer, a Northstar job an Apex service, an Apex job a Northstar team member).
+
+### Seeds
+
+Apex: 13 bookings (BK-1006 … BK-1042), 11 jobs (JB-142, JB-178 … JB-204), 4 photo records on JB-204 and 2 blocks, with deterministic uuids. JB-204 is Sarah Mitchell's completed AC Repair & Diagnostics job at 1402 Kinney Ave, Austin, TX 78704, linked to BK-1042. The Overview
+aggregates (Bookings 24, Completed Jobs 18) are **baselines**, not counts of these rows, and are deliberately not backed by invented records. Northstar: BK-1001 (confirmed, with JB-1001, assigned to Jordan Pike) and BK-1002 (a pending request), for Northstar's own customers
+and services. A new workspace has none, and its counters start at 1001.
+
+### Maintenance Plan bridge (BK-1048)
+
+Plans are not on the database yet. Scheduling an included visit creates a **real booking** through the same action (source "Maintenance plan", confirmed, no job, no financial record) that carries `plan_id` and `plan_visit_id`. The plan screens **derive the visit's state from the stored
+booking** (`getVisitBooking()`: the non-cancelled booking whose `planVisit` points at the visit): Scheduled after a reload, open again once the booking is cancelled. The plan holds no pointer of its own that could disagree. A plan created in the browser for the visit is not stored
+(plans migrate later), so a booking made for it outlives it as an ordinary booking.
+
+### Reviews compatibility
+
+Reviews are still sample data and name a related job (Sarah Mitchell's review → JB-204). They resolve it against the **active business's stored jobs**, so the chip, the job page and the Request Review list (completed jobs only, JB-204 and JB-142 for Sarah) come from the
+database; in a business that has no JB-204 the link simply is not shown.
+
+### Website booking preview
+
+The Website booking journey is a preview **inside the signed-in workspace**. It creates a real booking in the signed-in business, as that signed-in owner or admin, through the same authorized action: no organization comes from the page and nothing is trusted from it (the server
+decides the status from the Service's booking method and refuses a Service that is not offered online). A real public booking page (a visitor on the business's own domain, with no session) is **deferred**: it needs a verified Host → site → organization mapping (§20), rate limiting,
+spam protection and a narrow public write path that does not use the tenant policies. No unauthenticated endpoint accepts a booking today.
+
+### Not in this phase
+
+Quotes, invoices, payments, plan records, review records, marketing, the Website model, file storage, rescheduling, drag and drop, routing, notifications by email or SMS, and the Analytics aggregate facts. No Docker image was built or run for this phase: the Dockerfile and compose
+file are unchanged and compatible with the new migrations, and **Docker verification is required before AWS deployment** (§17).

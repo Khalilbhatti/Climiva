@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { Star, Wrench } from "lucide-react";
+import { useOperations } from "@/components/operations/OperationsProvider";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { jobHref } from "@/config/routes";
 import { getCustomerById } from "@/data/customers";
@@ -33,7 +34,8 @@ export function ReviewStatusBadge({ review }: { review: Pick<Review, "response">
 /** "#JB-204 · AC Repair & Diagnostics", a link to the Job record. */
 export function RelatedJobChip({ jobId, children }: { jobId: string; children?: ReactNode }) {
   const dir = useDirectory();
-  const job = getJobById(jobId);
+  const { data } = useOperations();
+  const job = getJobById(jobId, data);
   if (!job) return null;
   return (
     <Link

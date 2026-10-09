@@ -7,6 +7,7 @@
  * unrelated records. It is not a copy of the Apex dataset.
  */
 import type { Customer, Equipment, Property } from "@/data/customers";
+import type { OperationsData } from "@/data/operations";
 import type { Service } from "@/data/services";
 import { SYSTEM_ROLES, weeklyFromBusinessHours, type TeamMember } from "@/data/team";
 
@@ -148,3 +149,62 @@ export const NORTHSTAR_TEAM: readonly TeamMember[] = [
     ],
   },
 ];
+
+/**
+ * Northstar's operations: deliberately few. One confirmed booking with its job (assigned to Northstar's own technician) and
+ * one request awaiting confirmation, all for Northstar's own customers and Services. Its numbers start at 1001, so
+ * "BK-1001" exists in Northstar and is a different record from any Apex booking: a number is unique per business only.
+ * Nothing here exists in Apex, and no Apex record appears here.
+ */
+export const NORTHSTAR_OPERATIONS: OperationsData = {
+  bookings: [
+    {
+      id: "BK-1001",
+      customerId: "marta-olsen",
+      propertyId: "prop-olsen-house",
+      serviceId: "furnace-tune-up",
+      date: "2024-10-29",
+      start: "09:00",
+      end: "09:45",
+      status: "confirmed",
+      assigneeId: "jordan-pike",
+      source: "Phone / Front desk",
+      receivedAt: "2024-10-22T13:05",
+      confirmedAt: "2024-10-22T13:05",
+      note: "Annual tune-up before the heating season",
+      jobId: "JB-1001",
+    },
+    {
+      id: "BK-1002",
+      contactName: "Dev Kapoor",
+      serviceId: "ac-repair-diagnostics",
+      date: "2024-10-30",
+      start: "13:00",
+      end: "15:00",
+      status: "pending",
+      source: "Website",
+      receivedAt: "2024-10-23T18:20",
+      contact: { phone: "(720) 555-0188", email: "dev.kapoor@northstar-clients.test", address: "2204 Larimer St, Denver, CO 80205" },
+      note: "Condenser is not starting",
+    },
+  ],
+  jobs: [
+    {
+      id: "JB-1001",
+      bookingId: "BK-1001",
+      customerId: "marta-olsen",
+      propertyId: "prop-olsen-house",
+      serviceId: "furnace-tune-up",
+      assigneeId: "jordan-pike",
+      date: "2024-10-29",
+      start: "09:00",
+      end: "09:45",
+      status: "scheduled",
+      equipmentId: "eq-olsen-furnace",
+      note: "Annual tune-up before the heating season",
+      details: { customerRequest: "Annual tune-up before the heating season. Call before arriving." },
+      files: [],
+    },
+  ],
+  blocks: [],
+};

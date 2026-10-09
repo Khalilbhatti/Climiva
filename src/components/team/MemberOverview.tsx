@@ -10,7 +10,6 @@ import { KeyValueList } from "@/components/ui/KeyValueList";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { useToast } from "@/components/ui/Toast";
 import { jobHref, memberTabHref } from "@/config/routes";
-import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import { getPartyName, getScheduleEvents, getServiceNameFor, type WorkEvent } from "@/data/operations";
 import {
   MODULE_INFO,
@@ -26,7 +25,7 @@ import { formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import { useMember } from "./MemberWorkspace";
 import { useTeam } from "./TeamProvider";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
-import { useCan } from "@/components/workspace/WorkspaceProvider";
+import { useCan, useClock } from "@/components/workspace/WorkspaceProvider";
 
 const ACCESS_SUMMARY: ModuleId[] = ["jobs", "schedule", "customers", "quotes-invoices", "payments", "team", "settings"];
 const DAY_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -39,6 +38,7 @@ export function MemberOverview() {
   const { data: operations } = useOperations();
   const { toast } = useToast();
   const canManage = useCan("team:manage");
+  const { today } = useClock();
   const { settings } = useSettings();
   const hoursRows = useHoursRows();
 
@@ -132,7 +132,7 @@ export function MemberOverview() {
                       {getServiceNameFor(event, dir)} · {getPartyName(event, dir)}
                     </p>
                     <p className="text-xs text-ink-muted">
-                      {event.date === PROTOTYPE_TODAY ? "Today" : formatWeekdayDate(event.date)}, {formatTimeRange(event.start, event.end)}
+                      {event.date === today ? "Today" : formatWeekdayDate(event.date)}, {formatTimeRange(event.start, event.end)}
                     </p>
                   </div>
                   {event.jobId && (

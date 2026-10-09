@@ -1,19 +1,19 @@
 import type { Metadata } from "next";
 import { JobWorkspace } from "@/components/jobs/JobWorkspace";
 import { getJobById } from "@/data/operations";
-import { fixtureGate, hasSampleDataAccess } from "@/server/fixture-gate";
+import { getCoreSnapshot } from "@/server/core-data";
+import { requireWorkspaceContext } from "@/server/workspace";
 
-// The fixture jobs are prerendered. Any other id (a job created during a demo session) is rendered on
-// demand and resolved against the in-memory data on the client.
+// A job belongs to one business. The title names a job only when it exists in the ACTIVE business; another business's job
+// number and a number that never existed both read as an unknown job.
 export async function generateMetadata({ params }: LayoutProps<"/jobs/[jobId]">): Promise<Metadata> {
-  if (!(await hasSampleDataAccess())) return { title: "Not available" };
   const { jobId } = await params;
-  return { title: getJobById(jobId) ? `Job #${jobId}` : "Job" };
+  const core = await getCoreSnapshot();
+  return { title: core && getJobById(jobId, core.operations) ? `Job #${jobId}` : "Job" };
 }
 
 export default async function JobLayout({ children, params }: LayoutProps<"/jobs/[jobId]">) {
-  const gate = await fixtureGate("Jobs");
-  if (gate) return gate;
+  await requireWorkspaceContext();
   const { jobId } = await params;
   return <JobWorkspace jobId={jobId}>{children}</JobWorkspace>;
 }

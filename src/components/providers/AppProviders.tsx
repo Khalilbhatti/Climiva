@@ -17,7 +17,6 @@ import { WorkspaceProvider } from "@/components/workspace/WorkspaceProvider";
 import { EMPTY_FINANCIALS } from "@/data/financials";
 import { EMPTY_PLANS_DATA } from "@/data/maintenance-plans";
 import { EMPTY_MARKETING_DATA } from "@/data/marketing";
-import { EMPTY_OPERATIONS } from "@/data/operations";
 import { EMPTY_REVIEWS_DATA } from "@/data/reviews";
 import type { CoreSnapshot } from "@/data/directory";
 import type { WorkspaceSnapshot } from "@/lib/workspace-types";
@@ -25,14 +24,15 @@ import type { WorkspaceSnapshot } from "@/lib/workspace-types";
 /**
  * Everything the signed-in workspace needs, mounted once around it.
  *
- * `snapshot` (the person, their workspaces, the active workspace's stored settings) and `core` (its Services, its team and,
- * for the sample business, its customers) were read and verified on the server for this request. The Services and the team
- * are changed through server actions and re-read from PostgreSQL on every load.
+ * `snapshot` (the person, their workspaces, the active workspace's stored settings) and `core` (its Services, team, customers
+ * and operations) were read and verified on the server for this request. They are changed through server actions and re-read
+ * from PostgreSQL on every load.
  *
- * The modules that are not on the database yet (Bookings, Jobs, Schedule, money, Reviews, Marketing …) keep their in-memory
- * stores. Those start from the built-in sample records ONLY for the sample business; every other business starts them
- * empty, so a customer or a Service of one business can never be matched to another's sample jobs. The customer-facing
- * previews sit inside the same providers so they read what the workspace saved.
+ * Customers, Services, the team and the operations (Bookings, Jobs, the Schedule's blocks) are on the database: each business
+ * gets its own, read for the active organization only. The modules that are not on the database yet (money, Reviews, Marketing …)
+ * keep their in-memory stores. Those start from the built-in sample records ONLY for the sample business; every other business
+ * starts them empty, so a customer or a Service of one business can never be matched to another's sample records. The
+ * customer-facing previews sit inside the same providers so they read what the workspace saved.
  *
  * Callers pass `key={snapshot.organization.id}`, so a different workspace can never inherit any state from another.
  */
@@ -45,7 +45,7 @@ export function AppProviders({ snapshot, core, children }: { snapshot: Workspace
           <ServicesProvider initial={core.services}>
             <TeamProvider initial={core.team}>
               <DirectoryProvider book={core.book}>
-                <OperationsProvider initial={sample ? undefined : EMPTY_OPERATIONS}>
+                <OperationsProvider initial={core.operations}>
                   <FinancialProvider initial={sample ? undefined : EMPTY_FINANCIALS}>
                     <MaintenancePlansProvider initial={sample ? undefined : EMPTY_PLANS_DATA}>
                       <WebsiteProvider>

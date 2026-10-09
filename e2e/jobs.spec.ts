@@ -365,15 +365,15 @@ test.describe("Start and complete a job", () => {
     const visits = page.locator("li").filter({ hasText: "Job #JB-201" });
     await expect(visits).toContainText("Completed");
 
-    // Nothing was persisted.
+    // It was stored: after a reload the job is still completed, with nothing left to start.
     await page.goto("/jobs/JB-201");
-    await expect(page.getByRole("button", { name: "Start job" })).toBeVisible();
+    await expect(page.getByText("Completed Oct 25, 10:45 AM").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start job" })).toHaveCount(0);
   });
 
   test("unsaved Work details edits are kept when the job is completed", async ({ page }) => {
     await page.goto("/jobs/JB-201");
     await page.getByRole("button", { name: "Start job" }).click();
-    // Client navigation: a full page load would discard the started job.
     await jobTabs(page, "JB-201").getByRole("link", { name: "Work details" }).click();
     await page.getByLabel("Internal office & tech notes").fill("Check the contactor next visit.");
     await page.getByRole("button", { name: "Complete job" }).click();

@@ -14,9 +14,10 @@
  *   taylor.brooks@northstar.test Northstar owner                                     -> Northstar only   (User B)
  *   casey.nguyen@climvia.test    admin in BOTH                                       -> Apex + Northstar (User C)
  *
- * Each business also gets its core data: customers with their properties and equipment, Services, and the team with its
- * roles. Apex has the full approved set (scripts/db/seed-data); Northstar has a few clearly different records. The records
- * are written through the SAME functions the application uses (src/db/core-queries.ts), with stable ids.
+ * Each business also gets its core data: customers with their properties and equipment, Services, the team with its roles,
+ * and its operations (bookings, jobs, blocked time). Apex has the full approved set (scripts/db/seed-data); Northstar has a few
+ * clearly different records (two bookings and one job of its own). The records are written through the SAME functions the
+ * application uses (src/db/core-queries.ts, src/db/ops-queries.ts), with stable ids.
  *
  * Every function is idempotent: running the seed twice changes nothing the second time.
  */
@@ -32,15 +33,19 @@ import {
 } from "../../src/db/settings-mappers";
 import * as schema from "../../src/db/schema";
 import type { CustomerBook } from "../../src/data/customers";
+import type { OperationsData } from "../../src/data/operations";
 import type { Service } from "../../src/data/services";
 import { EMPTY_TEAM, type TeamData } from "../../src/data/team";
 import { clearCoreData, insertCustomerBook, insertServices, persistTeamData } from "../../src/db/core-queries";
+import { clearOperations, insertOperations, loadRefs } from "../../src/db/ops-queries";
 import { createAuth, type Auth } from "../../src/lib/auth";
 import { adminDb, adminUrl, appUrl, requireEnv } from "./lib";
 import { CUSTOMERS, EQUIPMENT, PROPERTIES } from "./seed-data/customers";
+import { OPERATIONS } from "./seed-data/operations";
 import {
   NORTHSTAR_CUSTOMERS,
   NORTHSTAR_EQUIPMENT,
+  NORTHSTAR_OPERATIONS,
   NORTHSTAR_PROPERTIES,
   NORTHSTAR_ROLES,
   NORTHSTAR_SERVICES,
@@ -117,11 +122,13 @@ export const NORTHSTAR: OrganizationSpec = {
   sites: [{ name: "Northstar Heating & Cooling", slug: "main" }],
 };
 
-/** A business's core records: what the Customers, Services and Team modules show. */
+/** A business's core records: what the Customers, Services, Team, Bookings, Jobs and Schedule modules show. */
 export type CoreDataset = {
   book: CustomerBook;
   services: readonly Service[];
   team: TeamData;
+  /** Bookings, jobs and blocked time. They point at the customers, Services and team above by their public references. */
+  operations: OperationsData;
   /** Team members (by slug) who have a Climvia login in the seed, by seed user key. */
   logins: Readonly<Record<string, keyof typeof SEED_USERS>>;
 };
@@ -131,6 +138,7 @@ export const APEX_CORE: CoreDataset = {
   book: { customers: CUSTOMERS, properties: PROPERTIES, equipment: EQUIPMENT },
   services: SERVICES,
   team: { members: TEAM, roles: ROLES },
+  operations: OPERATIONS,
   logins: { "alex-morgan": "alex" },
 };
 
@@ -138,6 +146,7 @@ export const NORTHSTAR_CORE: CoreDataset = {
   book: { customers: NORTHSTAR_CUSTOMERS, properties: NORTHSTAR_PROPERTIES, equipment: NORTHSTAR_EQUIPMENT },
   services: NORTHSTAR_SERVICES,
   team: { members: NORTHSTAR_TEAM, roles: NORTHSTAR_ROLES },
+  operations: NORTHSTAR_OPERATIONS,
   logins: { "taylor-brooks": "taylor" },
 };
 
@@ -218,21 +227,37 @@ export async function setProfileName(admin: AdminDb, userId: string, fullName: s
 
 type AdminTx = Parameters<Parameters<AdminDb["transaction"]>[0]>[0];
 
-/** Write a business's core records inside a transaction. `userIds` links team members (by slug) to logins. */
-export async function writeCoreData(tx: AdminTx, organizationId: string, core: CoreDataset, userIds: Readonly<Record<string, string>> = {}): Promise<void> {
+/**
+ * Write a business's core records inside a transaction. `userIds` links team members (by slug) to logins. The operations are
+ * written last: they point at the customers, Services and team members just written, and their times are read in `timeZone`.
+ */
+export async function writeCoreData(
+  tx: AdminTx,
+  organizationId: string,
+  timeZone: string,
+  core: CoreDataset,
+  userIds: Readonly<Record<string, string>> = {},
+): Promise<void> {
   // The database layer is typed against the application's transaction; the owner connection runs the same statements.
   const db = tx as never;
   await insertServices(db, organizationId, core.services, { stableIds: true });
   await insertCustomerBook(db, organizationId, core.book, { stableIds: true });
   await persistTeamData(db, organizationId, EMPTY_TEAM, core.team, { stableIds: true, userIds });
+  await insertOperations(db, organizationId, timeZone, core.operations, await loadRefs(db, organizationId), { stableIds: true });
 }
 
 /** Give a business its core records unless it already has them. Returns true when it wrote them. */
-export async function ensureCoreData(db: AdminDb, organizationId: string, core: CoreDataset, userIds: Readonly<Record<string, string>> = {}): Promise<boolean> {
+export async function ensureCoreData(
+  db: AdminDb,
+  organizationId: string,
+  timeZone: string,
+  core: CoreDataset,
+  userIds: Readonly<Record<string, string>> = {},
+): Promise<boolean> {
   const existing = await db.select({ id: services.id }).from(services).where(eq(services.organizationId, organizationId)).limit(1);
   const members = await db.select({ id: teamMembers.id }).from(teamMembers).where(eq(teamMembers.organizationId, organizationId)).limit(1);
   if (existing.length > 0 || members.length > 0) return false;
-  await db.transaction((tx) => writeCoreData(tx, organizationId, core, userIds));
+  await db.transaction((tx) => writeCoreData(tx, organizationId, timeZone, core, userIds));
   return true;
 }
 
@@ -261,8 +286,8 @@ export async function seedDevelopmentData(database?: string): Promise<SeedResult
     await ensureMembership(db, { organizationId: northstarId, userId: users.casey, role: "admin" });
 
     const loginIds = (core: CoreDataset) => Object.fromEntries(Object.entries(core.logins).map(([member, key]) => [member, users[key]]));
-    await ensureCoreData(db, apexId, APEX_CORE, loginIds(APEX_CORE));
-    await ensureCoreData(db, northstarId, NORTHSTAR_CORE, loginIds(NORTHSTAR_CORE));
+    await ensureCoreData(db, apexId, APEX.timezone, APEX_CORE, loginIds(APEX_CORE));
+    await ensureCoreData(db, northstarId, NORTHSTAR.timezone, NORTHSTAR_CORE, loginIds(NORTHSTAR_CORE));
     return { apexId, northstarId, users };
   } finally {
     await close();
@@ -292,7 +317,7 @@ export async function ensureTestTenant(
     const userId = await ensureUser(auth, db, { email, name: currentUser.name }, password);
     const organizationId = await ensureOrganization(db, { ...APEX, slug: `apex-e2e-${index}` });
     await ensureMembership(db, { organizationId, userId, role: "owner", jobTitle: currentUser.role });
-    await ensureCoreData(db, organizationId, APEX_CORE, { "alex-morgan": userId });
+    await ensureCoreData(db, organizationId, APEX.timezone, APEX_CORE, { "alex-morgan": userId });
     return { userId, organizationId, email, password };
   } finally {
     await close();
@@ -302,9 +327,9 @@ export async function ensureTestTenant(
 
 /**
  * A cheap fingerprint of a business's core records: how many there are and when the newest of each was changed. Every write
- * the application makes to Services or the Team changes one of these (an update moves `updated_at`, an addition changes a
- * count, and every Team write adds an activity entry), and so does an edit made directly to a customer, property or piece of
- * equipment, so an unchanged fingerprint means the records are as they were seeded.
+ * the application makes to Services, the Team or the operations changes one of these (an update moves `updated_at`, an addition
+ * changes a count or a number counter, and every Team write adds an activity entry), and so does an edit made directly to a
+ * customer, property or piece of equipment, so an unchanged fingerprint means the records are as they were seeded.
  */
 export async function coreFingerprint(db: AdminDb, organizationId: string): Promise<string> {
   const result = await db.execute<{ fingerprint: string }>(sql`
@@ -316,7 +341,12 @@ export async function coreFingerprint(db: AdminDb, organizationId: string): Prom
       (select count(*) || ':' || coalesce(max(updated_at)::text, '') from services where organization_id = ${organizationId}),
       (select count(*) || ':' || coalesce(max(updated_at)::text, '') from team_members where organization_id = ${organizationId}),
       (select count(*) || ':' || coalesce(max(updated_at)::text, '') from team_roles where organization_id = ${organizationId}),
-      (select count(*) from team_activity where organization_id = ${organizationId})
+      (select count(*) from team_activity where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') from bookings where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') from jobs where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(string_agg(ref || visibility, ',' order by ref), '') from job_files where organization_id = ${organizationId}),
+      (select count(*) from schedule_blocks where organization_id = ${organizationId}),
+      (select coalesce(string_agg(kind || next_value, ',' order by kind), '') from organization_sequences where organization_id = ${organizationId})
     ) as fingerprint`);
   return result.rows[0].fingerprint;
 }
@@ -354,13 +384,16 @@ export async function resetTestTenant(db: AdminDb, tenant: { userId: string; org
       .where(and(eq(organizationMemberships.organizationId, tenant.organizationId), eq(organizationMemberships.userId, tenant.userId)));
   });
 
-  // Services and the team are stored too now. Put them back only when a test changed them. The first reset in a worker always
-  // writes them: a worker that was replaced after a failing test finds the previous one's changes, and must not take them as the baseline.
+  // Services, the team and the operations are stored too now. Put them back only when a test changed them. The first reset in a
+  // worker always writes them: a worker that was replaced after a failing test finds the previous one's changes, and must not take
+  // them as the baseline.
   const seeded = seededFingerprints.get(tenant.organizationId);
   if (seeded === undefined || seeded !== (await coreFingerprint(db, tenant.organizationId))) {
     await db.transaction(async (tx) => {
+      // Bookings and jobs point at customers, Services and team members, so they go first.
+      await clearOperations(tx as never, tenant.organizationId);
       await clearCoreData(tx as never, tenant.organizationId);
-      await writeCoreData(tx, tenant.organizationId, APEX_CORE, { "alex-morgan": tenant.userId });
+      await writeCoreData(tx, tenant.organizationId, APEX.timezone, APEX_CORE, { "alex-morgan": tenant.userId });
     });
     seededFingerprints.set(tenant.organizationId, await coreFingerprint(db, tenant.organizationId));
   }

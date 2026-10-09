@@ -88,8 +88,10 @@ test.describe("assigning a technician is one change seen in Bookings, Schedule a
     await expect(page.locator("#event-JB-198")).toContainText("Samira");
     await expect(page.getByRole("region", { name: "Unassigned work" })).toContainText("Unassigned · 1");
 
+    // The assignment is stored: a reload keeps it, in every screen.
     await page.reload();
-    await expect(page.getByRole("region", { name: "Unassigned work" })).toContainText("Unassigned · 2");
+    await expect(page.getByRole("region", { name: "Unassigned work" })).toContainText("Unassigned · 1");
+    await expect(page.locator("#event-JB-198")).toContainText("Samira");
   });
 });
 
@@ -120,9 +122,10 @@ test.describe("completing a job reaches the customer and Reviews", () => {
     await dialog.getByLabel("Customer").selectOption("david-chen");
     await expect(dialog.getByLabel("Related job (optional)")).toHaveValue("JB-201");
 
+    // The completion is stored: a reload keeps it.
     await page.reload();
     await go(page, "/jobs?tab=completed");
-    await expect(tabs(page, "Job lists")).toHaveText([/^Active\s*4$/, /^Upcoming\s*2$/, /^Completed\s*7$/]);
+    await expect(tabs(page, "Job lists")).toHaveText([/^Active\s*3$/, /^Upcoming\s*2$/, /^Completed\s*8$/]);
   });
 });
 

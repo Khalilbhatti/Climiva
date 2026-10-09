@@ -7,3 +7,4 @@ export * from "./sites";
 export * from "./customers";
 export * from "./services";
 export * from "./team";
+export * from "./operations";

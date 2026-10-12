@@ -477,9 +477,9 @@ quote; the quote then reads "Invoice #INV-1052" and can't be invoiced again. No 
 > a created plan and a scheduled visit survive a reload, BK-1048 is the one real booking the visit points at, and `lib/maintenance-plans-state.ts` was replaced by `lib/maintenance-rules.ts` and server actions. The Website part is unchanged.
 
 Two modules on two new typed datasets, `src/data/maintenance-plans.ts` and `src/data/website.ts`, each with pure state
-functions (`src/lib/maintenance-plans-state.ts`, `src/lib/website-state.ts`) and a client provider. All providers now mount
-once at the app root (`components/providers/AppProviders`) instead of in the workspace layout, because the customer-facing
-website preview sits outside the workspace shell yet must show the edits and bookings made inside it. Nothing persists:
+functions (`src/lib/maintenance-plans-state.ts`, `src/lib/website-state.ts`) and a client provider. All providers mount
+together (`WorkspaceProviders`, mounted by the `(signed-in)` layout that holds both the workspace and the signed-in preview), because the customer-facing
+website preview sits outside the workspace shell yet reads what was saved inside it. The published Sites and listings mount none. Nothing persists:
 reload restores the baseline. The Phase 1 to 4 modules, tokens and tests are unchanged except where listed under
 "Deliberate changes to earlier work".
 
@@ -595,8 +595,8 @@ analytics or traffic, DNS or domain-verification states, and a real contact-form
 
 The three Growth modules, each on its own typed dataset (`src/data/marketplace.ts`, `reviews.ts`, `marketing.ts`), pure state
 functions (`src/lib/marketplace-state.ts`, `reviews-state.ts`, `marketing-state.ts`) and a client provider. All three providers
-mount at the app root with the others (`components/providers/AppProviders`), so the public directory preview, which sits outside
-the workspace shell, shows what was saved inside it. Nothing persists: reload restores the baseline. Phases 1 to 5 are unchanged
+mount with the others (`WorkspaceProviders`), so the signed-in directory preview, which sits outside
+the workspace shell, shows what was saved inside it; the published listing mounts none. Nothing persists: reload restores the baseline. Phases 1 to 5 are unchanged
 except where listed under "Deliberate changes to earlier work".
 
 Routes: `/marketplace`, `/marketplace/edit` (also first-time setup with `?setup=1`), `/marketplace/preview` (public, no shell) ·
@@ -820,7 +820,7 @@ Reference screens: `settings_business_information` (+ `_unsaved_changes`), `sett
 `settings_workspace_preferences`, `settings_my_profile`, `settings_discard_unsaved_changes_modal`.
 
 **Architecture.** `data/settings.ts` (types, option lists, the baseline) → `lib/settings-state.ts` (validation, tidying, the pure saves) →
-`components/settings/SettingsProvider` (mounted at the app root with the other stores) → the five forms in `components/settings/*`. There is **no second
+`components/settings/SettingsProvider` (mounted by `WorkspaceProviders` with the other stores) → the five forms in `components/settings/*`. There is **no second
 dataset**: the baseline is built from the existing canonical records (`business`, `businessHoursByWeekday`, `BUSINESS_TIME_ZONE`, `currentUser`), and a
 test asserts no component or page imports those directly any more. The data-only readers that remain (`data/customers`, `data/reviews`, `data/team`,
 `lib/booking-slots`) read the *baseline* as fixture values or as a default parameter.

@@ -1,0 +1,205 @@
+/**
+ * The boundary between the signed-in workspace and everything else, held in the source tree.
+ *
+ * The workspace's providers (the verified person, the workspaces they belong to, the business's settings and its core data: customers, jobs,
+ * financials, analytics, the team, the Website's Draft) are read and sent to the browser by exactly one server component,
+ * `WorkspaceProviders`, which only the workspace, the signed-in Draft previews and the signed-in "not found" page mount. The root layout, the
+ * published Sites and Marketplace listings (`app/(public)`) and Log in, Sign up and set-up (`app/(auth)`) must not be able to reach it, a
+ * provider, the session, the workspace or the workspace's data access at all, however a signed-in visitor looks. This builds the import graph
+ * from each of those entry points and holds it to that, so the separation is a property of the code and not of what a page happens to show.
+ * (public-boundary.spec.ts holds the same line at run time, against a server that is only able to run the three public database functions.)
+ */
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
+import { expect, test } from "playwright/test";
+
+const ROOT = process.cwd();
+const SRC = join(ROOT, "src");
+const posix = (path: string) => relative(ROOT, path).split(sep).join("/");
+
+function walk(dir: string): string[] {
+  return readdirSync(dir).flatMap((entry) => {
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) return walk(path);
+    return /\.(ts|tsx)$/.test(path) ? [path] : [];
+  });
+}
+
+function resolveImport(from: string, specifier: string): string | undefined {
+  const base = specifier.startsWith("@/") ? join(SRC, specifier.slice(2)) : specifier.startsWith(".") ? resolve(dirname(from), specifier) : undefined;
+  if (!base) return undefined;
+  return [`${base}.ts`, `${base}.tsx`, join(base, "index.ts"), join(base, "index.tsx"), base].find((candidate) => existsSync(candidate) && statSync(candidate).isFile());
+}
+
+/** The modules a file brings in at run time (type-only imports are erased, so they bring in nothing). */
+function importsOf(file: string): string[] {
+  const code = readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  const specifiers: string[] = [];
+  for (const match of code.matchAll(/(?:^|\n)\s*(?:import|export)\s+(type\s+)?[^;]*?\sfrom\s+["']([^"']+)["']/g)) if (!match[1]) specifiers.push(match[2]);
+  for (const match of code.matchAll(/(?:^|\n)\s*import\s+["']([^"']+)["']/g)) specifiers.push(match[1]);
+  return specifiers.flatMap((specifier) => resolveImport(file, specifier) ?? []);
+}
+
+/** Every source file reachable from `entries`, each with the file that first brought it in (to say how a forbidden one got there). */
+function reachable(entries: string[]): Map<string, string | undefined> {
+  const seen = new Map<string, string | undefined>(entries.map((entry) => [entry, undefined]));
+  const queue = [...entries];
+  while (queue.length > 0) {
+    const file = queue.shift()!;
+    for (const next of importsOf(file)) {
+      if (seen.has(next)) continue;
+      seen.set(next, file);
+      queue.push(next);
+    }
+  }
+  return seen;
+}
+
+const chainOf = (seen: Map<string, string | undefined>, file: string): string => {
+  const chain: string[] = [];
+  for (let current: string | undefined = file; current; current = seen.get(current)) chain.unshift(posix(current));
+  return chain.join(" -> ");
+};
+
+const forbiddenIn = (entries: string[], forbidden: (path: string) => boolean): string[] => {
+  const seen = reachable(entries);
+  return [...seen.keys()].filter((file) => forbidden(posix(file))).map((file) => chainOf(seen, file));
+};
+
+/** The signed-in workspace: its data, its providers, its session and its chrome. */
+const WORKSPACE = [
+  /^src\/server\/(workspace|workspace-providers|session|core-data|authorize|marketing-data|reporting|preview-route)\.tsx?$/,
+  /^src\/server\/actions\/(?!public-booking)/,
+  /^src\/components\/providers\//,
+  /Provider\.tsx$/,
+  /^src\/components\/ui\/Toast\.tsx$/,
+  /^src\/components\/shell\/(AppShell|TopBar|Sidebar|ShellMain|GlobalSearch|NotificationsMenu)\.tsx$/,
+  /^src\/components\/workspace\//,
+  /^src\/lib\/auth\.ts$/,
+];
+/** The database as a tenant: anything that opens a transaction for a person or reads a business's own tables. */
+const TENANT_DATA = [/^src\/db\/tenant\.ts$/, /^src\/db\/(?!public-queries\.ts$)[a-z0-9-]*queries\.ts$/];
+
+const isAny = (patterns: RegExp[]) => (path: string) => patterns.some((pattern) => pattern.test(path));
+
+test.describe("the root layout is only the document", () => {
+  test("it imports nothing of the application: no session, no workspace, no provider, no data", () => {
+    const entries = [join(SRC, "app", "layout.tsx"), join(SRC, "app", "global-error.tsx")];
+    const modules = [...reachable(entries).keys()].map(posix).sort();
+    expect(modules).toEqual(["src/app/global-error.tsx", "src/app/globals.css", "src/app/layout.tsx"]);
+    const source = readFileSync(entries[0], "utf8");
+    for (const word of ["resolveWorkspace", "getCoreSnapshot", "AppProviders", "WorkspaceProviders", "requireWorkspaceContext", "cookies(", "headers("]) expect(source, word).not.toContain(word);
+  });
+
+  test("so does the root's own not-found: a layout's not-found is sent with every response under it, so it must hold no session and no workspace", () => {
+    const entry = join(SRC, "app", "not-found.tsx");
+    expect([...reachable([entry]).keys()].map(posix).sort()).toEqual(["src/app/not-found.tsx", "src/components/shell/PlainNotFound.tsx"]);
+  });
+});
+
+test.describe("a published Site or Marketplace listing cannot reach the workspace", () => {
+  const publicEntries = walk(join(SRC, "app", "(public)"));
+
+  test("the public group has its pages, its layout and its own not-found", () => {
+    const names = publicEntries.map(posix).sort();
+    expect(names).toContain("src/app/(public)/layout.tsx");
+    expect(names).toContain("src/app/(public)/not-found.tsx");
+    expect(names.filter((name) => /\/(sites|listings)(\/|$)/.test(name) && name.endsWith("page.tsx"))).toEqual([
+      "src/app/(public)/listings/[listingSlug]/[...rest]/page.tsx",
+      "src/app/(public)/listings/[listingSlug]/page.tsx",
+      "src/app/(public)/listings/page.tsx",
+      "src/app/(public)/sites/[siteSlug]/[...slug]/page.tsx",
+      "src/app/(public)/sites/[siteSlug]/page.tsx",
+      "src/app/(public)/sites/page.tsx",
+    ]);
+    // Nothing that is signed-in-only lives in it.
+    expect(names.filter((name) => /\/(preview|builder)\//.test(name))).toEqual([]);
+  });
+
+  test("nothing a public page imports, however deep, is a provider, the session, the workspace, the Draft's data access or the shell", () => {
+    expect(forbiddenIn(publicEntries, isAny([...WORKSPACE, ...TENANT_DATA]))).toEqual([]);
+  });
+
+  test("a public page reaches the database only through the three public functions", () => {
+    const seen = reachable(publicEntries);
+    // The connection, the table definitions it is built from, the public functions' own queries and the plain mappers they use: no tenant
+    // transaction (`tenant.ts`) and no other business's queries.
+    const touchesDatabase = [...seen.keys()].map(posix).filter((path) => path.startsWith("src/db/") && !path.startsWith("src/db/schema/"));
+    expect(touchesDatabase.sort()).toEqual(["src/db/index.ts", "src/db/public-queries.ts", "src/db/settings-mappers.ts"]);
+    const source = readFileSync(join(SRC, "db", "public-queries.ts"), "utf8");
+    const calls = [...source.matchAll(/\bapp_[a-z_]+\b/g)].map((match) => match[0]);
+    expect([...new Set(calls)].sort()).toEqual(["app_public_create_booking", "app_public_listing", "app_public_site"]);
+  });
+
+  test("no public file reads who is signed in", () => {
+    for (const file of publicEntries) {
+      expect(readFileSync(file, "utf8"), posix(file)).not.toMatch(/resolveWorkspace|requireWorkspaceContext|getSessionUser|getCoreSnapshot|WorkspaceProviders|AppProviders|cookies\(|headers\(/);
+    }
+  });
+});
+
+test.describe("Log in, Sign up and set-up mount only what they need", () => {
+  test("no workspace provider, no workspace data and no shell (a new business's first Site is written by set-up, never read for a page)", () => {
+    const entries = walk(join(SRC, "app", "(auth)"));
+    expect(entries.length).toBeGreaterThanOrEqual(3);
+    const forbidden = isAny([
+      /^src\/server\/(workspace-providers|core-data|preview-route|marketing-data|reporting)\.tsx?$/,
+      /^src\/components\/providers\//,
+      /Provider\.tsx$/,
+      /^src\/components\/ui\/Toast\.tsx$/,
+      /^src\/components\/shell\/(AppShell|TopBar|Sidebar|ShellMain)\.tsx$/,
+    ]);
+    expect(forbiddenIn(entries, forbidden)).toEqual([]);
+  });
+});
+
+test.describe("what mounts the workspace's providers", () => {
+  const files = walk(SRC).filter((file) => !/server\/workspace-providers\.tsx$|components\/providers\/AppProviders\.tsx$/.test(posix(file)));
+  const mentions = (word: string) => files.filter((file) => new RegExp(`\\b${word}\\b`).test(readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, ""))).map(posix).sort();
+
+  test("WorkspaceProviders is used by the signed-in layout (the workspace and the Draft previews) and the unmatched-address page for someone signed in, and nothing else", () => {
+    expect(mentions("WorkspaceProviders")).toEqual(["src/app/(signed-in)/layout.tsx", "src/app/(unmatched)/not-found.tsx"]);
+  });
+
+  test("a not-found that reads the session or the workspace exists only where the routes it serves are already the workspace's or are no route at all", () => {
+    const notFounds = walk(join(SRC, "app")).filter((file) => file.endsWith("not-found.tsx")).map(posix).sort();
+    expect(notFounds).toEqual(["src/app/(public)/not-found.tsx", "src/app/(signed-in)/(preview)/not-found.tsx", "src/app/(signed-in)/(workspace)/not-found.tsx", "src/app/(unmatched)/not-found.tsx", "src/app/not-found.tsx"]);
+    const readsWorkspace = notFounds.filter((file) => /resolveWorkspace|WorkspaceProviders|getSessionUser|getCoreSnapshot/.test(readFileSync(join(ROOT, file), "utf8")));
+    expect(readsWorkspace).toEqual(["src/app/(unmatched)/not-found.tsx"]);
+    // The pages that exist only to give a not found do nothing else.
+    for (const file of ["(unmatched)/[...unknown]/page.tsx", "(public)/sites/page.tsx", "(public)/listings/page.tsx", "(public)/listings/[listingSlug]/[...rest]/page.tsx"]) {
+      const source = readFileSync(join(SRC, "app", file), "utf8");
+      expect(source, file).toContain("notFound();");
+      expect(source, file).not.toMatch(/@\/server|@\/db|resolveWorkspace|cookies\(|headers\(/);
+    }
+  });
+
+  test("AppProviders is mounted only by WorkspaceProviders", () => {
+    expect(mentions("AppProviders")).toEqual([]);
+    expect(readFileSync(join(SRC, "server", "workspace-providers.tsx"), "utf8")).toContain("<AppProviders");
+  });
+
+  test("the Draft previews and the workspace verify the caller before anything is read", () => {
+    const source = readFileSync(join(SRC, "server", "workspace-providers.tsx"), "utf8");
+    expect(source.indexOf("await requireWorkspaceContext()")).toBeGreaterThan(-1);
+    expect(source.indexOf("await requireWorkspaceContext()")).toBeLessThan(source.indexOf("await getCoreSnapshot()"));
+    // The signed-in not-found page mounts them only when the workspace is verified.
+    const notFound = readFileSync(join(SRC, "app", "(unmatched)", "not-found.tsx"), "utf8");
+    expect(notFound.indexOf('state.status !== "ready"')).toBeGreaterThan(-1);
+    expect(notFound.indexOf('state.status !== "ready"')).toBeLessThan(notFound.indexOf("<WorkspaceProviders>"));
+  });
+});
+
+test.describe("the boundary is written down", () => {
+  test("section 30 of the architecture notes documents the groups, the public rule, the not-found carrier and the proof", () => {
+    const text = readFileSync(join(ROOT, "docs", "saas-architecture.md"), "utf8");
+    const start = text.indexOf("## 30. Route groups and the provider boundary");
+    expect(start).toBeGreaterThan(0);
+    const section = text.slice(start);
+    for (const expected of ["WorkspaceProviders", "(public)", "(preview)", "(unmatched)", "(workspace)", "(signed-in)", "not-found.tsx", "byte for byte", "app_public_site", "provider-boundary.spec.ts", "public-boundary.spec.ts", "can do exactly one thing"]) {
+      expect(section, expected).toContain(expected);
+    }
+    const headings = section.split(/\r?\n/).filter((line) => /^### /.test(line));
+    for (const heading of [/The tree/, /The public route rule/, /What stays private/, /Proof/]) expect(headings.some((line) => heading.test(line)), String(heading)).toBe(true);
+  });
+});

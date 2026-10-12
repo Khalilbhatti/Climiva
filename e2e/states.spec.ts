@@ -180,6 +180,6 @@ test.describe("no speculative loading or error surfaces", () => {
 
   test("there is one not-found screen for the workspace and it lives inside the shell", () => {
     expect(existsSync("src/app/not-found.tsx")).toBe(true);
-    expect(existsSync("src/app/(workspace)/not-found.tsx")).toBe(true);
+    expect(existsSync("src/app/(signed-in)/(workspace)/not-found.tsx")).toBe(true);
   });
 });

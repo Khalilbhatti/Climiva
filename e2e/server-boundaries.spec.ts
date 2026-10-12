@@ -342,8 +342,8 @@ test.describe("tenant data is never cached or prerendered", () => {
     expect(offenders).toEqual([]);
   });
 
-  test("the workspace, site and auth route groups are force-dynamic", () => {
-    for (const file of ["(workspace)/layout.tsx", "(site)/layout.tsx", "(auth)/login/page.tsx", "(auth)/signup/page.tsx", "(auth)/onboarding/page.tsx"]) {
+  test("the workspace, public, preview and auth route groups are force-dynamic", () => {
+    for (const file of ["(signed-in)/layout.tsx", "(public)/layout.tsx", "(unmatched)/layout.tsx", "(auth)/login/page.tsx", "(auth)/signup/page.tsx", "(auth)/onboarding/page.tsx"]) {
       expect(read(join(SRC, "app", file)), file).toMatch(/export const dynamic = "force-dynamic"/);
     }
   });
@@ -364,7 +364,7 @@ test.describe("tenant data is never cached or prerendered", () => {
 test.describe("every module reads the database for the verified workspace", () => {
   /** Every module is on PostgreSQL: it works for every workspace, with that workspace's own rows. Nothing runs on the sample dataset any more. */
   const DATABASE_MODULES = ["analytics", "bookings", "customers", "jobs", "maintenance-plans", "marketing", "marketplace", "payments", "quotes-invoices", "reviews", "schedule", "services", "team", "website"];
-  const workspaceDir = join(SRC, "app", "(workspace)");
+  const workspaceDir = join(SRC, "app", "(signed-in)", "(workspace)");
 
   test("the module list matches the sidebar: every module folder is a database module", () => {
     const present = readdirSync(workspaceDir).filter((entry) => statSync(join(workspaceDir, entry)).isDirectory() && !["settings", "help"].includes(entry));
@@ -398,17 +398,22 @@ test.describe("every module reads the database for the verified workspace", () =
   });
 
   test("the published pages and the Draft previews are separate: a published page asks for no session and no business, a preview requires a verified one", () => {
-    const siteDir = join(SRC, "app", "(site)");
-    const pages = walk(siteDir, (path) => /(page|layout)\.tsx$/.test(path)).filter((path) => !path.endsWith(join("(site)", "layout.tsx")));
+    const pages = [join(SRC, "app", "(public)"), join(SRC, "app", "(signed-in)", "(preview)")].flatMap((dir) => walk(dir, (path) => /(page|layout)\.tsx$/.test(path))).filter((path) => !path.endsWith(join("(public)", "layout.tsx")));
     expect(pages.length).toBeGreaterThan(6);
     const published = pages.filter((path) => /(\\|\/)(sites|listings)(\\|\/)/.test(path));
+    const answersNotFound = (path: string) => /^\s*import \{ notFound \} from "next\/navigation";\s*[\s\S]*notFound\(\);\s*\}\s*$/.test(read(path)) && !/requireWorkspaceContext|@\/server|@\/db/.test(read(path));
     const previews = pages.filter((path) => !published.includes(path));
     expect(published.map(posix).sort()).toEqual([
-      "src/app/(site)/listings/[listingSlug]/page.tsx",
-      "src/app/(site)/sites/[siteSlug]/[...slug]/page.tsx",
-      "src/app/(site)/sites/[siteSlug]/page.tsx",
+      "src/app/(public)/listings/[listingSlug]/[...rest]/page.tsx",
+      "src/app/(public)/listings/[listingSlug]/page.tsx",
+      "src/app/(public)/listings/page.tsx",
+      "src/app/(public)/sites/[siteSlug]/[...slug]/page.tsx",
+      "src/app/(public)/sites/[siteSlug]/page.tsx",
+      "src/app/(public)/sites/page.tsx",
     ]);
     for (const path of published) {
+      // An address that names no page is answered with "not found" and nothing else (no data, no session).
+      if (answersNotFound(path)) continue;
       const source = read(path);
       // A visitor's page reads the public projection only: it names a site or a listing by its public identity, and nothing else.
       expect(source, posix(path)).toMatch(/@\/server\/public-site/);
@@ -416,20 +421,23 @@ test.describe("every module reads the database for the verified workspace", () =
     }
     // A preview is the signed-in person's own Draft: every one goes through requireWorkspaceContext (directly or through the preview route).
     expect(previews.map(posix).sort()).toEqual([
-      "src/app/(site)/marketplace/preview/page.tsx",
-      "src/app/(site)/website/preview/[...slug]/page.tsx",
-      "src/app/(site)/website/preview/layout.tsx",
-      "src/app/(site)/website/preview/page.tsx",
+      "src/app/(signed-in)/(preview)/marketplace/preview/page.tsx",
+      "src/app/(signed-in)/(preview)/website/preview/[...slug]/page.tsx",
+      "src/app/(signed-in)/(preview)/website/preview/layout.tsx",
+      "src/app/(signed-in)/(preview)/website/preview/page.tsx",
     ]);
-    expect(read(join(SRC, "app", "(site)", "website", "preview", "layout.tsx"))).toContain("await requireWorkspaceContext()");
-    expect(read(join(SRC, "app", "(site)", "marketplace", "preview", "page.tsx"))).toContain("await requireWorkspaceContext()");
+    expect(read(join(SRC, "app", "(signed-in)", "(preview)", "website", "preview", "layout.tsx"))).toContain("await requireWorkspaceContext()");
+    expect(read(join(SRC, "app", "(signed-in)", "(preview)", "marketplace", "preview", "page.tsx"))).toContain("await requireWorkspaceContext()");
+    // The layout above them (shared with the workspace) verifies the caller and mounts the providers; nothing else does.
+    expect(read(join(SRC, "app", "(signed-in)", "layout.tsx"))).toContain("<WorkspaceProviders>");
     expect(read(join(SRC, "server", "preview-route.tsx"))).toContain("await requireWorkspaceContext()");
     for (const path of previews.filter((file) => !file.endsWith("layout.tsx") && !file.includes("marketplace"))) expect(read(path), posix(path)).toContain("PreviewRoute");
   });
 
   test("Overview, Settings and Help are real for every workspace and still require a verified one", () => {
     expect(read(join(workspaceDir, "page.tsx"))).toContain("requireWorkspaceContext()");
-    expect(read(join(workspaceDir, "layout.tsx"))).toContain("requireWorkspaceContext()");
+    expect(read(join(SRC, "app", "(signed-in)", "layout.tsx"))).toContain("<WorkspaceProviders>");
+    expect(read(join(SRC, "server", "workspace-providers.tsx"))).toContain("await requireWorkspaceContext()");
   });
 });
 

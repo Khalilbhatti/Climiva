@@ -17,7 +17,7 @@ import { getPublicSite, publicViewOf } from "./public-site";
  * the business's public contact details and hours, and its active public Services. A draft, a hidden page, a private site and a site
  * that does not exist are all the same "not found".
  *
- * The route files under src/app/(site)/sites call these two functions: the home page and every other page share them.
+ * The route files under src/app/(public)/sites call these two functions: the home page and every other page share them.
  */
 
 const NOT_FOUND: Metadata = { title: { absolute: "Page not found" }, robots: { index: false } };

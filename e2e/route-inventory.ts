@@ -12,7 +12,7 @@ export type InventoryRoute = {
   url: string;
   /** The page file's route pattern, e.g. "/customers/[customerId]". */
   pattern: string;
-  /** Pages in the (site) group are customer-facing and have no workspace shell. */
+  /** Pages in the (public) group (published Sites and listings) and the (preview) group (signed-in Draft previews) are customer-facing and have no workspace shell. */
   shell: boolean;
 };
 
@@ -67,15 +67,22 @@ function expand(pattern: string): string[] {
 /** The Log in, Sign up and set-up pages are covered by auth.spec.ts and onboarding.spec.ts: they have no workspace shell to hold to this standard. */
 export const AUTH_PAGES = ["/login", "/signup", "/onboarding"];
 
+/**
+ * Pages that exist only to answer "not found" in the right place (the catch-all for an address that matches nothing, and the addresses under the public
+ * prefixes that name no Site or listing page). They are checked on their own (states, route-inventory and public-boundary specs), not crawled for a 2xx.
+ */
+export const NOT_FOUND_ONLY_PATTERNS = ["/[...unknown]", "/sites", "/listings", "/listings/[listingSlug]/[...rest]"] as const;
+
 export function pagePatterns(): { pattern: string; shell: boolean }[] {
   return pageFiles(APP_DIR)
     .filter((file) => !relative(APP_DIR, file).split(sep).includes("(auth)"))
     .map((file) => {
       const parts = relative(APP_DIR, file).split(sep).slice(0, -1);
-      const shell = !parts.includes("(site)");
+      const shell = !parts.includes("(public)") && !parts.includes("(preview)");
       const segments = parts.filter((part) => !/^\(.*\)$/.test(part));
       return { pattern: "/" + segments.join("/"), shell };
     })
+    .filter(({ pattern }) => !(NOT_FOUND_ONLY_PATTERNS as readonly string[]).includes(pattern))
     .sort((a, b) => a.pattern.localeCompare(b.pattern));
 }
 

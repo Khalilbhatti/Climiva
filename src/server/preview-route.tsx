@@ -9,7 +9,7 @@ import { requireWorkspaceContext } from "./workspace";
 /**
  * A page of the saved Draft (or one Service's booking journey under the Booking page), for someone signed in to the business. Every
  * address is checked against the Draft's own visible pages, so an address that names nothing is "not found". The route files under
- * src/app/(site)/website/preview call this for the home page and for every other page.
+ * src/app/(signed-in)/(preview)/website/preview call this for the home page and for every other page.
  */
 export async function PreviewRoute({ segments, view }: { segments: string[]; view: string | undefined }) {
   await requireWorkspaceContext();

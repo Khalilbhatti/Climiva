@@ -98,7 +98,7 @@ test.describe("development leftovers", () => {
   });
 
   test("no component, route or placeholder file is left from an earlier phase", () => {
-    for (const gone of ["src/components/shell/ModulePlaceholder.tsx", "src/app/(workspace)/help/placeholder.tsx"]) expect(existsSync(gone), gone).toBe(false);
+    for (const gone of ["src/components/shell/ModulePlaceholder.tsx", "src/app/(signed-in)/(workspace)/help/placeholder.tsx"]) expect(existsSync(gone), gone).toBe(false);
     const stale = sourceFiles("src").filter((file) => /placeholder|scaffold|stub|\.old\.|\.bak|\.orig/i.test(file));
     expect(stale).toEqual([]);
   });

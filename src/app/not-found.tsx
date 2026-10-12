@@ -1,29 +1,12 @@
-import Link from "next/link";
-import { AppShell } from "@/components/shell/AppShell";
-import { resolveWorkspace } from "@/server/workspace";
-import WorkspaceNotFound from "./(workspace)/not-found";
+import { PlainNotFound } from "@/components/shell/PlainNotFound";
 
 /**
- * A URL that matches no route at all. Someone signed in to a workspace gets the "couldn't find that page" state inside
- * that workspace's shell (the root layout has mounted its providers); anyone else gets a plain page that reveals nothing
- * about any workspace.
+ * The last-resort "not found", for the few places no route group has its own (a page missing from Log in or set-up, for example). It is plain and
+ * static on purpose: a layout's not-found is part of the page tree sent with EVERY response under that layout, so one that read the session or the
+ * workspace would put them in the payload of routes that have nothing to do with them. The places that show "not found" inside a workspace's shell
+ * each have their own, scoped to routes that are already the workspace's: `(signed-in)/(workspace)/not-found.tsx`, `(signed-in)/(preview)/not-found.tsx` and, for an address
+ * that matches no route at all, `(unmatched)/not-found.tsx`. The published Sites and listings have `(public)/not-found.tsx`.
  */
-export default async function NotFound() {
-  const state = await resolveWorkspace();
-  if (state.status === "ready") {
-    return (
-      <AppShell>
-        <WorkspaceNotFound />
-      </AppShell>
-    );
-  }
-  return (
-    <main className="flex min-h-dvh flex-col items-center justify-center bg-canvas px-4 text-center">
-      <h1 className="text-xl font-bold text-ink">We couldn&apos;t find that page</h1>
-      <p className="mt-2 max-w-md text-sm text-ink-muted">The link may be incorrect.</p>
-      <Link href="/" className="mt-5 text-sm font-semibold text-primary hover:underline">
-        Go to Climvia
-      </Link>
-    </main>
-  );
+export default function NotFound() {
+  return <PlainNotFound />;
 }

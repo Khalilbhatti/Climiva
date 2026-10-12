@@ -37,6 +37,7 @@ Read [production-handoff.md](production-handoff.md) for the front end, which thi
 27. [Marketing and Analytics](#27-marketing-and-analytics)
 28. [Websites, Site Versions and the Marketplace](#28-websites-site-versions-and-the-marketplace)
 29. [The visual Website Builder](#29-the-visual-website-builder)
+30. [Route groups and the provider boundary](#30-route-groups-and-the-provider-boundary)
 
 ## 1. Status and scope
 
@@ -94,7 +95,7 @@ Better Auth does the hashing, tokens and cookies. Climvia configures it in `src/
 - **Early redirect, not the boundary.** `src/proxy.ts` (Next's renamed middleware) sends a visitor with no session *cookie* to Log in before anything renders. It does
   not touch the database and is not security: the real checks are in §9.
 
-Flow of a protected request: `proxy.ts` (cookie present?) → root layout and page call `resolveWorkspace()` (session valid in the database? active membership?)
+Flow of a protected request: `proxy.ts` (cookie present?) → the workspace layout (through `WorkspaceProviders`, §30) and the page call `resolveWorkspace()` (session valid in the database? active membership?)
 → queries run inside a tenant transaction (§10) → PostgreSQL checks membership again.
 
 ## 4. Profile model
@@ -1102,7 +1103,7 @@ A visitor has no session and no organization, so the public pages do **not** go 
 
 Each has a fixed `search_path`, is revoked from `PUBLIC` and granted to the runtime role alone, **never takes an organization id**, builds its answer field by field (never a row, never `*`), and reads only the **published** version, only its visible pages and sections, and only active public Services. Customers, jobs, money, team permissions, analytics, notes, internal Service descriptions and unpublished Drafts are not reachable from them. The unrestricted number allocator the booking function uses (`app_take_number`) is not executable by the runtime role at all (a test calls it as that role and is refused). The browser's request handlers use the restricted `climvia_app` connection only; **the owner credential (`DATABASE_ADMIN_URL`) is never in a request path** (a source scan holds `src/db/public-queries.ts` to exactly these three calls).
 
-The routes (all in the `(site)` group, which is `force-dynamic` and has no shell):
+The routes (all in the `(public)` group, which is `force-dynamic`, has no shell and mounts no provider and reads no session, §30):
 
 | Route | Serves |
 | --- | --- |
@@ -1305,6 +1306,45 @@ The existing Website specs keep their guarantees (the public pages, the Draft pr
 - No custom domains, DNS, Route 53 or certificates (§20), no contact-form delivery, email or SMS, no scheduled Marketing worker, no billing, no analytics in the Builder.
 - No real-time collaboration: two people editing at once is handled by the revision (the second to save is told to reload), not by merging.
 - A page holds at most 40 sections and a site at most 12 pages; the working copy is the whole Draft in browser memory (tested at the limits).
-- The workspace's providers wrap every route (`app/layout.tsx`), so a **signed-in member** who opens a public page is also sent their **own** workspace's data with it; a visitor with no session is sent none (tested). Nothing of another business is ever in it. It predates the Builder and is noted here because the Draft is in that data.
 - The canvas scales the 1024 / 768 / 390 frame by `transform` to fit the area; it is a viewport simulation, not a device emulator.
 - No Docker image was built or run for this phase: the Dockerfile and compose file are unchanged and compatible with the new migrations (`0014`, `0015`), which were applied and tested on the PostgreSQL stand-in used for development. **Docker verification is required before AWS deployment** (§17). An existing development database needs `npm run db:reset` to pick up the revision column and its triggers.
+
+## 30. Route groups and the provider boundary
+
+The workspace's private state (the verified person, the workspaces they belong to, the active business's settings, and its core data: customers, jobs, bookings, financials, analytics, the team, the Website's Draft and Published snapshot, the Marketplace listing) is read on the server and handed to the browser by **one server component, `WorkspaceProviders`** (`src/server/workspace-providers.tsx`). Which routes mount it is a decision of the route tree, made once and held by tests. (Phase 16 first shipped with these providers in the root layout, which meant a signed-in member opening a *public* page was also sent their own workspace, Draft included. This section is the correction. Anonymous visitors were never affected and no business's data ever reached another's.)
+
+### The tree
+
+| Group (URL not affected) | Serves | Mounts |
+| --- | --- | --- |
+| `app/layout.tsx` (root) | the document, the self-hosted font, global CSS | **nothing**: it reads no session, no workspace and no data |
+| `(signed-in)` | the two groups below | `WorkspaceProviders` (it verifies the person and the workspace first) |
+| `(signed-in)/(workspace)` | every module, the Builder, Settings, Help | `AppShell` |
+| `(signed-in)/(preview)` | the signed-in Draft previews: `/website/preview…`, `/marketplace/preview` | no shell |
+| `(public)` | the published Sites (`/sites/<address>…`) and Marketplace listings (`/listings/<address>`) | **nothing**: no providers, no shell, no session |
+| `(auth)` | Log in, Sign up, set-up | nothing (they read the session only to send a signed-in person on) |
+| `(unmatched)` | an address that matches no route | its own "not found", which draws the shell and providers only for a verified member |
+
+`WorkspaceProviders` verifies the caller first (`requireWorkspaceContext()`: a redirect to Log in or to set one up), then reads the workspace data, then mounts `AppProviders` keyed by the business, so one business's state can never be carried in front of another's. The workspace and the Draft previews are siblings under the one `(signed-in)` layout on purpose: moving between a module and a preview keeps the same providers mounted, which matters while Branding (the accent, the logo) exists only in them, until object storage makes it durable.
+
+### The public route rule
+
+A request to a public route resolves **only** the public projection (`app_public_site` / `app_public_listing`, §28): it does not read the session, the membership, the workspace, any tenant table or the Draft, **whoever is asking**. A signed-in member, a member of another business and someone in several businesses are served exactly what a visitor is; they are not redirected into the workspace. Signed-in status adds nothing to the page, its payload or its JavaScript.
+
+One Next.js behaviour made this subtle and is worth knowing: **a layout's `not-found.tsx` is part of the page tree sent with every response under that layout**, even when it is never shown. The previous root `not-found.tsx` resolved the workspace to draw the shell for a signed-in member, so it ran on every request, public ones included, and put the workspace in their payload. So now: the root's `not-found.tsx` is plain and static; `(public)/not-found.tsx` is plain (one "not found" for a private, unknown or hidden Site, a page that does not exist and an address that names nothing, for a visitor and a member alike); `(signed-in)/(workspace)/not-found.tsx` and `(signed-in)/(preview)/not-found.tsx` draw the shell inside the providers the `(signed-in)` layout already mounted; and the only not-found that reads the workspace is `(unmatched)/not-found.tsx`, scoped to a catch-all page that exists for no other reason. Four small pages (`/sites`, `/listings`, `/listings/<address>/<anything>` and that catch-all) exist only to say "not found" in the right place.
+
+### What stays private
+
+- **Draft preview** (`/website/preview…`, `/marketplace/preview`) is the business's own: a visitor is sent to Log in, a member sees their own Draft (never another business's), and the page is outside the public group. It shares the workspace's providers because it reads the workspace's Draft.
+- **The Builder** (`/website/builder`) is in `(signed-in)/(workspace)` with every provider, its authorization (`website:manage` to write), its revision protection and the business switcher's guard unchanged.
+- **Switching business and logging out** are still full page loads; the providers are rebuilt from the new business.
+
+### Proof
+
+- `provider-boundary.spec.ts` builds the import graph from each entry point and holds it: the root layout (and its not-found) import nothing of the application; nothing a public page imports, however deep, is a provider, the session, the workspace, a tenant transaction, another business's queries or the shell, and the only database modules it reaches are the connection, the table definitions and the public functions' own queries; Log in, Sign up and set-up reach no provider or shell; `WorkspaceProviders` is used by exactly the `(signed-in)` layout (the workspace and the previews) and the unmatched not-found; only the unmatched not-found reads the workspace.
+- `public-boundary.spec.ts`, on the normal server: for a visitor and for each kind of member (an Apex owner, an Apex member, a Northstar owner, a person in both) every public page, its booking page, both listings and every not found are **byte for byte the same response**, with no Draft-only copy, no person, organization, customer, team or financial data and no workspace provider in the JavaScript they load; Northstar's owner opening Apex's pages and Apex's owner opening Northstar's get only the public projection; the Draft preview still needs a membership and shows a member only their own Draft.
+- The same spec starts a **second server whose database role can do exactly one thing: run the three public functions** (it cannot select from a single table; the owner credential is not in its environment). Every public page still serves, for a visitor and for each member, identical to the normal server, so a public request provably asks the database nothing but those functions. The same server cannot serve a workspace page, a preview or the Builder, which shows the role is really restricted.
+
+### What this does not change
+
+Caching (there is none, §28), the public booking path and its rate limit, the Marketplace's public function, Row Level Security, and what each route's page verifies for itself. `/sites` and `/listings` addresses that name nothing are "not found"; an address that matches no route is "not found" inside the shell for a signed-in member and a plain page (after the sign-in redirect for a visitor) otherwise.

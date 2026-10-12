@@ -1,8 +1,5 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import { AppProviders } from "@/components/providers/AppProviders";
-import { getCoreSnapshot } from "@/server/core-data";
-import { resolveWorkspace } from "@/server/workspace";
 import "./globals.css";
 
 // Inter (OFL), self-hosted: no third-party font request at build or runtime.
@@ -22,27 +19,15 @@ export const metadata: Metadata = {
 };
 
 /**
- * The providers live here, once, around every route, so the workspace and the customer-facing previews share one
- * session and moving between them keeps what was edited. They are mounted only for someone signed in to a workspace
- * (the Log in, Sign up and Set up pages have none), and with the settings the SERVER read for that person's active
- * workspace this request. Signing in or out and switching workspace are always full page loads, so what is mounted here
- * can never outlive the person or workspace it was built for. Each page still checks for itself (see src/server/workspace.ts).
+ * The document, the font and the global styles: nothing else. This layout reads no session, no workspace and no data, and mounts no provider,
+ * so a route that is not part of the signed-in workspace (a published website, a Marketplace listing, Log in, Sign up, set-up) never carries
+ * anyone's private state because of who happens to be signed in. The workspace's providers are mounted by the route groups that own that
+ * state (see src/server/workspace-providers.tsx): `(signed-in)`, which holds the workspace and the Draft previews.
  */
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const state = await resolveWorkspace();
-  const snapshot = state.status === "ready" ? state.context.snapshot : null;
-  const core = snapshot ? await getCoreSnapshot() : null;
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
-      <body className="min-h-dvh bg-canvas font-sans text-ink">
-        {snapshot && core ? (
-          <AppProviders key={snapshot.organization.id} snapshot={snapshot} core={core}>
-            {children}
-          </AppProviders>
-        ) : (
-          children
-        )}
-      </body>
+      <body className="min-h-dvh bg-canvas font-sans text-ink">{children}</body>
     </html>
   );
 }

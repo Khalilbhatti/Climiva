@@ -5,7 +5,7 @@ import { TopBar } from "./TopBar";
 
 /**
  * The one global Climvia shell: top bar + sidebar + content canvas.
- * Mounted once in app/(workspace)/layout.tsx, so it persists while modules change.
+ * Mounted once in app/(signed-in)/(workspace)/layout.tsx, so it persists while modules change.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   return (

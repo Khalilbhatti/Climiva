@@ -113,10 +113,13 @@ recreates, migrates and seeds `climvia_test` from nothing every run, which is al
 src/
   app/
     (auth)/         Log in, Sign up and business set-up: no shell
-    (workspace)/    every module, inside the one shell (sidebar + top bar), behind a verified workspace
-    (site)/         no shell: the published Websites (`/sites/<slug>`) and Marketplace listings (`/listings/<slug>`), public; the signed-in Draft previews
+    (signed-in)/    verifies the person and mounts the workspace's providers for the two groups inside it:
+      (workspace)/  every module, inside the one shell (sidebar + top bar), behind a verified workspace
+      (preview)/    the signed-in Draft previews (`/website/preview`, `/marketplace/preview`): no shell
+    (public)/       no shell, no providers, no session: the published Websites (`/sites/<slug>`) and Marketplace listings (`/listings/<slug>`)
+    (unmatched)/    an address that matches no route
     api/auth/       Better Auth's endpoints
-    layout.tsx      fonts, global styles, and the providers for the signed-in workspace
+    layout.tsx      the document, fonts and global styles only (the workspace's providers are mounted by `(signed-in)`)
   components/       one folder per module, plus auth/, shell/ (layout), workspace/ and ui/ (shared primitives)
   config/           navigation (the sidebar) and typed route helpers
   data/             types and selectors per module (every module is read from PostgreSQL for the active business)
@@ -130,8 +133,8 @@ e2e/                Playwright specs and their helpers
 docs/               SaaS architecture, design map, visual audit, production handoff
 ```
 
-- **The shell.** `AppShell` (top bar, 240 px sidebar, content area) wraps every route in `(workspace)` and stays mounted
-  as the user moves between modules. The published Sites and listings and the Draft previews live in `(site)` so they never get the workspace chrome.
+- **The shell.** `AppShell` (top bar, 240 px sidebar, content area) wraps every route in `(signed-in)/(workspace)` and stays mounted
+  as the user moves between modules. The published Sites and listings live in `(public)` and the Draft previews in `(signed-in)/(preview)`, so they never get the workspace chrome, and a public page never loads the workspace's providers whoever is signed in.
 - **Who is signed in, and where.** `resolveWorkspace()` (`src/server/workspace.ts`) validates the session in the database,
   lists the person's memberships and picks the active workspace (a cookie is only a preference, re-checked each time).
   Every page and Server Action asks it again next to its data; PostgreSQL's Row Level Security checks once more.

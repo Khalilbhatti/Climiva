@@ -31,7 +31,7 @@ import {
   type BookingTabId,
 } from "@/data/operations";
 import { BOOKING_METHOD_LABEL, getServiceById } from "@/data/services";
-import { getPrimaryDomain, getWebsitePage } from "@/data/website";
+import { getPrimaryDomain, orderedPages } from "@/data/website";
 import { formatLocalDateTime, formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import { BookingDrawer } from "./BookingDrawer";
 import { CreateBookingModal } from "./CreateBookingModal";
@@ -68,7 +68,7 @@ export function BookingsView() {
   const { data } = useOperations();
   const { data: plans } = useMaintenancePlans();
   const { toast } = useToast();
-  const { site } = useWebsite();
+  const { website } = useWebsite();
   const router = useRouter();
   const params = useSearchParams();
   const canManage = useCan("operations:manage");
@@ -121,8 +121,12 @@ export function BookingsView() {
   const selected = selectedId ? getBookingById(selectedId, data) : undefined;
   const compact = Boolean(selected);
 
+  // The address of the website's Booking page, or nothing while the business has no website (or no Booking page on it).
+  const bookingPage = website ? orderedPages(website.draft).find((page) => page.type === "booking" && page.visible) : undefined;
+
   async function copyBookingLink() {
-    const url = `https://${getPrimaryDomain(site.domain)}${getWebsitePage("booking")?.path}`;
+    if (!website || !bookingPage) return;
+    const url = `https://${getPrimaryDomain(website.site, website.domain)}/${bookingPage.slug}`;
     try {
       await navigator.clipboard.writeText(url);
       toast("Booking link copied to clipboard.");
@@ -145,7 +149,7 @@ export function BookingsView() {
         description="Review customer requests, confirm appointments and manage upcoming bookings."
         actions={
           <>
-            <Button variant="secondary" size="lg" onClick={copyBookingLink}>
+            <Button variant="secondary" size="lg" onClick={copyBookingLink} disabled={!bookingPage}>
               <Link2 aria-hidden className="size-[18px]" />
               Copy booking link
             </Button>

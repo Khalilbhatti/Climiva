@@ -4,15 +4,14 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { ArrowLeft, CalendarCheck, CircleCheck, Clock, Info, MapPin } from "lucide-react";
 import { FormAlert } from "@/components/auth/AuthShell";
-import { useOperations } from "@/components/operations/OperationsProvider";
-import { useBusiness, useSettings } from "@/components/settings/SettingsProvider";
 import { Button, ButtonLink, buttonClasses } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { OptionCard, OptionGroup } from "@/components/ui/OptionCard";
 import { Select } from "@/components/ui/Select";
 import { StepList } from "@/components/ui/StepList";
 import { Textarea } from "@/components/ui/Textarea";
-import type { Booking } from "@/data/operations";
+import type { AppHref } from "@/config/routes";
+import type { WeeklyHours } from "@/data/settings";
 import {
   BOOKING_METHOD_LABEL,
   formatDuration,
@@ -20,14 +19,10 @@ import {
   type BookingMethod,
   type Service,
 } from "@/data/services";
-import { getShownServices } from "@/data/website";
 import { addDays, formatLongDate, formatTime, formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import { getSlotGroup, type Slot } from "@/lib/booking-slots";
 import { toTelHref } from "@/lib/format";
-import { previewHref } from "../site-links";
-import { usePreview } from "./PreviewShell";
-import { useServices } from "@/components/services/ServicesProvider";
-import { useClock } from "@/components/workspace/WorkspaceProvider";
+import type { SiteView } from "./site-view";
 
 const STEP_LABELS: Record<BookingMethod, readonly string[]> = {
   instant: ["Service", "Date & time", "Your details", "Confirmation"],
@@ -49,8 +44,38 @@ const slotText = (method: BookingMethod, slot: Slot) =>
 
 type Errors = Partial<Record<"slot" | "name" | "email" | "phone" | "address" | `intake-${string}`, string>>;
 
-function NotAvailable({ live, service }: { live: boolean; service?: Service }) {
-  const business = useBusiness();
+/** What the journey sends when the visitor confirms: the Service, the chosen slot, their details and answers. */
+export type JourneySubmission = {
+  service: Service;
+  date: string;
+  start: string;
+  end: string;
+  name: string;
+  phone: string;
+  email: string;
+  address: string;
+  notes: string;
+  answers: Record<string, string>;
+};
+
+/** What a submission comes back with: the reference to show, or why it was refused. */
+export type JourneyResult = { ok: true; reference: string } | { ok: false; error: string; fields?: Record<string, string> };
+
+type JourneyProps = {
+  /** The Service being booked, or undefined when the address names one the site does not offer. */
+  service: Service | undefined;
+  view: SiteView;
+  /** The business's weekly hours and its today: the same slot rules apply on every page that books. */
+  hours: WeeklyHours;
+  today: string;
+  submit: (submission: JourneySubmission) => Promise<JourneyResult>;
+  /** The Booking page, where "Change service" and "Back to booking" lead. */
+  bookingHref: AppHref;
+  homeHref: AppHref;
+};
+
+function NotAvailable({ view, service, bookingHref }: { view: SiteView; service?: Service; bookingHref: AppHref }) {
+  const { business } = view;
   return (
     <section className="px-6 py-14 text-center">
       <h1 className="text-xl font-bold text-ink">{service ? `${service.name} can't be booked online` : "Service not found"}</h1>
@@ -61,7 +86,7 @@ function NotAvailable({ live, service }: { live: boolean; service?: Service }) {
         </a>
         .
       </p>
-      <ButtonLink href={previewHref("booking", live)} variant="secondary" className="mt-5">
+      <ButtonLink href={bookingHref} variant="secondary" className="mt-5">
         Back to booking
       </ButtonLink>
     </section>
@@ -70,30 +95,21 @@ function NotAvailable({ live, service }: { live: boolean; service?: Service }) {
 
 /**
  * The customer's booking journey for one Service. What it asks for follows the Service's booking method (the three
- * approved behaviours). It creates a single real Booking in the signed-in business: confirmed for instant booking, pending
- * for a request (the server decides which, from the Service). It never creates a job, quote, invoice or payment, and it takes
- * no payment.
+ * approved behaviours). It makes a single Booking: confirmed for instant booking, pending for a request (the server decides which, from
+ * the Service). It never creates a job, quote, invoice or payment, and it takes no payment.
  *
- * This is a PREVIEW inside the signed-in workspace, so the booking is made as that signed-in owner or admin through the same
- * authorized server action as every other booking: it names no organization and trusts nothing from the page. A public,
- * unauthenticated booking page for a business's own domain is not built yet (it needs a verified domain, rate limiting and
- * spam protection); see docs/saas-architecture.md.
+ * It does not know WHO is booking. The signed-in preview passes a `submit` that uses the workspace's authorized action; the published
+ * site passes one that uses the public booking action, which finds the business from the SITE and trusts nothing from the page.
  */
-export function BookingJourney({ serviceId }: { serviceId: string }) {
-  const { content, live } = usePreview();
-  const { business, hours } = useSettings().settings;
-  const { createBooking } = useOperations();
-  const { today } = useClock();
-  const { services: catalog } = useServices();
-  const service = getShownServices(content.services, catalog).find((item) => item.id === serviceId);
-
+export function BookingJourney({ service, view, hours, today, submit, bookingHref, homeHref }: JourneyProps) {
+  const { business } = view;
   const [stage, setStage] = useState<"time" | "details" | "done">("time");
   const [date, setDate] = useState(() => addDays(today, FIRST_DATE_OFFSET));
   const [slotId, setSlotId] = useState<string>();
   const [details, setDetails] = useState({ name: "", email: "", phone: "", address: "", notes: "" });
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [showErrors, setShowErrors] = useState(false);
-  const [created, setCreated] = useState<Booking>();
+  const [created, setCreated] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string>();
   const heading = useRef<HTMLHeadingElement>(null);
@@ -107,7 +123,7 @@ export function BookingJourney({ serviceId }: { serviceId: string }) {
     heading.current?.focus();
   }, [stage]);
 
-  if (!service || service.visibility !== "public-booking") return <NotAvailable live={live} service={service} />;
+  if (!service || service.visibility !== "public-booking") return <NotAvailable view={view} service={service} bookingHref={bookingHref} />;
 
   const method = service.bookingMethod;
   const questions = service.intake.filter((question) => question.type === "single-select");
@@ -137,30 +153,27 @@ export function BookingJourney({ serviceId }: { serviceId: string }) {
     setStage("details");
   }
 
-  async function submit(event: FormEvent) {
+  async function confirm(event: FormEvent) {
     event.preventDefault();
     if (saving) return;
     if (!slot || Object.keys(errors).length > 0) return setShowErrors(true);
-    const extras = questions
-      .filter((question) => !["primary-issue", "system-type"].includes(question.id) && answers[question.id])
-      .map((question) => `${question.prompt} ${answers[question.id]}`);
-    const note = [details.notes.trim(), ...extras].filter(Boolean).join(" · ");
     setSaving(true);
     setProblem(undefined);
-    const result = await createBooking({
-      contactName: details.name.trim(),
-      contact: { phone: details.phone.trim(), email: details.email.trim(), address: details.address.trim() },
-      serviceId: service!.id,
-      source: "Website",
+    const result = await submit({
+      service: service!,
       date,
       start: slot.start,
       end: slot.end,
-      intake: { reportedIssue: answers["primary-issue"], systemType: answers["system-type"] },
-      note: note || undefined,
+      name: details.name.trim(),
+      phone: details.phone.trim(),
+      email: details.email.trim(),
+      address: details.address.trim(),
+      notes: details.notes.trim(),
+      answers,
     });
     setSaving(false);
     if (!result.ok) return setProblem(result.error);
-    setCreated(result.data.booking);
+    setCreated(result.reference);
     setShowErrors(false);
     setStage("done");
   }
@@ -220,7 +233,7 @@ export function BookingJourney({ serviceId }: { serviceId: string }) {
             )}
             {shown("slot") && <p className="text-xs text-danger">{shown("slot")}</p>}
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <Link href={previewHref("booking", live)} className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-muted hover:text-primary">
+              <Link href={bookingHref} className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-muted hover:text-primary">
                 <ArrowLeft aria-hidden className="size-4" />
                 Change service
               </Link>
@@ -231,7 +244,7 @@ export function BookingJourney({ serviceId }: { serviceId: string }) {
 
         {stage === "details" && (
           <div className="grid grid-cols-1 gap-6 @3xl:grid-cols-[minmax(0,1fr)_20rem]">
-            <form onSubmit={submit} noValidate className="space-y-5">
+            <form onSubmit={confirm} noValidate className="space-y-5">
               <div>
                 <h2 id="details-heading" ref={heading} tabIndex={-1} className="text-lg font-bold text-ink focus:outline-none">
                   {method === "instant" ? "Your details & service address" : "Contact details & service address"}
@@ -335,7 +348,7 @@ export function BookingJourney({ serviceId }: { serviceId: string }) {
             </div>
             <dl className="space-y-3 rounded-card border border-line p-5 text-sm">
               {[
-                { label: method === "instant" ? "Booking reference" : "Request reference", value: created.id },
+                { label: method === "instant" ? "Booking reference" : "Request reference", value: created },
                 { label: "Service", value: service.name },
                 { label: method === "instant" ? "Appointment" : "Requested time", value: `${formatWeekdayDate(date)} · ${formatTimeRange(slot.start, slot.end)}` },
                 { label: "Service address", value: details.address.trim() },
@@ -359,7 +372,7 @@ export function BookingJourney({ serviceId }: { serviceId: string }) {
                 {method !== "instant" && <li>Any repairs are quoted for your approval before work begins.</li>}
               </ul>
             </div>
-            <Link href={previewHref("home", live)} className={buttonClasses({ variant: "secondary" })}>
+            <Link href={homeHref} className={buttonClasses({ variant: "secondary" })}>
               Return to homepage
             </Link>
           </section>

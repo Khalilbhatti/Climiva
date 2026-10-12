@@ -26,12 +26,11 @@ import type { WorkspaceSnapshot } from "@/lib/workspace-types";
  * from PostgreSQL on every load.
  *
  * Customers, Services, the team, the operations (Bookings, Jobs, the Schedule's blocks), the financials (Quotes, Invoices,
- * Payments), the Maintenance Plans, the Reviews and the Marketing campaigns are on the database: each business gets its own, read
- * for the active organization only (as are the reporting totals the sidebar and the Plans and Reviews screens show). The modules
- * that are not on the database yet (Website, Marketplace) keep their in-memory stores. Those start from the built-in sample records
- * ONLY for the sample business; every other business starts them empty, so a customer or a Service of one business can never be
- * matched to another's sample records. The customer-facing previews sit inside the same providers so they read what the workspace
- * saved.
+ * Payments), the Maintenance Plans, the Reviews, the Marketing campaigns, the Website (the primary site's Draft and Published snapshot)
+ * and the Marketplace listing are on the database: each business gets its own, read for the active organization only (as are the reporting
+ * totals the sidebar and the Plans and Reviews screens show). Nothing here starts from a built-in sample. The signed-in previews of the
+ * website and the listing sit inside the same providers so they read what the workspace saved; the PUBLISHED website and listing a visitor
+ * opens are separate routes with no providers at all.
  *
  * Callers pass `key={snapshot.organization.id}`, so a different workspace can never inherit any state from another.
  */
@@ -46,8 +45,8 @@ export function AppProviders({ snapshot, core, children }: { snapshot: Workspace
                 <OperationsProvider initial={core.operations}>
                   <FinancialProvider initial={core.financials}>
                     <MaintenancePlansProvider initial={core.maintenance}>
-                      <WebsiteProvider>
-                        <MarketplaceProvider>
+                      <WebsiteProvider initial={core.website}>
+                        <MarketplaceProvider initial={core.marketplace}>
                           <ReviewsProvider initial={core.reviews}>
                             <MarketingProvider initial={core.marketing}>
                               <ReportingProvider reporting={core.reporting}>{children}</ReportingProvider>

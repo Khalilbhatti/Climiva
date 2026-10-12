@@ -1,28 +1,9 @@
 /**
- * Pure state transitions for the Marketplace demo. Nothing is published anywhere: a listing is a status and a
- * saved configuration held in memory. Hiding never touches the saved configuration, and nothing here can change a
- * Service or the business record.
+ * Pure edits to a listing's configuration while it is being edited: moving a Service in the listing's order and selecting or dropping
+ * one. Nothing here can change a Service or the business record, and nothing is stored by these: Save sends the configuration to the
+ * server (src/server/actions/marketplace), which validates it again and stores it.
  */
-import type { ListingConfig, MarketplaceState } from "@/data/marketplace";
-
-/** Saves the listing's configuration. The published or hidden status is unchanged. */
-export function saveListing(state: MarketplaceState, config: ListingConfig): MarketplaceState {
-  return { ...state, config };
-}
-
-export function publishListing(state: MarketplaceState): MarketplaceState {
-  return { ...state, status: "published" };
-}
-
-/** Hides the listing from the directory. Its saved configuration stays exactly as it was. */
-export function hideListing(state: MarketplaceState): MarketplaceState {
-  return state.status === "published" ? { ...state, status: "hidden" } : state;
-}
-
-/** First-time setup: saves the configuration and publishes in one step. */
-export function setUpListing(state: MarketplaceState, config: ListingConfig): MarketplaceState {
-  return { status: "published", config: { ...config } };
-}
+import type { ListingConfig } from "@/data/marketplace";
 
 /** Moves a Service one place up or down the listing order. Unknown ids and the ends are left alone. */
 export function moveService(config: ListingConfig, serviceId: string, by: -1 | 1): ListingConfig {

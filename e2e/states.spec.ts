@@ -14,14 +14,19 @@ const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary
 /** What a screen must never print where a value belongs. */
 const ARTEFACTS = /\bundefined\b|\bNaN\b|Invalid Date|\[object Object\]|\bnull\b|\{\{[^}]*\}\}(?!.*first_name)/;
 
+/**
+ * The editors show their merge fields on purpose, and they are the only template text a page may show: the Marketing editor's first-name
+ * field, and the two Website text tokens (the business's name and place) in a section's text boxes.
+ */
+const withoutSanctionedFields = (text: string) => text.replace(/\{\{contact\.first_name\}\}/g, "").replace(/\{\{business\.(name|location)\}\}/g, "");
+
 test.describe("no screen prints a programming artefact", () => {
   for (const url of [...ROUTE_INVENTORY.map((route) => route.url), ...STATE_ROUTES]) {
     test(url, async ({ page }) => {
       await page.goto(url);
       await page.waitForLoadState("networkidle");
       const text = await page.locator("body").innerText();
-      // The Marketing editor shows the first-name merge field on purpose; it is the only template text a page may show.
-      expect(text.replace(/\{\{contact\.first_name\}\}/g, "")).not.toMatch(ARTEFACTS);
+      expect(withoutSanctionedFields(text)).not.toMatch(ARTEFACTS);
     });
   }
 });
@@ -114,7 +119,7 @@ test.describe("unusual addresses never break a page", () => {
       await page.waitForLoadState("networkidle");
       await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
       const text = await page.locator("body").innerText();
-      expect(text).not.toMatch(ARTEFACTS);
+      expect(withoutSanctionedFields(text)).not.toMatch(ARTEFACTS);
       expect(text).not.toMatch(/application error|client-side exception/i);
       if (!url.startsWith("/website/preview")) await expect(primaryNav(page)).toBeVisible();
     });

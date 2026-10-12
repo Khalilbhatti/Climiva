@@ -8,10 +8,11 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
-import { CLIMVIA_DOMAIN, getPrimaryDomain } from "@/data/website";
-import { normalizeDomain } from "@/lib/website-state";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
+import { CUSTOM_DOMAIN_STATUS_LABEL, getPrimaryDomain, platformHost } from "@/data/website";
+import { DOMAIN_PROBLEM, normalizeDomain, publicSiteHref } from "@/lib/site-domain";
 import { previewHref } from "./site-links";
-import { useWebsite } from "./WebsiteProvider";
+import { useWebsite, useWebsiteState } from "./WebsiteProvider";
 
 /** A small menu opened from a ⋮ button: Esc or an outside click closes it, and focus returns to the button. */
 function OverflowMenu({ label, children }: { label: string; children: (close: () => void) => ReactNode }) {
@@ -91,15 +92,29 @@ function AddressRow({
 }
 
 export function DomainManager() {
-  const { site, connectCustomDomain, makeCustomPrimary, makeClimviaPrimary, removeCustomDomain } = useWebsite();
+  const website = useWebsiteState();
+  const { connectDomain, setPrimaryAddress, removeDomain } = useWebsite();
+  const canManage = useCan("website:manage");
   const { toast } = useToast();
   const [removing, setRemoving] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
 
-  const { custom, primary } = site.domain;
-  const view = previewHref("home", site.published);
+  const { custom, customStatus, primary } = website.domain;
+  const CLIMVIA_DOMAIN = platformHost(website.site.platformSlug);
+  const view = website.published ? publicSiteHref(website.site.platformSlug) : previewHref();
+  const statusLabel = CUSTOM_DOMAIN_STATUS_LABEL[customStatus ?? "pending_verification"];
+
+  async function run(call: () => ReturnType<typeof removeDomain>, success: string) {
+    if (busy) return false;
+    setBusy(true);
+    const result = await call();
+    setBusy(false);
+    toast(result.ok ? success : result.error);
+    return result.ok;
+  }
 
   async function copy(host: string) {
     try {
@@ -110,18 +125,25 @@ export function DomainManager() {
     }
   }
 
-  function connect(event: FormEvent) {
+  async function connect(event: FormEvent) {
     event.preventDefault();
     const host = normalizeDomain(draft);
     if (!host) {
-      setError("Enter a domain name like www.yourbusiness.com.");
+      setError(DOMAIN_PROBLEM);
       return;
     }
-    connectCustomDomain(host);
+    if (busy) return;
+    setBusy(true);
+    const result = await connectDomain(host);
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.fields?.domain ?? result.error);
+      return;
+    }
     setConnecting(false);
     setDraft("");
     setError(undefined);
-    toast(`Domain connected. ${host} is now connected to your Website.`);
+    toast(`Domain added. ${host} is recorded for your Website and waiting for verification.`);
   }
 
   return (
@@ -156,14 +178,8 @@ export function DomainManager() {
           note="This address is available automatically for your Climvia Website."
           actions={
             <>
-              {custom && primary === "custom" && (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    makeClimviaPrimary();
-                    toast(`${CLIMVIA_DOMAIN} is now the primary website address.`);
-                  }}
-                >
+              {canManage && custom && primary === "custom" && (
+                <Button size="sm" disabled={busy} onClick={() => run(() => setPrimaryAddress("climvia"), `${CLIMVIA_DOMAIN} is now the primary website address.`)}>
                   Make primary
                 </Button>
               )}
@@ -180,7 +196,7 @@ export function DomainManager() {
         />
         <p className="mt-3 flex items-start gap-2 text-xs text-ink-muted">
           <Info aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-          The Climvia domain cannot be deleted. If you connect a custom domain, both addresses can access this Website.
+          The Climvia domain cannot be deleted. A custom domain you record here does not open your website yet.
         </p>
       </section>
 
@@ -189,7 +205,7 @@ export function DomainManager() {
           <h2 id="custom-heading" className="text-base font-semibold text-ink">
             Custom domain
           </h2>
-          <p className="mt-0.5 text-sm text-ink-muted">Connect a web address you already own to brand your customer-facing HVAC website.</p>
+          <p className="mt-0.5 text-sm text-ink-muted">Record a web address you already own to brand your customer-facing HVAC website.</p>
         </div>
 
         {custom ? (
@@ -199,21 +215,15 @@ export function DomainManager() {
               primary={primary === "custom"}
               tags={
                 <>
-                  <StatusBadge tone="positive">Connected</StatusBadge>
-                  {primary === "custom" && <StatusBadge tone="primary">Primary</StatusBadge>}
+                  <StatusBadge tone={customStatus === "configured" ? "primary" : "warning"}>{statusLabel}</StatusBadge>
+                  {primary === "custom" && <StatusBadge tone="positive">Primary</StatusBadge>}
                 </>
               }
-              note="This domain is connected to your Climvia Website."
+              note="This domain is recorded for your Climvia Website. Verification isn't available yet."
               actions={
                 <>
-                  {primary !== "custom" && (
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        makeCustomPrimary();
-                        toast(`${custom} is now the primary website address.`);
-                      }}
-                    >
+                  {canManage && primary !== "custom" && (
+                    <Button size="sm" disabled={busy} onClick={() => run(() => setPrimaryAddress("custom"), `${custom} is now the primary website address.`)}>
                       Make primary
                     </Button>
                   )}
@@ -225,6 +235,7 @@ export function DomainManager() {
                     <Copy aria-hidden className="size-3.5" />
                     Copy
                   </Button>
+                  {canManage && (
                   <OverflowMenu label={`More actions for ${custom}`}>
                     {(close) => (
                       <button
@@ -241,30 +252,33 @@ export function DomainManager() {
                       </button>
                     )}
                   </OverflowMenu>
+                  )}
                 </>
               }
             />
             <p className="mt-3 flex items-start gap-2 text-xs text-ink-muted">
               <ShieldCheck aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-              Visitors on {custom} see the same published website as {CLIMVIA_DOMAIN}.
+              Visitors can&apos;t open {custom} yet: verification and routing arrive in a later release. Your published website is available at {CLIMVIA_DOMAIN}.
             </p>
           </>
         ) : (
           <div className="flex flex-col items-center rounded-card border border-dashed border-line-strong px-6 py-10 text-center">
             <LinkIcon aria-hidden className="mb-3 size-6 text-primary" />
             <h3 className="text-sm font-semibold text-ink">No custom domain connected</h3>
-            <p className="mt-1 max-w-md text-sm text-ink-muted">Connect a domain you already own to use it as your public Website address.</p>
-            <Button className="mt-4" variant="secondary" onClick={() => setConnecting(true)}>
-              <Plus aria-hidden className="size-4" />
-              Connect custom domain
-            </Button>
+            <p className="mt-1 max-w-md text-sm text-ink-muted">Record a domain you already own to use it as your public Website address when domain routing arrives.</p>
+            {canManage && (
+              <Button className="mt-4" variant="secondary" onClick={() => setConnecting(true)}>
+                <Plus aria-hidden className="size-4" />
+                Connect custom domain
+              </Button>
+            )}
           </div>
         )}
       </section>
 
       <p className="flex items-center gap-2 px-1 text-xs text-ink-muted">
         <Globe aria-hidden className="size-3.5" />
-        Current primary address: <span className="font-mono text-ink">{getPrimaryDomain(site.domain)}</span>
+        Current primary address: <span className="font-mono text-ink">{getPrimaryDomain(website.site, website.domain)}</span>
       </p>
 
       <Modal
@@ -279,10 +293,10 @@ export function DomainManager() {
             </Button>
             <Button
               variant="destructive-solid"
-              onClick={() => {
-                removeCustomDomain();
+              disabled={busy}
+              onClick={async () => {
+                await run(() => removeDomain(), `Custom domain removed. ${CLIMVIA_DOMAIN} is now your primary website address.`);
                 setRemoving(false);
-                toast(`Custom domain removed. ${CLIMVIA_DOMAIN} is now your primary website address.`);
               }}
             >
               Remove domain
@@ -313,7 +327,7 @@ export function DomainManager() {
           setError(undefined);
         }}
         title="Connect custom domain"
-        description="Enter a web address you already own. Your published website will be available on it as well as on your Climvia address."
+        description="Enter a web address you already own. It is recorded for your website; verification and routing arrive in a later release."
         footer={
           <>
             <Button
@@ -325,7 +339,7 @@ export function DomainManager() {
             >
               Cancel
             </Button>
-            <Button type="submit" form="connect-domain-form">
+            <Button type="submit" form="connect-domain-form" disabled={busy}>
               Connect domain
             </Button>
           </>

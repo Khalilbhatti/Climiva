@@ -93,3 +93,6 @@ export function businessClock(sample: boolean, timeZone: string, fixedNow: strin
 export function stampInstant(sample: boolean, timeZone: string, fixedNow: string, at: Date = new Date()): Date {
   return sample ? localToInstant(fixedNow, timeZone) : at;
 }
+
+/** The real time in milliseconds, for a server-side timer such as a rate-limit window. It is not a business's date: those come from `businessClock`. */
+export const serverTimerMs = (): number => new Date().getTime();

@@ -90,14 +90,18 @@ test.describe("the sample business belongs to Apex alone", () => {
     expect(problems).toEqual([]);
   });
 
-  test("Taylor sees an unavailable state, not Apex's records, in every module that still runs on sample data", async ({ openAs }) => {
+  test("Taylor's Website and Marketplace are Northstar's own: its address, its listing, none of Apex's", async ({ openAs }) => {
     const { page, problems } = await openAs("taylor");
-    const modules: [string, string][] = [["/website", "Website"], ["/marketplace", "Marketplace"]];
-    for (const [path, name] of modules) {
+    for (const [path, name, shown] of [
+      ["/website", "Website", "northstar.climvia.com"],
+      ["/marketplace", "Marketplace", NORTHSTAR.name],
+    ] as const) {
       await page.goto(path);
       await expect(page.getByRole("heading", { level: 1, name }), path).toBeVisible();
-      await expect(page.getByRole("heading", { level: 2, name: `${name} isn't available for ${NORTHSTAR.name} yet` }), path).toBeVisible();
-      expect(leaksIn(await page.locator("body").innerText(), APEX_ONLY), path).toEqual([]);
+      await expect(page.getByRole("heading", { level: 2, name: `${name} isn't available for ${NORTHSTAR.name} yet` }), path).toHaveCount(0);
+      const text = await page.locator("body").innerText();
+      expect(text, path).toContain(shown);
+      expect(leaksIn(text, APEX_ONLY), path).toEqual([]);
     }
     // Bookings, the Schedule, Jobs, Quotes & Invoices, Payments, Maintenance Plans, Reviews, Marketing and Analytics are Northstar's own now: real pages with its own few records and none of Apex's.
     for (const [path, name] of [
@@ -140,14 +144,24 @@ test.describe("the sample business belongs to Apex alone", () => {
     expect(leaks).toEqual([]);
   });
 
-  test("the customer-facing previews are not available to Taylor either", async ({ apiAs }) => {
+  test("Taylor's previews are her own site and listing; the public pages are the same for everyone", async ({ apiAs }) => {
     const taylor = await apiAs("taylor");
-    const previews = ROUTE_INVENTORY.filter((route) => !route.shell).map((route) => route.url);
+    const routes = ROUTE_INVENTORY.filter((route) => !route.shell);
+    const previews = routes.filter((route) => route.url.startsWith("/website/preview") || route.url.startsWith("/marketplace/preview"));
+    const published = routes.filter((route) => route.url.startsWith("/sites/") || route.url.startsWith("/listings/"));
     expect(previews.length).toBeGreaterThan(6);
-    for (const url of previews) {
-      const body = await (await taylor.get(url)).text();
-      expect(body, url).toContain("This page isn&#x27;t available");
-      expect(leaksIn(body, APEX_ONLY), url).toEqual([]);
+    expect(published.length).toBeGreaterThan(6);
+    // A preview is drawn from the signed-in person's own business: Northstar's pages, or not found for an Apex record, never Apex's.
+    for (const { url } of previews) {
+      const response = await taylor.get(url);
+      expect([200, 404], url).toContain(response.status());
+      expect(leaksIn(await response.text(), APEX_ONLY), url).toEqual([]);
+    }
+    // A published site and listing are public by design: anyone, signed in or not, is served the same page.
+    for (const { url } of published) {
+      const response = await taylor.get(url);
+      expect(response.status(), url).toBe(200);
+      expect(response.headers()["cache-control"], url).toMatch(/no-store|private|no-cache/);
     }
   });
 

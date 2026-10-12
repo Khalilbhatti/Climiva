@@ -4,10 +4,8 @@ import Link from "next/link";
 import { ArrowRight, Globe, Mail, Phone, Store } from "lucide-react";
 import { useBusiness, useHoursRows } from "@/components/settings/SettingsProvider";
 import { cardClasses } from "@/components/ui/Card";
-import { useWebsite } from "@/components/website/WebsiteProvider";
-import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
+import { useSiteAddress } from "@/components/website/WebsiteProvider";
 import { formatCityStateZip } from "@/data/fixtures";
-import { getPrimaryDomain } from "@/data/website";
 import { toTelHref } from "@/lib/format";
 
 const labelClasses = "text-xs font-medium tracking-wider text-ink-muted uppercase";
@@ -20,8 +18,7 @@ const labelClasses = "text-xs font-medium tracking-wider text-ink-muted uppercas
 export function BusinessInfoCard() {
   const business = useBusiness();
   const hours = useHoursRows();
-  const { site } = useWebsite();
-  const { hasSampleData } = useWorkspace();
+  const address = useSiteAddress();
   return (
     <section aria-labelledby="business-info-heading" className={cardClasses("lg")}>
       <div className="flex flex-col justify-between gap-4 border-b border-line pb-4 md:flex-row md:items-center">
@@ -62,10 +59,10 @@ export function BusinessInfoCard() {
           <h3 className={labelClasses}>Business Address</h3>
           <p className="mt-1.5 text-sm font-semibold text-ink">{business.address.street}</p>
           <p className="mt-0.5 text-xs text-ink-muted">{formatCityStateZip(business.address)}</p>
-          {hasSampleData && (
+          {address && (
             <p className="mt-2 flex min-h-5 items-center gap-1.5 text-xs text-ink-muted">
               <Globe aria-hidden className="size-3.5" />
-              {getPrimaryDomain(site.domain)}
+              {address}
             </p>
           )}
         </div>

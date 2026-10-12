@@ -5,7 +5,6 @@
  */
 import { readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { WEBSITE_PAGES } from "../src/data/website";
 import { CUSTOMERS, FINANCIALS, JOBS, MARKETING, PLANS, REVIEWS_DATA, ROLES, SERVICES, TEAM } from "./apex-data";
 
 export type InventoryRoute = {
@@ -38,14 +37,28 @@ const PARAMS: Record<string, readonly string[]> = {
   invoiceId: FINANCIALS.invoices.map((invoice) => invoice.id),
   paymentId: FINANCIALS.payments.map((payment) => payment.id),
   planId: PLANS.map((plan) => plan.id),
-  pageId: WEBSITE_PAGES.map((page) => page.id),
+  pageId: ["home", "services", "about", "contact", "booking"],
+  // The published sample sites and listings, by their public addresses (the standing sample business and Northstar).
+  siteSlug: ["apexclimate"],
+  listingSlug: ["apex-climate-heating-air"],
   reviewId: REVIEWS_DATA.reviews.map((review) => review.id),
   campaignId: MARKETING.campaigns.map((campaign) => campaign.id),
 };
 
+/** Values for a catch-all segment ([...slug]): the addresses under a website's home page, including each Service's booking journey. */
+const CATCH_ALL: Record<string, readonly string[]> = {
+  slug: ["services", "about", "contact", "booking", ...SERVICES.map((service) => `booking/${service.id}`)],
+};
+
 function expand(pattern: string): string[] {
   const match = /\[([A-Za-z]+)\]/.exec(pattern);
-  if (!match) return [pattern];
+  if (!match) {
+    const rest = /\[\.\.\.([A-Za-z]+)\]/.exec(pattern);
+    if (!rest) return [pattern];
+    const values = CATCH_ALL[rest[1]];
+    if (!values) throw new Error(`No data to fill ${rest[0]} in ${pattern}`);
+    return values.map((value) => pattern.replace(rest[0], value));
+  }
   const values = PARAMS[match[1]];
   if (!values || values.length === 0) throw new Error(`No data to fill ${match[0]} in ${pattern}`);
   return values.flatMap((value) => expand(pattern.replace(match[0], value)));

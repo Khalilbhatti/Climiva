@@ -14,10 +14,12 @@ import type { CustomerBook } from "./customers";
 import type { FinancialData } from "./financials";
 import type { PlanAdjustment, PlansData } from "./maintenance-plans";
 import type { MarketingData } from "./marketing";
+import type { MarketplaceState } from "./marketplace";
 import type { OperationsData } from "./operations";
 import type { ReviewAdjustment, ReviewsData } from "./reviews";
 import type { Service } from "./services";
 import type { TeamData } from "./team";
+import type { WebsiteState } from "./website";
 
 export type Directory = CustomerBook & {
   services: readonly Service[];
@@ -39,6 +41,10 @@ export type CoreSnapshot = {
   reviews: ReviewsData;
   /** The business's Marketing campaigns. Their recipients are not here: a page asks the server for one campaign's snapshot at a time. */
   marketing: MarketingData;
+  /** The primary Site's Draft and Published snapshot, its addresses and publishing state; null when the business has no website yet. */
+  website: WebsiteState | null;
+  /** The business's Marketplace listing configuration (not set up, until it sets one up). */
+  marketplace: MarketplaceState;
   /**
    * What the browser needs of the reporting layer for the active business: the imported adjustments to its Plans and Reviews totals
    * (none for a business without reporting history), and the headline totals of its current month for the Overview and the sidebar.

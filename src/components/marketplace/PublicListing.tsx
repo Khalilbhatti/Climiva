@@ -2,23 +2,25 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Monitor, Smartphone, Snowflake } from "lucide-react";
-import { useBusiness } from "@/components/settings/SettingsProvider";
+import { ArrowLeft, Monitor, Smartphone } from "lucide-react";
+import { useBrandStyle, useBusiness } from "@/components/settings/SettingsProvider";
 import { ButtonLink } from "@/components/ui/Button";
-import { useWebsite } from "@/components/website/WebsiteProvider";
-import { getPrimaryDomain } from "@/data/website";
 import { cn } from "@/lib/cn";
+import { ListingFrame } from "./ListingFrame";
 import { ListingView } from "./ListingView";
+import { useListingData } from "./listing-data";
 import { useMarketplace } from "./MarketplaceProvider";
 
 /**
- * The public Climvia directory page for this business, outside the workspace shell: no sidebar, no workspace header, and no
- * internal state labels. The slim toolbar above it (back link, Desktop / Mobile) is the one thing the real directory would not have.
+ * The saved listing as the Climvia directory would show it, outside the workspace shell, for someone signed in to the business: no sidebar,
+ * no workspace header and no internal state labels. The slim toolbar above it (back link, Desktop / Mobile) is the one thing the real
+ * directory would not have. The page a visitor opens is /listings/<address>, which shows the listing only while it is published.
  */
 export function PublicListing() {
   const { listing } = useMarketplace();
-  const { site } = useWebsite();
   const business = useBusiness();
+  const brandStyle = useBrandStyle();
+  const data = useListingData(listing.config);
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
   const published = listing.status === "published";
 
@@ -56,40 +58,21 @@ export function PublicListing() {
       </div>
 
       <div className="px-4 py-6">
-        <div
-          data-testid="directory-frame"
-          className={cn("@container mx-auto overflow-hidden rounded-card border border-line bg-canvas shadow-card", device === "mobile" ? "max-w-[390px]" : "max-w-5xl")}
-        >
-          <header className="flex items-center gap-2.5 border-b border-line bg-surface px-5 py-4">
-            <span aria-hidden className="flex size-8 items-center justify-center rounded-btn bg-primary text-white">
-              <Snowflake className="size-4" />
-            </span>
-            <span className="leading-tight">
-              <span className="block text-sm font-bold text-ink">Climvia</span>
-              <span className="block text-micro font-semibold tracking-wider text-ink-muted uppercase">Marketplace</span>
-            </span>
-          </header>
-
+        <ListingFrame businessName={business.name} narrow={device === "mobile"}>
           {published ? (
             <div className="p-4 @2xl:p-6">
-              <ListingView config={listing.config} domain={getPrimaryDomain(site.domain)} variant="page" />
+              <ListingView data={data} variant="page" style={brandStyle} />
             </div>
           ) : (
             <section className="px-6 py-16 text-center">
               <h1 className="text-xl font-bold text-ink">This listing isn&apos;t available</h1>
-              <p className="mx-auto mt-2 max-w-md text-sm text-ink-muted">
-                {business.name} is not listed in the Climvia Marketplace right now.
-              </p>
+              <p className="mx-auto mt-2 max-w-md text-sm text-ink-muted">{business.name} is not listed in the Climvia Marketplace right now.</p>
               <ButtonLink href="/marketplace" variant="secondary" className="mt-5">
                 Back to Marketplace
               </ButtonLink>
             </section>
           )}
-
-          <footer className="border-t border-line bg-surface px-5 py-5 text-center text-xs text-ink-muted">
-            © 2025 {business.name} · Listed on Climvia Marketplace
-          </footer>
-        </div>
+        </ListingFrame>
       </div>
     </div>
   );

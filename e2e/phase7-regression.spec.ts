@@ -46,7 +46,7 @@ test.describe("the Overview baseline is unchanged", () => {
     await expect(primaryNav(page).getByRole("link", { name: /^Jobs/ })).toContainText("18");
   });
 
-  test("its Business information card is the saved Settings and links to them; it holds no Analytics", async ({ page }) => {
+  test("its Business information card is the saved Settings and links to them; it holds no Analytics", async ({ page, workerTenant }) => {
     await page.goto("/");
     const card = page.getByRole("region", { name: "Business information" });
     await expect(card).toContainText("Apex Climate Heating & Air");
@@ -57,7 +57,7 @@ test.describe("the Overview baseline is unchanged", () => {
     await expect(card).toContainText("Mon–Fri: 7:30 AM–6:00 PM");
     await expect(card).toContainText("Sat: 8:00 AM–2:00 PM");
     await expect(card).toContainText("Sun: Closed");
-    await expect(card).toContainText("apexclimate.climvia.com");
+    await expect(card).toContainText(`${workerTenant.platformSlug}.climvia.com`);
     await expect(card.getByRole("link", { name: /Manage Settings/ })).toHaveAttribute("href", "/settings");
     await expect(page.getByRole("tablist")).toHaveCount(0);
     await expect(page.getByRole("list", { name: "Weekly Bookings and completed Jobs" })).toHaveCount(0);

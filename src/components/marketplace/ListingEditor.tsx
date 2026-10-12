@@ -15,7 +15,6 @@ import { Switch } from "@/components/ui/Switch";
 import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/components/ui/Toast";
 import { useUnsavedGuard } from "@/components/ui/UnsavedGuard";
-import { useWebsite } from "@/components/website/WebsiteProvider";
 import { formatCityStateZip } from "@/data/fixtures";
 import {
   CONTACT_FIELDS,
@@ -32,9 +31,9 @@ import {
   type ListingConfig,
 } from "@/data/marketplace";
 import { BOOKING_METHOD_ACTION, formatServicePrice } from "@/data/services";
-import { getPrimaryDomain } from "@/data/website";
 import { moveService, toggleService } from "@/lib/marketplace-state";
 import { ListingView } from "./ListingView";
+import { useListingData } from "./listing-data";
 import { useMarketplace } from "./MarketplaceProvider";
 import { useServices } from "@/components/services/ServicesProvider";
 
@@ -43,7 +42,6 @@ const NO_COVER = "none";
 /** Edit Marketplace listing, and (with ?setup=1) the first-time setup. One form, one set of fields. */
 export function ListingEditor() {
   const { listing, saveListing, publishListing, hideListing, setUpListing } = useMarketplace();
-  const { site } = useWebsite();
   const business = useBusiness();
   const hours = useHoursRows();
   const { toast } = useToast();
@@ -55,11 +53,14 @@ export function ListingEditor() {
   const [hiding, setHiding] = useState(false);
   const [discarding, setDiscarding] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const dirty = !sameConfig(working, saved);
   const { guard } = useUnsavedGuard(dirty, "your edits to this listing");
 
-  const domain = getPrimaryDomain(site.domain);
+  // The picture of the listing as it would be if the edits were saved.
+  const preview = useListingData(working);
+  const domain = preview.website ?? "Not set up yet";
   const { services: catalog } = useServices();
   const eligible = getEligibleServices(catalog);
   const ordered = getOrderedEligibleServices(working, catalog);
@@ -79,23 +80,37 @@ export function ListingEditor() {
     website: domain,
   };
 
-  function save() {
+  async function save() {
     if (invalid) return setShowErrors(true);
-    saveListing(working);
-    toast("Listing changes saved.");
+    if (busy) return;
+    setBusy(true);
+    const result = await saveListing(working);
+    setBusy(false);
+    // What is stored is what the screen shows from now on (the order of an unselected Service is not kept, for one).
+    if (result.ok) setWorking(result.data.marketplace.config);
+    toast(result.ok ? "Listing changes saved." : result.error);
   }
 
-  function saveAndPublish() {
+  async function saveAndPublish() {
     if (invalid) return setShowErrors(true);
-    setUpListing(working);
+    if (busy) return;
+    setBusy(true);
+    const result = await setUpListing(working);
+    setBusy(false);
+    if (!result.ok) return toast(result.error);
     toast("Marketplace listing published.");
     router.push("/marketplace");
   }
 
-  function confirmHide() {
-    hideListing();
+  async function publish() {
+    const result = await publishListing();
+    toast(result.ok ? "Marketplace listing published." : result.error);
+  }
+
+  async function confirmHide() {
+    const result = await hideListing();
     setHiding(false);
-    toast("Marketplace listing hidden. Your listing content is saved.");
+    toast(result.ok ? "Marketplace listing hidden. Your listing content is saved." : result.error);
   }
 
   return (
@@ -136,7 +151,7 @@ export function ListingEditor() {
                 <ButtonLink href="/marketplace" variant="secondary">
                   Back to Marketplace
                 </ButtonLink>
-                <Button onClick={saveAndPublish}>
+                <Button onClick={saveAndPublish} disabled={busy}>
                   <Rocket aria-hidden className="size-4" />
                   Save &amp; publish listing
                 </Button>
@@ -169,18 +184,12 @@ export function ListingEditor() {
                     Hide listing
                   </Button>
                 ) : (
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      publishListing();
-                      toast("Marketplace listing published.");
-                    }}
-                  >
+                  <Button variant="secondary" onClick={publish}>
                     <Rocket aria-hidden className="size-4" />
                     Publish listing
                   </Button>
                 )}
-                <Button onClick={save} disabled={!dirty}>
+                <Button onClick={save} disabled={!dirty || busy}>
                   <Save aria-hidden className="size-4" />
                   Save changes
                 </Button>
@@ -382,12 +391,8 @@ export function ListingEditor() {
                   checked={published}
                   label="Listing visible"
                   onChange={(on) => {
-                    if (on) {
-                      publishListing();
-                      toast("Marketplace listing published.");
-                    } else {
-                      setHiding(true);
-                    }
+                    if (on) void publish();
+                    else setHiding(true);
                   }}
                 />
               </label>
@@ -401,7 +406,7 @@ export function ListingEditor() {
             <span className="text-ink-muted">{dirty ? "Live preview (unsaved)" : "Live preview"}</span>
           </div>
           <div inert>
-            <ListingView config={working} domain={domain} variant="card" />
+            <ListingView data={preview} variant="card" />
           </div>
         </aside>
       </div>

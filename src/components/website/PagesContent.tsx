@@ -1,29 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, CalendarCheck, Home, Info, Phone, Repeat, Store, type LucideIcon } from "lucide-react";
+import { ArrowRight, CalendarCheck, FileText, Home, Info, Phone, Repeat, Store, type LucideIcon } from "lucide-react";
 import { useBusiness, useHoursRows } from "@/components/settings/SettingsProvider";
+import { useServices } from "@/components/services/ServicesProvider";
 import { ButtonLink } from "@/components/ui/Button";
 import { cardClasses } from "@/components/ui/Card";
 import { formatCityStateZip } from "@/data/fixtures";
-import { getPageStatus, getPrimaryDomain, getShownServices, WEBSITE_PAGES, type PageId } from "@/data/website";
+import { getPageStatus, getPrimaryDomain, getShownServices, orderedPages, pagePath, type PageType } from "@/data/website";
 import { editorHref, previewHref } from "./site-links";
 import { PageStatusBadge } from "./site-ui";
-import { useWebsite } from "./WebsiteProvider";
-import { useServices } from "@/components/services/ServicesProvider";
+import { useWebsiteState } from "./WebsiteProvider";
 
-const ICONS: Record<PageId, LucideIcon> = { home: Home, services: Store, about: Info, contact: Phone, booking: CalendarCheck };
+const ICONS: Record<PageType, LucideIcon> = { home: Home, services: Store, content: Info, contact: Phone, booking: CalendarCheck };
 
-/** Pages & content: exactly five pages, each edited in its own editor. There is no page builder and no way to add a page. */
+/** Pages & content: the site's pages, each edited in its own editor. There is no page builder and no way to add a page here. */
 export function PagesContent() {
-  const { site } = useWebsite();
+  const website = useWebsiteState();
   const business = useBusiness();
   const hours = useHoursRows();
-  const statuses = WEBSITE_PAGES.map((page) => getPageStatus(site, page.id));
-  const changed = statuses.filter((status) => status === "unpublished-changes").length;
-  const summary = !site.published ? "Private" : changed > 0 ? `${changed} with unpublished changes` : `${WEBSITE_PAGES.length} Published`;
   const { services: catalog } = useServices();
-  const shown = getShownServices(site.draft.services, catalog);
+  const pages = orderedPages(website.draft);
+  const statuses = pages.map((page) => getPageStatus(website, page.key));
+  const changed = statuses.filter((status) => status === "unpublished-changes").length;
+  const summary = !website.published ? "Private" : changed > 0 ? `${changed} with unpublished changes` : `${pages.length} Published`;
+  const shown = getShownServices(website.draft.settings.serviceDisplay, catalog);
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
@@ -35,34 +36,34 @@ export function PagesContent() {
                 Website pages
               </h2>
               <p className="mt-0.5 text-sm text-ink-muted">
-                {site.published ? "Pages currently available on " : "Pages that will be available on "}
-                <span className="font-mono text-ink">{getPrimaryDomain(site.domain)}</span>
+                {website.published ? "Pages currently available on " : "Pages that will be available on "}
+                <span className="font-mono text-ink">{getPrimaryDomain(website.site, website.domain)}</span>
               </p>
             </div>
             <span className="shrink-0 rounded-full bg-surface-low px-2.5 py-1 text-xs font-semibold text-ink-muted">{summary}</span>
           </div>
 
           <ul className="mt-4 space-y-3">
-            {WEBSITE_PAGES.map((page) => {
-              const Icon = ICONS[page.id];
+            {pages.map((page) => {
+              const Icon = ICONS[page.type] ?? FileText;
               return (
-                <li key={page.id} className="flex flex-wrap items-center gap-4 rounded-card bg-surface-low p-4">
+                <li key={page.key} className="flex flex-wrap items-center gap-4 rounded-card bg-surface-low p-4">
                   <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-btn bg-surface text-primary">
                     <Icon className="size-5" />
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-ink">
-                      {page.title} <span className="ml-1 font-mono text-xs font-normal text-ink-muted">{page.path}</span>
+                      {page.title} <span className="ml-1 font-mono text-xs font-normal text-ink-muted">{pagePath(page)}</span>
                     </p>
                     <div className="mt-1">
-                      <PageStatusBadge status={getPageStatus(site, page.id)} />
+                      <PageStatusBadge status={getPageStatus(website, page.key)} />
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <ButtonLink href={previewHref(page.id)} variant="tertiary" size="sm" aria-label={`Preview ${page.title} page`}>
+                    <ButtonLink href={previewHref(page.slug)} variant="tertiary" size="sm" aria-label={`Preview ${page.title} page`}>
                       Preview
                     </ButtonLink>
-                    <ButtonLink href={editorHref(page.id)} variant="secondary" size="sm" aria-label={`Edit ${page.title} page`}>
+                    <ButtonLink href={editorHref(page.key)} variant="secondary" size="sm" aria-label={`Edit ${page.title} page`}>
                       Edit
                     </ButtonLink>
                   </div>

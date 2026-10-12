@@ -11,7 +11,9 @@ import { KeyValueList } from "@/components/ui/KeyValueList";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { StatusBadge, type StatusTone } from "@/components/ui/StatusBadge";
+import { publicListingHref } from "@/lib/site-domain";
 import { useToast } from "@/components/ui/Toast";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { formatCityStateZip } from "@/data/fixtures";
 import {
   LISTING_STATUS_LABEL,
@@ -20,9 +22,8 @@ import {
   isAnyContactShown,
   type ListingStatus,
 } from "@/data/marketplace";
-import { getPrimaryDomain } from "@/data/website";
-import { useWebsite } from "@/components/website/WebsiteProvider";
 import { ListingView } from "./ListingView";
+import { useListingData } from "./listing-data";
 import { useMarketplace } from "./MarketplaceProvider";
 import { useServices } from "@/components/services/ServicesProvider";
 
@@ -30,53 +31,59 @@ const STATUS_TONE: Record<ListingStatus, StatusTone> = { "not-set-up": "neutral"
 
 export function MarketplaceOverview() {
   const { listing, publishListing } = useMarketplace();
-  const { site } = useWebsite();
   const business = useBusiness();
   const { toast } = useToast();
+  const canManage = useCan("marketplace:manage");
   // ?state=empty previews the first-time state without having to remove a listing.
   const status: ListingStatus = useSearchParams().get("state") === "empty" ? "not-set-up" : listing.status;
 
   const { config } = listing;
-  const domain = getPrimaryDomain(site.domain);
+  const data = useListingData(config);
   const { services: catalog } = useServices();
   const eligible = getEligibleServices(catalog);
   const shown = getListingServices(config, catalog);
   const notSelected = eligible.filter((service) => !config.selected.includes(service.id));
   const configured = status !== "not-set-up";
 
-  function publish() {
-    publishListing();
-    toast("Marketplace listing published.");
+  async function publish() {
+    const result = await publishListing();
+    toast(result.ok ? "Marketplace listing published." : result.error);
   }
 
   const actions =
     status === "published" ? (
       <>
-        <ButtonLink href="/marketplace/edit" variant="secondary" size="lg">
-          <Pencil aria-hidden className="size-4" />
-          Edit listing
-        </ButtonLink>
-        <ButtonLink href="/marketplace/preview" size="lg">
+        {canManage && (
+          <ButtonLink href="/marketplace/edit" variant="secondary" size="lg">
+            <Pencil aria-hidden className="size-4" />
+            Edit listing
+          </ButtonLink>
+        )}
+        <ButtonLink href={listing.slug ? publicListingHref(listing.slug) : "/marketplace/preview"} size="lg">
           <SquareArrowOutUpRight aria-hidden className="size-4" />
           View public listing
         </ButtonLink>
       </>
     ) : status === "hidden" ? (
-      <>
-        <ButtonLink href="/marketplace/edit" variant="secondary" size="lg">
-          <Pencil aria-hidden className="size-4" />
-          Edit listing
-        </ButtonLink>
-        <Button size="lg" onClick={publish}>
-          <Rocket aria-hidden className="size-4" />
-          Publish listing
-        </Button>
-      </>
+      canManage && (
+        <>
+          <ButtonLink href="/marketplace/edit" variant="secondary" size="lg">
+            <Pencil aria-hidden className="size-4" />
+            Edit listing
+          </ButtonLink>
+          <Button size="lg" onClick={publish}>
+            <Rocket aria-hidden className="size-4" />
+            Publish listing
+          </Button>
+        </>
+      )
     ) : (
-      <ButtonLink href="/marketplace/edit?setup=1" size="lg">
-        <Store aria-hidden className="size-4" />
-        Set up listing
-      </ButtonLink>
+      canManage && (
+        <ButtonLink href="/marketplace/edit?setup=1" size="lg">
+          <Store aria-hidden className="size-4" />
+          Set up listing
+        </ButtonLink>
+      )
     );
 
   return (
@@ -131,10 +138,12 @@ export function MarketplaceOverview() {
             title="Set up your Marketplace listing"
             description="Create a public business profile using the information and Services already configured in Climvia."
             action={
-              <ButtonLink href="/marketplace/edit?setup=1" size="lg">
-                <Plus aria-hidden className="size-4" />
-                Set up listing
-              </ButtonLink>
+              canManage ? (
+                <ButtonLink href="/marketplace/edit?setup=1" size="lg">
+                  <Plus aria-hidden className="size-4" />
+                  Set up listing
+                </ButtonLink>
+              ) : undefined
             }
           />
           <div className="flex items-start gap-3 rounded-card bg-surface-low p-4">
@@ -173,7 +182,7 @@ export function MarketplaceOverview() {
                 description={status === "published" ? "Live preview of your public listing" : "Listing currently hidden · what customers will see once published"}
               >
                 <div inert>
-                  <ListingView config={config} domain={domain} variant="card" />
+                  <ListingView data={data} variant="card" />
                 </div>
               </SectionCard>
             </div>
@@ -196,7 +205,7 @@ export function MarketplaceOverview() {
                     { label: "Phone", value: business.phone },
                     { label: "Email", value: business.email },
                     { label: "Address", value: `${business.address.street}, ${formatCityStateZip(business.address)}` },
-                    { label: "Website", value: domain },
+                    { label: "Website", value: data.website ?? "Not set up yet" },
                   ]}
                 />
               </SectionCard>

@@ -91,6 +91,11 @@ export const bookings = pgTable(
     intakeReportedIssue: text("intake_reported_issue"),
     internalNotes: text("internal_notes"),
     cancellationReason: text("cancellation_reason"),
+    /**
+     * A random key a public booking form sends with its submission. A second submission with the same key (a double click, a retry)
+     * finds the first booking instead of making another. Null for every booking not made from a public page.
+     */
+    submissionKey: text("submission_key"),
     /** When the request arrived. NULL when it is not known (an older record); every booking made through the application has one. */
     receivedAt: timestamp("received_at", { withTimezone: true }),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
@@ -113,6 +118,8 @@ export const bookings = pgTable(
     index("bookings_org_customer_idx").on(table.organizationId, table.customerId),
     index("bookings_org_service_idx").on(table.organizationId, table.serviceId),
     index("bookings_org_assignee_idx").on(table.organizationId, table.assigneeId),
+    uniqueIndex("bookings_org_submission_key_unique").on(table.organizationId, table.submissionKey).where(sql`${table.submissionKey} is not null`),
+    check("bookings_submission_key", sql`${table.submissionKey} is null or char_length(${table.submissionKey}) between 8 and 64`),
     check("bookings_number_positive", sql`${table.number} >= 1`),
     check("bookings_source", sql`${table.source} in (${list(BOOKING_SOURCE_VALUES)})`),
     check("bookings_status", sql`${table.status} in (${list(BOOKING_STATUS_VALUES)})`),

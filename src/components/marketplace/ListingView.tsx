@@ -1,18 +1,18 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import { CalendarCheck, Clock, Globe, Mail, MapPin, MessageSquare, Phone, Snowflake, type LucideIcon } from "lucide-react";
-import { BrandMark } from "@/components/settings/BrandMark";
-import { useBrandStyle, useBusiness, useHoursRows } from "@/components/settings/SettingsProvider";
 import { buttonClasses } from "@/components/ui/Button";
-import { formatCityStateZip } from "@/data/fixtures";
+import { bookingHrefIn, typeHrefIn, type SiteView } from "@/components/website/site-view";
 import type { AppHref } from "@/config/routes";
-import { getListingServices, type CoverId, type ListingConfig } from "@/data/marketplace";
-import { BOOKING_METHOD_ACTION, formatDuration, formatServicePrice } from "@/data/services";
+import { formatCityStateZip } from "@/data/fixtures";
+import type { ContactField, CoverId, ListingAction } from "@/data/marketplace";
+import { BOOKING_METHOD_ACTION, formatDuration, formatServicePrice, type Service } from "@/data/services";
+import type { BusinessInfo } from "@/data/settings";
 import { cn } from "@/lib/cn";
-import { toTelHref } from "@/lib/format";
-import { useServices } from "@/components/services/ServicesProvider";
+import { getInitials, toTelHref } from "@/lib/format";
+import type { HoursRow } from "@/lib/settings-state";
 
 const COVER_CLASS: Record<CoverId, string> = {
   "teal-horizon": "bg-gradient-to-br from-primary via-primary to-primary-hover text-white/25",
@@ -21,7 +21,7 @@ const COVER_CLASS: Record<CoverId, string> = {
 };
 
 /** A cover is a reference to one of these CSS treatments: there is no image upload. */
-export function CoverArt({ cover, className }: { cover?: CoverId; className?: string }) {
+export function CoverArt({ cover, className }: { cover?: CoverId | null; className?: string }) {
   if (!cover) return null;
   return (
     <div aria-hidden className={cn("relative overflow-hidden", COVER_CLASS[cover], className)}>
@@ -31,21 +31,39 @@ export function CoverArt({ cover, className }: { cover?: CoverId; className?: st
   );
 }
 
+/** Everything a listing is drawn from, wherever it came from (the workspace's providers, or the public projection). Plain data. */
+export type ListingViewData = {
+  description: string;
+  cover?: CoverId | null;
+  contact: Record<ContactField, boolean>;
+  actions: Record<ListingAction, boolean>;
+  business: BusinessInfo;
+  hours: readonly HoursRow[];
+  /** The Services the listing shows, in order. */
+  services: readonly Service[];
+  /** The address shown on the Website row, or null when there is none to show. */
+  website: string | null;
+  /**
+   * Where the actions lead: a website's pages (the Draft preview, or the published site). Null: nowhere, and the actions are only the
+   * look of buttons.
+   */
+  site: Pick<SiteView, "base" | "pages"> | null;
+};
+
 type ListingViewProps = {
-  config: ListingConfig;
-  /** The Website's primary address, shown as the website when enabled. */
-  domain: string;
+  data: ListingViewData;
   /**
    * "card" is the picture of the listing inside the workspace: nothing in it is a working link.
-   * "page" is the public directory page, whose buttons lead to the website's real pages.
+   * "page" is the directory page itself, whose buttons lead to the website's real pages.
    */
   variant: "card" | "page";
+  style?: CSSProperties;
   className?: string;
 };
 
-/** A real link on the public page; just the look of one in the picture of the listing inside the workspace. */
-function ActionLink({ live, href, className, children }: { live: boolean; href: AppHref; className: string; children: ReactNode }) {
-  return live ? (
+/** A real link on the directory page; just the look of one in the picture of the listing inside the workspace. */
+function ActionLink({ href, className, children }: { href: AppHref | undefined; className: string; children: ReactNode }) {
+  return href ? (
     <Link href={href} className={className}>
       {children}
     </Link>
@@ -55,24 +73,39 @@ function ActionLink({ live, href, className, children }: { live: boolean; href: 
 }
 
 /**
- * One business's listing as the directory shows it. Everything except the description, the cover, the Service choice
- * and order, and what is switched on comes from the Business fixture, the Website's address and the Services catalog.
+ * One business's listing as the directory shows it. Everything except the description, the cover, the Service choice and order, and what
+ * is switched on comes from the business's record, the website's address and the Services catalog.
  */
-export function ListingView({ config, domain, variant, className }: ListingViewProps) {
-  const business = useBusiness();
-  const brandStyle = useBrandStyle();
-  const hoursLines = useHoursRows().map((row) => `${row.days} ${row.hours}`);
-  const { services: catalog } = useServices();
-  const services = getListingServices(config, catalog);
+export function ListingView({ data, variant, style, className }: ListingViewProps) {
+  const { business, services, site } = data;
   const page = variant === "page";
-  // On the public directory page the business name is the page's heading; the picture inside the workspace sits under its own.
+  // On the directory page the business name is the page's heading; the picture inside the workspace sits under its own.
   const Name: "h1" | "h2" = page ? "h1" : "h2";
   const ServicesTitle: "h2" | "h3" = page ? "h2" : "h3";
+  const hoursLines = data.hours.map((row) => `${row.days} ${row.hours}`);
+  const lead = (target: AppHref | undefined) => (page ? target : undefined);
+
   const contactRows = [
-    config.contact.phone && { icon: Phone, label: "Phone", value: <a href={toTelHref(business.phone)} className="hover:underline">{business.phone}</a> },
-    config.contact.email && { icon: Mail, label: "Email", value: <a href={`mailto:${business.email}`} className="break-all hover:underline">{business.email}</a> },
-    config.contact.website && { icon: Globe, label: "Website", value: <span className="break-all">{domain}</span> },
-    config.contact.address && {
+    data.contact.phone && {
+      icon: Phone,
+      label: "Phone",
+      value: (
+        <a href={toTelHref(business.phone)} className="hover:underline">
+          {business.phone}
+        </a>
+      ),
+    },
+    data.contact.email && {
+      icon: Mail,
+      label: "Email",
+      value: (
+        <a href={`mailto:${business.email}`} className="break-all hover:underline">
+          {business.email}
+        </a>
+      ),
+    },
+    data.contact.website && data.website && { icon: Globe, label: "Website", value: <span className="break-all">{data.website}</span> },
+    data.contact.address && {
       icon: MapPin,
       label: "Address",
       value: (
@@ -81,7 +114,7 @@ export function ListingView({ config, domain, variant, className }: ListingViewP
         </>
       ),
     },
-    config.contact.hours && {
+    data.contact.hours && {
       icon: Clock,
       label: "Hours",
       value: (
@@ -97,38 +130,35 @@ export function ListingView({ config, domain, variant, className }: ListingViewP
   ].filter(Boolean) as { icon: LucideIcon; label: string; value: ReactNode }[];
 
   const actions = [
-    config.actions.book && { icon: CalendarCheck, label: "Book service", href: "/website/preview/booking", primary: true },
-    config.actions.website && { icon: Globe, label: "View website", href: "/website/preview", primary: false },
-    config.actions.contact && { icon: MessageSquare, label: "Contact business", href: "/website/preview/contact", primary: false },
-  ].filter(Boolean) as { icon: LucideIcon; label: string; href: AppHref; primary: boolean }[];
+    data.actions.book && { icon: CalendarCheck, label: "Book service", href: site ? typeHrefIn(site, "booking") : undefined, primary: true },
+    data.actions.website && { icon: Globe, label: "View website", href: site ? (site.base as AppHref) : undefined, primary: false },
+    data.actions.contact && { icon: MessageSquare, label: "Contact business", href: site ? typeHrefIn(site, "contact") : undefined, primary: false },
+  ].filter(Boolean) as { icon: LucideIcon; label: string; href: AppHref | undefined; primary: boolean }[];
 
   return (
-    <article aria-label={`${business.name} listing`} style={brandStyle} className={cn("@container overflow-hidden rounded-card border border-line bg-surface", className)}>
-      <CoverArt cover={config.cover} className={page ? "h-40 @2xl:h-56" : "h-28"} />
+    <article aria-label={`${business.name} listing`} style={style} className={cn("@container overflow-hidden rounded-card border border-line bg-surface", className)}>
+      <CoverArt cover={data.cover} className={page ? "h-40 @2xl:h-56" : "h-28"} />
       <div className="space-y-5 p-5 @2xl:p-6">
         <header className="flex items-start gap-4">
-          <BrandMark className="size-12 rounded-card" crest={<Snowflake className="size-6" />} />
+          <span aria-hidden className="flex size-12 shrink-0 items-center justify-center rounded-card bg-primary text-base font-bold text-white">
+            {getInitials(business.name)}
+          </span>
           <div className="min-w-0">
             <Name className="text-lg font-bold tracking-tight text-ink @2xl:text-xl">{business.name}</Name>
-            {config.contact.address && (
+            {data.contact.address && (
               <p className="mt-0.5 flex items-start gap-1.5 text-sm text-ink-muted">
                 <MapPin aria-hidden className="mt-0.5 size-3.5 shrink-0" />
                 {business.address.street}, {formatCityStateZip(business.address)}
               </p>
             )}
-            <p className="mt-2 text-sm text-ink">{config.description}</p>
+            <p className="mt-2 text-sm text-ink">{data.description}</p>
           </div>
         </header>
 
         {actions.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {actions.map((action) => (
-              <ActionLink
-                key={action.label}
-                live={page}
-                href={action.href}
-                className={buttonClasses({ variant: action.primary ? "primary" : "secondary", size: "md" })}
-              >
+              <ActionLink key={action.label} href={lead(action.href)} className={buttonClasses({ variant: action.primary ? "primary" : "secondary", size: "md" })}>
                 <action.icon aria-hidden className="size-4" />
                 {action.label}
               </ActionLink>
@@ -171,8 +201,7 @@ export function ListingView({ config, domain, variant, className }: ListingViewP
                     </p>
                   </div>
                   <ActionLink
-                    live={page}
-                    href={`/website/preview/booking/${service.id}`}
+                    href={lead(site ? bookingHrefIn(site, service.id) : undefined)}
                     className={buttonClasses({ variant: "secondary", size: "sm", className: "shrink-0 self-start @xl:self-center" })}
                   >
                     {BOOKING_METHOD_ACTION[service.bookingMethod]}

@@ -8,7 +8,7 @@
  *
  * Today owners and admins change the business's settings, Services, Team, operations (bookings, jobs, assignments),
  * financials (invoices, payments, quotes), maintenance plans (create a plan, schedule a visit), reviews (reply, request a
- * review) and marketing (campaigns); members read everything they can see.
+ * review), marketing (campaigns), the website (its draft, publishing and domain) and the Marketplace listing; members read everything they can see.
  * (Customers have no editing flow yet; when one ships it gets a capability here and a matching database policy.)
  */
 import type { OrganizationRole } from "./workspace-types";
@@ -21,7 +21,9 @@ export type Capability =
   | "financials:manage"
   | "maintenance:manage"
   | "reviews:manage"
-  | "marketing:manage";
+  | "marketing:manage"
+  | "website:manage"
+  | "marketplace:manage";
 
 const GRANTS: Record<Capability, readonly OrganizationRole[]> = {
   "settings:manage": ["owner", "admin"],
@@ -37,6 +39,10 @@ const GRANTS: Record<Capability, readonly OrganizationRole[]> = {
   "reviews:manage": ["owner", "admin"],
   // Marketing: creating, scheduling, sending (recording), cancelling and duplicating campaigns. Members read them.
   "marketing:manage": ["owner", "admin"],
+  // The Website: editing the Draft, publishing, unpublishing and the domain record. Members read the Draft and the Published site.
+  "website:manage": ["owner", "admin"],
+  // The Marketplace listing: its configuration, its Services, publishing and hiding. Members read it.
+  "marketplace:manage": ["owner", "admin"],
 };
 
 export const CAPABILITIES = Object.keys(GRANTS) as Capability[];

@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { PublicListing } from "@/components/marketplace/PublicListing";
-import { publicGate } from "@/server/fixture-gate";
+import { requireWorkspaceContext } from "@/server/workspace";
 
-// The public directory page. It lives outside the (workspace) group on purpose: no sidebar and no workspace header.
+// The saved listing as the directory would show it, for someone signed in to the business. Outside the (workspace) group on purpose: no
+// sidebar and no workspace header. The page a visitor opens is /listings/<address>.
 export const metadata: Metadata = { title: "Marketplace listing preview", robots: { index: false } };
 
 export default async function MarketplacePreviewPage() {
-  const gate = await publicGate();
-  if (gate) return gate;
+  await requireWorkspaceContext();
   return <PublicListing />;
 }

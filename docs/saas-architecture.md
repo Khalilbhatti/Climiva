@@ -35,6 +35,7 @@ Read [production-handoff.md](production-handoff.md) for the front end, which thi
 25. [Financials: quotes, invoices and payments](#25-financials-quotes-invoices-and-payments)
 26. [Maintenance plans and reviews](#26-maintenance-plans-and-reviews)
 27. [Marketing and Analytics](#27-marketing-and-analytics)
+28. [Websites, Site Versions and the Marketplace](#28-websites-site-versions-and-the-marketplace)
 
 ## 1. Status and scope
 
@@ -46,15 +47,16 @@ reload. Now:
 | Real sign-up, log-in, log-out (Better Auth, sessions in PostgreSQL) | Email verification, password reset, invitations by email (no mail service yet) |
 | Organizations, memberships, owner / admin / member roles | A UI to invite or remove members, or to change roles |
 | Many people ↔ many businesses; a workspace switcher | Billing for Climvia itself |
-| New-business onboarding in one transaction | Website and Marketplace (still sample data, see §12) |
+| New-business onboarding in one transaction (the organization, its owner, its hours, a private primary Site with its Draft) | Delivering the Website's contact-form messages (no mail service) |
 | Business information, Business hours, Workspace preferences and the profile name stored in PostgreSQL | Logo / branding / avatar storage (needs object storage) |
 | Customers, properties, equipment, Services, the team and its roles stored in PostgreSQL per organization (§13) | A flow to add or edit a customer, email invitations for team members |
 | Bookings, Jobs (with work details and photo metadata), the Schedule (derived) and blocked time stored per organization (§24) | Rescheduling a booking, file storage for photos, a public booking page for a business's own domain |
 | Quotes, invoices (with line items) and payments stored per organization, money in integer cents, balances derived, payments voided rather than deleted (§25) | A payment processor, bank or accounting connection, Climvia's own subscription billing |
 | Maintenance plans (with coverage and included visits) and reviews (with replies and review requests) stored per organization; a visit is scheduled as a real booking (§26) | Pausing or ending a plan from a screen, sending a review request (email or SMS), a public way to submit a review, automatic billing from a plan |
 | Marketing campaigns (email and text, with Draft / Scheduled / Sent state, recipient snapshots and business-time scheduling) and Analytics as PostgreSQL reporting queries, with the sample business's approved history kept as explicit imported adjustments (§27) | Sending any email or text (no provider), templates and a rich email builder, A/B tests, open and click analytics |
-| Strict tenant isolation: server authorization **and** PostgreSQL Row Level Security | The visual Website Builder, templates, domains |
-| `sites` table: one organization owns many sites | Deployment to AWS |
+| Strict tenant isolation: server authorization **and** PostgreSQL Row Level Security | Custom-domain verification and routing, the visual Website Builder (§28) |
+| Websites: one organization owns many Sites (one primary); a Site has one mutable Draft and immutable Published versions of Pages and Sections, a code-level section registry with server-side validation, theme tokens and an application-owned template; published pages are served to anyone through a narrow public read path, the Draft only to people signed in; a visitor can book (§28) | A Sites screen, a template gallery, adding or reordering sections, uploaded images (object storage) |
+| Marketplace listing stored per organization (at most one, published or hidden, with its selected Services) and served publicly by its own address (§28) | Deployment to AWS |
 
 ## 2. Stack
 
@@ -184,7 +186,7 @@ Follow these for every table and query you add.
 4. **Check the role** (`canManage`) in the action *and* write the policy.
 5. **Validate input on the server** (`src/lib/validation.ts`) even though the form validated it. Return an `ActionResult` (errors are values) rather than throwing text.
 6. **Never cache tenant data across requests**: no `unstable_cache`, no `fetch` cache, no module-level variables holding rows, no `generateStaticParams` over tenant data. React's `cache()` is fine (per request).
-7. **Modules still on sample data call a gate first** (§12).
+7. **Public pages never use the tenant policies.** A visitor reads and books only through the three `SECURITY DEFINER` functions of §28, which take a public identity (never an organization), return a projection, and are the only door; no module runs on the sample dataset any more (§12).
 8. **Keep server code out of the browser**: nothing in `src/db`, `src/server` or `src/lib/auth.ts` may be imported by a `"use client"` file (a test fails if one is).
 
 Why each page checks for itself: in Next.js a layout is not re-rendered when you move between pages beneath it, and it cannot stop the pages from running. The layout is a first check; the page
@@ -255,18 +257,16 @@ after hydration, which remounts the tree once. The first render is always the de
 
 ## 12. Transitional fixtures
 
-Website, Marketplace and the customer-facing previews still run on
-the sample dataset in `src/data/*`, held in React state for the visit. (Customers, Services and Team moved to PostgreSQL in §13, Bookings, the Schedule and Jobs in §24, and Quotes & Invoices and Payments in §25, Maintenance Plans and Reviews in §26, and Marketing and Analytics in §27; none of them is gated.)
+**There are none left.** Phase 15 moved the last two modules, the Website and the Marketplace, to PostgreSQL (§28), so every module works for every organization with that organization's own rows, and the
+sample-data gate (`fixtureGate`, `publicGate`, `hasSampleDataAccess`, the "isn't available for *Name* yet" screen) was deleted; a test fails if any of them comes back. (Customers, Services and Team moved in §13, Bookings, the Schedule and Jobs in §24,
+Quotes & Invoices and Payments in §25, Maintenance Plans and Reviews in §26, Marketing and Analytics in §27.)
 
-- That dataset belongs to **one** business. An organization flagged `fixture_set = 'apex-demo'` sees it; **any other organization sees "isn't available for *Name* yet"**. The flag is set by the seed only
-  (the runtime role has no column grant to set it).
-- Every page and layout of those modules calls `await fixtureGate("Module")` first (`src/server/fixture-gate.tsx`) and returns the replacement if it is not the sample business.
-  The public previews use `publicGate()`; metadata uses `hasSampleDataAccess()`. A test fails if a fixture-backed page forgets it.
-- Overview shows a plain "Your workspace is ready" state with the real business card for any other workspace; sidebar counts are sample-business only, and global search finds the active business's own customers, jobs, bookings and schedule (§13, §24).
-- **No silent fallback.** If sign-in, the database, the organization or the membership fails, the app redirects to Log in, shows an error, or shows the unavailable state. It never falls back to
-  showing the Apex sample.
-- The remaining sample dataset (website, marketplace …) is compiled into the browser JavaScript (it is static, fictional demo data, not tenant data). It is removed module by module as each moves to PostgreSQL (§21). The *foundations* it
-  points at (customers, Services, team) , the operations (bookings, jobs, blocked time) the financials (quotes, invoices, payments), the maintenance plans, the reviews, the marketing campaigns and the Analytics figures are not compiled in: they are read from PostgreSQL and reach the browser only for the business that owns them (§13, "Fixture compatibility bridge", §24, §25, §26, §27).
+- The Apex Climate Heating & Air sample business is **seed data** (`scripts/db/seed-data`), written to PostgreSQL by the seed through the application's own functions. Its `fixture_set = 'apex-demo'` flag, set by the seed only (the runtime role has no column grant to set
+  it), now means one thing: **the business lives on the product's fixed day** (Friday, October 25, 2024) instead of the real clock, so its dated records stay put (§24). Every other organization uses the real clock.
+- Overview shows a plain "Your workspace is ready" state with the real business card for a business with no records; sidebar counts are the business's own; global search finds the active business's own customers, jobs, bookings and schedule (§13, §24).
+- **No silent fallback.** If sign-in, the database, the organization or the membership fails, the app redirects to Log in or shows an error. It never falls back to showing the Apex sample.
+- Nothing of any business, sample or not, is compiled into the browser JavaScript: customers, Services, the team, the operations, the financials, the plans, the reviews, the campaigns, the Analytics figures, and now the websites and the listings are read from PostgreSQL and
+  reach the browser only for the business that owns them (a built-bundle test searches for every business's website and listing copy).
 
 ## 13. Core business data: customers, services, team
 
@@ -357,26 +357,26 @@ in a request is never read; the organization is the one the server resolved. The
 
 ### Fixture compatibility bridge
 
-The Website and the Marketplace still run on the sample dataset (§12), and they reference customers, Services and team members by id (Bookings, Jobs, the Schedule, the financial documents, the maintenance plans, the reviews and the marketing recipients now point at the same records through composite foreign keys, §24, §25, §26, §27). The bridge:
+The slugs of customers, Services and team members are the references everything else uses (Bookings, Jobs, the Schedule, the financial documents, the maintenance plans, the reviews, the marketing recipients and, since Phase 15, a website's Service lists and a listing's selected Services point at the same records through composite foreign keys or by slug, §24 to §28). The bridge:
 
 - Those ids are the **slugs**, and the Apex seed writes the same slugs, with deterministic UUIDv5 primary keys (`src/db/stable-id.ts`: `stableId(organization, kind, slug)`), so a booking that names `sarah-mitchell` and `ac-repair-diagnostics`
   resolves to the same people and Services after a re-seed.
 - The directory of the active business (customers, properties, equipment, Services, team) is loaded **on the server** and given to the browser by `DirectoryProvider`, which `useDirectory()` reads. The selectors in `src/data/{customers,services,team}.ts`
   take that data as an argument: there is **no module-level registry** to fill, because one server process serves many businesses and a shared registry would be a cross-tenant leak.
 - Every business is given **its own** customer book, Services, team and operations: Bookings and Jobs show a customer's name and address, so they need the book. At this scale the whole lists are sent with the page (windowing them by date and page is the next scaling step). Every
-  other business starts the not-yet-migrated modules **empty** (`EMPTY_PLANS_DATA`, …), so a Northstar or a brand-new workspace can never match another business's sample records, and none of the Apex sample is sent to its browser as data.
+  other business starts empty, so a Northstar or a brand-new workspace can never match another business's sample records, and none of the Apex sample is sent to its browser as data.
 - The seed data for all of this lives in `scripts/db/seed-data` (seed and test infrastructure); `src/` does not import it.
 
 ### A new organization
 
 Onboarding creates, in the same transaction as before, the six system roles and one team member for the owner. It creates no customers, no Services and none of Apex's records. Customers and Services show proper empty states; Team shows the owner;
-Bookings, the Schedule and Jobs show proper empty states with no sample records and no counters of another business (§24); so do Quotes & Invoices and Payments, with zero totals and nothing to record against (§25), Marketing, with no campaigns and audiences of zero customers, and Analytics, with zeros (§27); the other fixture-backed modules still say "isn't available for *Name* yet" (§12).
+Bookings, the Schedule and Jobs show proper empty states with no sample records and no counters of another business (§24); so do Quotes & Invoices and Payments, with zero totals and nothing to record against (§25), Marketing, with no campaigns and audiences of zero customers, and Analytics, with zeros (§27). It also gets a **private primary Site with a Draft** made from the default template in neutral words (the pages speak of the business only through its own record), no published version, no Marketplace listing ("not set up") and a public address of its own (§28).
 
 ### Global search and the public previews
 
 Global search is the active business's: it searches that business's customers, Jobs, Bookings and Schedule in the browser, over the records the server read from PostgreSQL for the verified active organization, so another business's records cannot be found whatever is typed.
-(The server-side customer search of Phase 10 was removed: with Bookings and Jobs loaded alongside the book, one search over the same records is the simpler and consistent behaviour.) The Website and Marketplace read the active business's **Services** from PostgreSQL and handle an empty list; their other content is still session data. Booking slot logic is given the business's
-Services and hours.
+(The server-side customer search of Phase 10 was removed: with Bookings and Jobs loaded alongside the book, one search over the same records is the simpler and consistent behaviour.) The Website and Marketplace are stored per business (§28) and read the active business's **Services** from PostgreSQL, handling an empty list. Booking slot logic is given the business's
+Services and hours. The customer-facing pages are of two kinds that never mix: the Draft previews (signed-in only) and the published Site and listing (public, §28).
 
 ### Tests
 
@@ -386,25 +386,25 @@ availability, author, login). `e2e/{customers,services,team}-db.spec.ts` and `e2
 
 ## 14. Organization → many Sites
 
-`sites` belongs to an organization (`ON DELETE RESTRICT`): **one organization, many sites**. Columns: `name`, `slug` (unique within the organization), `status`
-(`draft | published | archived`), `selected_template_id` (reserved, plain text for now), `primary_domain` (reserved; unique across all sites once set, lower-case). Onboarding creates one draft site
-named after the business.
-
-There is deliberately no pages, sections, templates or domain infrastructure, and no "website" field on the organization.
+`sites` belongs to an organization (`ON DELETE RESTRICT`): **one organization, many Sites**, exactly one of them **primary** (`is_primary`, a partial unique index). A Site has a `name`, a `slug` (unique within the organization), a public identity `platform_slug` (unique everywhere), a `status` (`draft | published | archived`), the
+template it started from (`selected_template_id`, a real foreign key to `site_templates`), the published version it points at (`published_version_id`) and a record of a custom domain. Its content lives in versions, pages and sections (§28). Onboarding creates the first Site, private,
+with a Draft from the default template. There is no "website" field on the organization. The whole model, the primary-Site strategy and the multi-Site rules are in §28.
 
 ## 15. The future Website Builder
 
-The ownership chain is fixed so the builder adds tables without changing anything above it:
+The ownership chain is built (Phase 15) so the Builder adds screens and section types, not tables above it:
 
 ```
-Organization ──< Site ──< Page ──< Section
-                  │
-                  ├── selected template (a preset the builder will define)
-                  └── primary domain + additional domains (§20)
+Organization ──< Site ──< Site Version ──< Page ──< Section
+                  │            └─ theme tokens and settings
+                  ├── selected template (site_templates: application-owned, validated JSON)
+                  ├── the Published version visitors see
+                  └── platform address + custom-domain record (§20)
 ```
 
-The builder will add `site_pages`, `site_sections` (and a template table), each carrying `organization_id` with the same policies and grants as `sites`, so they inherit §9 and §10 unchanged.
-The current Website module (page editors, preview, booking journey) is the product design the builder will be built from.
+`site_pages` and `site_sections` carry `organization_id` with the same policies, grants and composite foreign keys as `sites`, so they inherit §9 and §10 unchanged. The current Website module (page editors with fixed sections, a Draft preview, publishing, the booking journey) is the product the Builder is built from,
+and §28 draws the line: what exists and is kept (the model, the registry and its server-side validation, the Draft/Published lifecycle, the public read path) and what the Builder will add (inserting, removing and reordering sections and pages, a template gallery, a Sites screen, a Theme editor, an image library that needs object storage).
+**The visual Website Builder is not built.**
 
 ## 16. Local development
 
@@ -517,19 +517,22 @@ Billing will hang off the organization (`organizations.id`), never off a user, b
 
 ## 20. Future domain routing
 
-Not built. The intended design: a request's host name selects the **site**, and the site selects the organization.
+Not built. What exists (Phase 15, §28): every Site has a public identity, `platform_slug`, served today at `/sites/<platform_slug>` on the application's own host, and shown in the workspace as `<platform_slug>.climvia.com` (`PLATFORM_DOMAIN`). **Nothing resolves that host name yet**, and the product never says it does. A custom domain is only a *record*
+(`custom_domain`, `custom_domain_status`: `configured`, `pending_verification` or `verified`), and no screen claims it is connected, verified or live.
 
-- `sites.primary_domain` is unique across all sites, lower-case, and reserved for this.
-- A proxy / edge function resolves `Host` → site → organization and renders the public site read-only. Public site traffic needs no session and must read only through a narrow, published-content path, not the
+The intended design: a request's host name selects the **site**, and the site selects the organization.
+
+- A proxy / edge function resolves `Host` → Site (`<platform_slug>.climvia.com`, or a *verified* `custom_domain`) → organization and renders the published Site read-only through the same narrow public function the `/sites/…` routes use (`app_public_site`): the public path already takes a public identity and never an organization, so routing only changes how the identity reaches it. Public traffic needs no session and must not use the
   tenant policies of §10 (which require a signed-in member).
-- A `<slug>.climvia.app`-style subdomain for every site plus customer-owned custom domains (with DNS verification and certificates) is the likely shape.
+- A wildcard subdomain for every Site plus customer-owned custom domains (with DNS verification and certificates) is the likely shape. Verification is the platform's act: the runtime role cannot mark a domain verified (a trigger), and only a verified domain is unique across Sites (a partial unique index); until then a domain is a claim several businesses may hold.
 - The authenticated app stays on its own host so cookies and CSRF origins stay separate from public sites.
+- No DNS, Route 53, wildcard record or certificate automation exists.
 
 ## 21. Deferred domain migrations
 
-Each of these moves from sample data to PostgreSQL in its own phase, with `organization_id`, RLS and tests as in §9–§10. When a module moves, its `fixtureGate` call is deleted and it works for every organization.
+Each of these moved from sample data to PostgreSQL in its own phase, with `organization_id`, RLS and tests as in §9–§10. When a module moved, its `fixtureGate` call was deleted and it works for every organization.
 
-Done: Services, Customers (+ properties, equipment), Team (staff, roles) (§13); Bookings, Jobs, the Schedule (derived) and blocked time (§24); Quotes, Invoices and Payments (§25); Maintenance Plans (with coverage and visits) and Reviews (with replies and requests) (§26); Marketing (campaigns, recipient snapshots, scheduling and sent state) and Analytics (reporting queries over those tables, with the sample business's approved history as explicit imported adjustments) (§27). Suggested order for the rest (dependencies first): Website (then the Builder) → Marketplace; the public side of the Website also needs the Host → site mapping of §20. Also pending: branding / logo / avatar storage and photo files (an object store), invitations and member management, email, a public booking page.
+Done: Services, Customers (+ properties, equipment), Team (staff, roles) (§13); Bookings, Jobs, the Schedule (derived) and blocked time (§24); Quotes, Invoices and Payments (§25); Maintenance Plans (with coverage and visits) and Reviews (with replies and requests) (§26); Marketing (campaigns, recipient snapshots, scheduling and sent state) and Analytics (reporting queries over those tables, with the sample business's approved history as explicit imported adjustments) (§27). The Website (Sites, Site Versions, Pages, Sections, the template, the public read path and a visitor's booking) and the Marketplace listing (§28). **No module remains on sample data.** What is pending: the visual Website Builder (Phase 16) and the Host → Site mapping of §20, branding / logo / avatar storage and photo files and website images (an object store), invitations and member management, email and SMS (including the Website's contact-form messages).
 
 ## 22. Testing
 
@@ -554,11 +557,13 @@ The Playwright suite runs against a **production build** and a **separate databa
 
 - Marketing and Analytics (§27): `marketing-database.spec.ts` and `reporting-database.spec.ts` (SQL as `climvia_app`: what the seed holds, the structure, reads and writes per business, column grants, the transition and delivery triggers, recipient snapshot rules, composite foreign keys, no DELETE, the imported adjustments, and the concurrency tests: six schedules of one Draft, schedule against send, four cancels, a reschedule against a cancel, six duplicates, and Analytics unchanged by every kind of write except the ones that should move it), `marketing-flows.spec.ts` (the real application: Save draft, Schedule, Send, Cancel schedule and Duplicate persisting through a reload, business-time storage from any browser zone, stale and forged requests, recipients read only for the caller's business, Northstar, a member, a new business), `analytics-flows.spec.ts` (the canonical default view, every figure changing with a booking, job, quote, invoice, payment, plan, review or campaign, URL-backed tabs and ranges, CSV and PDF exports from the same report, tenant isolation, empty states), `marketing-analytics-roundtrip.spec.ts` (what the seed wrote is what is read, stable ids, a second seed changes nothing), and the pure `marketing-rules.spec.ts` and `analytics-rules.spec.ts` (transitions, content and timing validation, ranges, buckets, the baseline-plus-delta composition with hand-built facts, rating math). The old static `analytics-data.spec.ts` was removed with the fixtures it tested; `marketing.spec.ts`, `analytics.spec.ts` and the other regression specs were updated only where a static source became the database.
 
+- Websites and the Marketplace (§28): `site-rules.spec.ts` (the pure rules: the section registry and props validation, the theme tokens, the template definition and whole-site validation, the domain record, the public booking request and its checks, the listing configuration), `website-database.spec.ts` (SQL as `climvia_app` and the owner: template read-only, RLS and grants per business and role, the Published-snapshot immutability, composite foreign keys, the Site/domain/identity guards, the Marketplace guards, the three public functions called with no session, a visitor's booking at the database), `website-lifecycle.spec.ts` (publish, atomicity, concurrency, make private, more than one Site, template application and explicit replacement, the domain record), `website-actions.spec.ts` (the Server Actions replayed as a member, with no session, as another business's owner, with forged arguments, and six at once), `website-public.spec.ts` (the public pages and what they never show, live bindings, the Draft preview, a visitor's booking and its refusals and rate limit, a new business, the client bundle), `website-roundtrip.spec.ts` (what the seed wrote is what is read, a second seed changes nothing, a test copy is restored, the Marketplace operations) and `website-edits.ts` (the small pure builders the data specs use). `website.spec.ts`, `marketplace.spec.ts`, `plans-website-data.spec.ts`, `server-boundaries.spec.ts` and the other regression specs were adapted only where a fixture became the database.
+
 ## 23. Known limitations
 
 - Email verification, password reset, invitations and member management have no UI: they need a mail service and are the next SaaS work.
-- Branding, logo and avatar are session-only until object storage exists.
-- The website and marketplace sample dataset ships in the browser bundle (fictional, public, not tenant data) until those modules migrate. Customers, Services, the team, bookings, jobs, blocked time, quotes, invoices, payments, maintenance plans, reviews, marketing campaigns and the Analytics figures do not.
+- Branding, logo and avatar are session-only until object storage exists. **Object storage required for durable uploaded logos/assets**; no public page shows an uploaded logo (they show the business's initials), and there is no image upload or image binary column anywhere.
+- Websites and the Marketplace (§28): the page editors change a page's text and visibility only (there is no adding, removing or reordering of sections or pages: the Builder, Phase 16), there is no template gallery, Sites screen or Theme editor, and no way to roll back to an earlier version from a screen (the versions are kept; a rollback is a pointer change not yet exposed). The Website's contact form confirms and **delivers nothing** (no mail service). The platform address `<slug>.climvia.com` and any custom domain are only displayed or recorded; nothing resolves, verifies or routes them (§20), and the public pages are served at `/sites/<slug>` and `/listings/<slug>` on the application's host. The visitor-booking rate limiter is held in one server process (§28). The Draft preview's booking journey makes a real booking as the signed-in owner or admin. A business's uploaded logo is not shown on its Site or listing.
 - Maintenance plans and reviews (§26): no screen pauses, ends, renews or edits a plan (no flow was approved, so the application has no UPDATE on plans), a visit is rescheduled only by cancelling its booking and booking it again, a review request is a record and nothing is sent, and a customer has no public way to submit a review yet (the sample reviews are seeded). The Website and the Marketplace show no reviews.
 - Money (§25): there is no screen to write a quote or to edit, void or reissue an invoice (an invoice is made from an approved quote and is then fixed; a mistake in it is a new invoice for the quote's replacement), no refund or credit note, no tax model (an invoice shows Tax $0.00), no deposit or overpayment, no PDF, email or print, and no payment processor. The Overview's Total Invoiced and the Analytics quote and invoice-count aggregates cover more history than the stored records; the difference is held as explicit imported adjustments (§25, §27).
 - Marketing and Analytics (§27): nothing is sent or delivered (no email or SMS provider; "Sent" is a recorded state, and only the sample business's seeded history carries a delivery result). A Scheduled campaign is not sent by anything when its time comes, and there are no templates, rich email builder, A/B tests or open and click figures. The imported history is part of an Analytics figure only when the date range covers all of its period (it is never prorated), the as-of totals (plans, reviews, campaigns) ignore the range, the screen has no Reviews or Marketing panel (those totals are on their own modules and in the exports' report data), and the sidebar counts beside Bookings and Jobs refresh on the next page load, not within the visit. The sample business's campaigns can report more recipients than they list (the extra are imported contacts, counted and not listed). A development database made before this phase needs `npm run db:reset`.
@@ -683,9 +688,10 @@ Since Phase 13 reviews are on the database (§26). A review names the real job i
 
 ### Website booking preview
 
-The Website booking journey is a preview **inside the signed-in workspace**. It creates a real booking in the signed-in business, as that signed-in owner or admin, through the same authorized action: no organization comes from the page and nothing is trusted from it (the server
-decides the status from the Service's booking method and refuses a Service that is not offered online). A real public booking page (a visitor on the business's own domain, with no session) is **deferred**: it needs a verified Host → site → organization mapping (§20), rate limiting,
-spam protection and a narrow public write path that does not use the tenant policies. No unauthenticated endpoint accepts a booking today.
+The Website booking journey in the **Draft preview** (`/website/preview/booking/…`) is inside the signed-in workspace. It creates a real booking in the signed-in business, as that signed-in owner or admin, through the same authorized action: no organization comes from the page and nothing is trusted from it (the server
+decides the status from the Service's booking method and refuses a Service that is not offered online).
+
+Since Phase 15 the **published Site has a real public booking page** for a visitor with no session (`/sites/<slug>/booking/<service>`), through one narrow public write path that finds the business from the Site, validates the Service and the time with the same rules, deduplicates, and is rate limited (§28). The booking has source `Website` and no customer record (`customer_id` stays NULL until the business matches the request).
 
 ### Not in this phase
 
@@ -980,3 +986,175 @@ The server reads the active business's campaigns with the rest of its core data 
 ### Not in this phase / what is left
 
 Sending any email or text message, any provider (SES, Twilio, SendGrid), external marketing automation, templates and a rich email builder, A/B tests and open or click analytics, Website pages and Marketplace configuration in PostgreSQL, SaaS billing, custom domains and S3. The migration roadmap that remains is the **Website** (pages, the booking page configuration and the public preview paths) and the **Marketplace** listing, then the object store for photos and branding. **Docker verification is required before AWS deployment** (§17): the new migrations were applied and tested on the PostgreSQL stand-in used for development, the Dockerfile and compose file are unchanged, and no image was built or run.
+
+## 28. Websites, Site Versions and the Marketplace
+
+Phase 15 moved the Website and the Marketplace to PostgreSQL and built the architecture the visual Website Builder (Phase 16) will sit on. Nothing in this section is a fixture any more: a new business gets its own private Site with a Draft, and the approved Apex Climate Heating & Air website is **seed data** (`scripts/db/seed-data/website.ts`) written through the application's own functions. The Builder itself (dragging, inserting and reordering sections, a template gallery, a theme editor, an image library) is **not built**; the last subsection draws the line.
+
+### The model in one view
+
+```
+Organization ──< Site ──< Site Version ──< Page ──< Section
+      │             │          └─ theme and settings (JSON, validated)
+      │             ├── selected template  ──>  site_templates   (application-owned, read-only to tenants)
+      │             ├── published_version_id ─>  exactly one Published Version of this Site (or none: the Site is private)
+      │             └── platform_slug (its public identity) + a custom-domain RECORD
+      └──< marketplace_listings (at most one) ──< marketplace_listing_services >── services
+```
+
+Seven tables, in `src/db/schema/sites.ts` and `src/db/schema/marketplace.ts`, migrations `0012_website_marketplace.sql` (tables, constraints, indexes; generated by drizzle-kit and then edited by hand: the backfill of `platform_slug`, the move of the new composite `UNIQUE` keys ahead of the foreign keys that need them) and `0013_website_marketplace_rls.sql` (policies, column grants, triggers, the public functions and the default template row; hand-written, built from the same pieces as `0001`, `0003`, `0005`, `0007`, `0009` and `0011`).
+
+| Table | What it holds | Who writes it |
+| --- | --- | --- |
+| `site_templates` | An application-owned, reusable site definition: `key`, `name`, `category`, `schema_version`, `definition` (JSONB), `is_active`. | **A migration only.** The runtime role has `SELECT` on the active rows and nothing else. |
+| `sites` | A Site: `organization_id`, `name`, `slug` (unique in the business), `platform_slug` (unique everywhere), `is_primary`, `status` (`draft`, `published`, `archived`), `selected_template_id`, `published_version_id`, and the domain record. | Owner and admin: the name, status, template, published pointer and domain record. The identity (`slug`, `platform_slug`, `is_primary`, `organization_id`) has no `UPDATE` privilege at all. |
+| `site_versions` | One state of a Site's content: `status` (`draft` or `published`), `version_number`, `theme`, `settings`, `template_id`, `published_at`, `published_by_user_id`. | Owner and admin create the Draft and change a **Draft's** theme, settings and template. A Published version is created only by Publish and never changes. |
+| `site_pages` | A page of one version: `page_key`, `title`, `slug`, `page_type`, `sort_order`, `is_visible`. | Owner and admin, while the version is the Draft (and Publish, for the snapshot). |
+| `site_sections` | A section of one page: `section_key`, `label`, `type`, `variant`, `props` (JSONB), `sort_order`, `is_visible`. | The same. |
+| `marketplace_listings` | A business's listing (below). | Owner and admin. |
+| `marketplace_listing_services` | The Services a listing shows, in order. | Owner and admin. |
+
+Every table carries `organization_id` itself and reaches its parent through a **composite foreign key that includes it** (`(organization_id, site_id)`, `(organization_id, site_id, site_version_id)`, `(organization_id, site_id, site_version_id, page_id)`, and for the published pointer `(organization_id, id, published_version_id)` against `(organization_id, site_id, id)`), so a Page cannot belong to another business's Site or Version, a Section cannot sit on another business's Page, a Site cannot be published from another Site's Version, and a listing cannot select another business's Service, **whoever writes the row** (PostgreSQL checks a foreign key outside Row Level Security). No table cascades from a Site: a Site holds pages people wrote, so it is removed deliberately, never as a side effect, and the runtime role has no `DELETE` on `sites`, `site_versions` or `marketplace_listings` at all.
+
+### Site ownership and the primary-Site strategy
+
+An organization owns **many** Sites (`organization_id`, `ON DELETE RESTRICT`); there is no `organization.website` field and no rule that a business has one Site. Exactly one is its **primary** Site (`is_primary`, a partial unique index: at most one per organization): the one the Website module edits, the one the Marketplace "View website" and "Book service" actions lead to, and the one the preview shows. Nothing in the Website's Server Actions accepts a Site id: each action finds the primary Site from the **verified** organization inside its own tenant transaction (`findPrimarySite`), locks it, and changes it. A Sites screen (choose, add, archive) is Phase 16 work and needs no schema change. The standing sample data proves the many-Sites rule with real rows: Apex has a published `main` Site and a private `commercial` one, each with its own Draft, pages, sections, theme and history; the tests create more.
+
+Onboarding creates the first Site in the same transaction as the organization: `slug = "main"`, `is_primary`, **private**, with a Draft made from the default template (below) in neutral words that speak of the business only through its own record. Nothing of Apex or Northstar is copied.
+
+### Public identity: the platform address
+
+A Site's public identity is `platform_slug`: globally unique, lower-case words joined by hyphens, at most 63 characters, never a name the platform keeps for itself (`www`, `app`, `api`, `admin`, `login`, `sites`, `listings`, `climvia` … : `RESERVED_PLATFORM_SLUGS`), checked by the database. It is the same string in `/sites/<platform_slug>` (where it is served today) and in `<platform_slug>.climvia.com` (what the workspace shows as the Site's address; **nothing resolves that host yet**, §20). It is **collision-safe and not taken from the business's name as typed**: the first Site of a new business starts from the organization's own address (itself unique and numbered when two businesses share a name), a second business that already has it (or a reserved name) gets `-2`, `-3` …, and a Site made without one gets the organization's address plus six random characters from a database trigger. Two businesses with the same name get two different public addresses (tested).
+
+### The Template model
+
+A template is **data, not code**: a row of `site_templates` whose `definition` is validated JSON (`validateTemplateDefinition` in `src/lib/site-template.ts`) that selects registered section types and variants and gives them text. It holds no component, markup, style, script or hook. It is owned by the application: the runtime role cannot insert, update or delete a template, and `0013` writes the one that exists, **`climvia-starter`** ("Climvia starter", category `hvac`): a five-page HVAC website (Home, Services, About, Contact, Booking) that reproduces the approved Apex website word for word, with `{{business.name}}` / `{{business.location}}` where the business is named. `src/db/default-template.ts` is the same definition in code (the migration cannot import it): a test keeps the stored row and the code equal, and `scripts/db/template-sql.ts` prints the `INSERT` for the migration, so they cannot drift.
+
+The definition is `{ schema, theme, settings, pages: [ { key, title, slug, type, visible, sections: [ { key, label, type, variant, visible, props } ] } ] }`. **Schema/version strategy:** `schema_version` (a column) and `definition.schema` (inside) are the version of this *shape* and a `CHECK` keeps them equal; the code lists the shapes it reads (`SUPPORTED_SCHEMAS`, today `[1]`). A new shape means: raise `TEMPLATE_SCHEMA`, keep a reader for the old one (or migrate the stored definitions in a migration), never edit a stored definition in place. Bounds: at most 12 pages, 40 sections per page, 200 Service references; unknown keys are refused, never carried along.
+
+**Applying a template is a server-side act.** `createDraftFromTemplate` copies a template's theme, settings, pages and sections into a new Draft (refused when the Site already has one) and records `selected_template_id`. `replaceDraftWithTemplate` puts a template over an existing Draft: it **destroys that Draft's pages and sections**, so it refuses unless the caller passes `confirmReplace: true`, keeps the Draft's identity, and never touches a Published version. Both validate the template again before using it. There is no template gallery in the interface (Phase 16); onboarding and the "create website" action use the default.
+
+### The Site Version model
+
+A Site has **at most one Draft** (the mutable version: `status = 'draft'`, no number; a partial unique index) and any number of **Published versions** (immutable snapshots: `status = 'published'`, a number 1, 2, 3 … unique per Site, stamped with when and by whom). The version carries the **theme** and the **settings** (which Services the Site shows and in what order), so a Published version keeps the look and the list it was published with. `sites.published_version_id` is the version visitors see; a CHECK keeps `status = 'published'` exactly when that pointer is set, a trigger lets it point only at a *published version of this very Site*, and the composite foreign key makes it a version of this Site of this business. **Published versions are kept** (no cleanup): they are the history a rollback (a pointer change) would read.
+
+**Published authoring rows are immutable, not merely unwritten by the application.** A trigger (`site_versions_guard_update`, `site_content_guard_update`) refuses any `UPDATE` of a Published version, or of a page or section of one, through any column, for anyone, **the owner role included** (`site_published_final`). Row Level Security lets the runtime role create a Published version, page or section **only in the transaction that has just changed the Site it belongs to** (`sites.updated_at = now()` is the transaction's own start time), as the person publishing (`published_by_user_id` = the caller), and only if that person is an owner or admin; and it lets the runtime role update or delete only the rows of a **Draft**. So no other path, a forged request included, can write a snapshot or change one.
+
+### The Draft / Published lifecycle
+
+```
+create website ─▶ Draft ──save page──▶ Draft ──Publish──▶ Published vN (new, immutable) ◀── site points at it
+                    ▲        │                              │
+                    │        └─ Discard (the screen drops its unsaved edits) ─────────────────────┘
+                    └── Unpublish: the Site becomes private; pointer cleared; every version kept
+```
+
+- **Save** (`savePageAction`) validates every section's text against its registered type and variant on the server and persists to the **Draft only**; a Published page is not selectable. Nothing is stored when any section of the page is invalid. The page editor keeps its Unsaved changes state, its Discard confirmation and its leave-the-page protection; **Discard** restores the saved Draft (the unsaved edit only ever existed in the browser).
+- **Publish** (`publishSite`) is one transaction: it authenticates the caller, verifies the active organization and the `website:manage` capability, **locks the Site row** (`SELECT … FOR UPDATE`), validates the **whole** Draft (`validateContent`: theme, settings, every page and section; an invalid Draft is refused with every problem named), returns without a new version when the Site is already live with exactly the Draft's content, takes the next version number under the lock, touches the Site row, inserts the Published version with fresh copies of the Draft's pages and sections, and points `published_version_id` at it. A failure anywhere rolls all of it back; a test throws after the work and finds no version, no page, no pointer change. **Two publishes at once** queue on the lock: the second finds the Site already live with that content and answers with the first's number (six simultaneous publishes make one version), and a publish racing a save sees the Draft whole, as it was before or after the save; version numbers are contiguous and unique (the database also enforces `UNIQUE (site_id, version_number)`).
+- **Unpublish** sets the Site private and clears the pointer. Pages, sections and versions are kept; publishing again makes the next version.
+- The Domain record is independent of all of it: connecting, removing or choosing the main address never changes content or publication.
+
+### Pages and Sections
+
+A page is `page_key` (its stable identity: `home`, `services`, `about`, `contact`, `booking`), `title`, `slug` (its address segment; **`''` for Home, and only Home**, a CHECK), `page_type` (`home | services | content | contact | booking`), `sort_order`, `is_visible`; keys and slugs are unique within a version. A section is `section_key` (unique within its page), `label`, `type`, `variant`, `props`, `sort_order`, `is_visible`. The Apex baseline is exactly the five pages above, all visible and published, with the approved copy preserved word for word.
+
+### The section registry and props validation
+
+The set of section types is **code** (`src/lib/site-sections.ts`, `SECTION_REGISTRY`), not data: the database stores a type and a variant as lower-case identifiers and the application decides which are real. Ten types:
+
+| Type | Variants | Text fields it owns | Connected to |
+| --- | --- | --- | --- |
+| `hero` | `default` | headline, supporting text, primary and secondary button labels, alignment | |
+| `page_intro` | `default` | heading, supporting text, alignment | |
+| `service_list` | `cards`, `catalog`, `booking` | `cards`: heading and supporting text | the business's Services (`booking`: the Booking page's grid) |
+| `feature_list` | `icons`, `plain` | heading, three titled points (`plain` also supporting text) | |
+| `rich_text` | `default` | heading, description | |
+| `business_hours` | `card`, `page` | none | the business's hours |
+| `contact_details` | `card`, `page`, `callout` | `callout`: heading and supporting text | the business's contact details |
+| `business_details` | `default` | none | the business's contact details |
+| `contact_form` | `default` | heading, supporting text | (a message form that is **not delivered**, below) |
+| `call_to_action` | `default` | heading, supporting text, button label | |
+
+`validateProps(type, variant, props)` runs **on the server, on every save and again on every publish**, and refuses: an unknown type or variant (a fixed, safe message), any key the variant does not declare, a missing, empty or over-long field, a non-string, an alignment other than left/center, and text that is not **plain** (`<` or `>`, control characters, `javascript:` / `data:` / `vbscript:` schemes, `on…=` handlers, or a `{{ … }}` other than the two tokens). There is no field called html, script, iframe, style or class anywhere, and no section type that could carry one: nothing a person types can become markup, a frame, a handler or a style. The renderer is defensive too: a section whose type this application does not know is not drawn, and `readProps` drops any stored value that would not validate (a row written by something that skipped the checks), so a page is still drawn, with whatever is safe, and never with a refused value. The database adds only structural limits (identifier format, props is a JSON object of at most 20 KB).
+
+### The Theme model
+
+The theme belongs to the version and is **design tokens, never CSS** (`src/lib/site-theme.ts`): `accent` (`null` for the Climvia teal, or `#RRGGBB`), `radius` (`small | medium | large`), `density` (`compact | comfortable`), `headingFont` and `bodyFont` (an identifier from a closed list; only the self-hosted Inter exists). Unknown keys are refused; the accent is the only token applied today (as the Site's primary colour, as CSS custom properties built by the application from the validated value); the others are reserved for the Theme editor. A stored theme that does not validate is replaced by the default when drawn. A `CHECK` requires the theme to be an object with `schema = 1`.
+
+### Dynamic bindings: what is snapshot and what is live
+
+This is deliberate, documented and tested:
+
+- **The published *structure* is snapshot-versioned.** Which pages, which sections, their order, their visibility, their text, the theme and the list of Services the Site shows are the Published version's. Editing the Draft never changes them; only Publish does.
+- **The business's own record is always live.** Name, phone, email, address, business hours and time zone are read from `organizations` and `organization_business_hours` **when a page is drawn**, never copied into a section; the two text tokens (`{{business.name}}`, `{{business.location}}`) are filled at render. A rename, a new phone number or new hours show on the published Site at once, with no new version (tested: the version number stays 1).
+- **Services are always live.** The Services come from `services`: a new price, a retired (inactive) Service and a Service made internal show at once, with no republish. The version's settings hold **references by slug** (`order`, `hidden`), resolved against the business's own Services when drawn, and no section holds a Service's name, price or description (a test searches every stored section for them). A retired Service is simply not drawn; its booking address says "Service not found".
+- The public projection only ever contains what a visitor may see: the organization's public contact fields and hours, and **active, non-internal** Services.
+
+### Public read security
+
+A visitor has no session and no organization, so the public pages do **not** go through the tenant policies. They go through **three `SECURITY DEFINER` functions** (`0013`), the only way a request without a membership reads or writes tenant rows:
+
+| Function | Does |
+| --- | --- |
+| `app_public_site(platform_slug, page_slug)` | Resolves the Site → its organization **inside the function**, and returns a *projection*: the Site's name and slug, the organization's public fields, the hours, the published version's theme and settings, the visible pages (navigation), the requested page with its visible sections, and the public Services. `NULL` unless the Site is published. |
+| `app_public_listing(public_slug)` | The same for a published Marketplace listing, with a contact detail the listing switched off absent from the answer altogether. |
+| `app_public_create_booking(…)` | One booking of source `Website` (below). |
+
+Each has a fixed `search_path`, is revoked from `PUBLIC` and granted to the runtime role alone, **never takes an organization id**, builds its answer field by field (never a row, never `*`), and reads only the **published** version, only its visible pages and sections, and only active public Services. Customers, jobs, money, team permissions, analytics, notes, internal Service descriptions and unpublished Drafts are not reachable from them. The unrestricted number allocator the booking function uses (`app_take_number`) is not executable by the runtime role at all (a test calls it as that role and is refused). The browser's request handlers use the restricted `climvia_app` connection only; **the owner credential (`DATABASE_ADMIN_URL`) is never in a request path** (a source scan holds `src/db/public-queries.ts` to exactly these three calls).
+
+The routes (all in the `(site)` group, which is `force-dynamic` and has no shell):
+
+| Route | Serves |
+| --- | --- |
+| `/sites/[siteSlug]`, `/sites/[siteSlug]/[...slug]` | A published Site's pages; the booking journey of one Service is `/sites/<slug>/booking/<service-slug>`. |
+| `/listings/[listingSlug]` | A published Marketplace listing. |
+
+A Site that is private, unpublished, unknown or misspelt, a page that does not exist or is hidden, and a path that names nothing are **one and the same "not found"** (a test compares the bodies), so nothing reveals whether a private Site exists. No organization comes from the browser: an `organizationId` in the query string, a header or a cookie changes nothing (tested). **No shared cache:** pages are rendered on request with `Cache-Control: private, no-cache, no-store`; the only memoisation is React's `cache()` *within one request*; nothing in `src` uses `unstable_cache`, `revalidate` or static generation (a source scan). Because nothing is cached across requests, a cache key never needs the Site or version identity, a Draft can never be in a shared cache, and Publish "invalidates" by construction: the next request reads the new pointer. `src/proxy.ts` lets `/api/auth`, `/sites` and `/listings` through without a session; every other route still requires one.
+
+### Draft preview security
+
+The Draft is for people signed in to the business. `/website/preview` and `/website/preview/[...slug]` (and `/marketplace/preview`) call `requireWorkspaceContext()` first (the layout does, and the shared preview route does), read the **signed-in person's own** primary Site's Draft from the workspace snapshot, and draw it with the same renderer as the published Site. A visitor is redirected to Log in; a person from another business sees their own Draft, never another's; an address that names no visible Draft page is "not found". Compatibility: the old `?view=live` links redirect to the published Site at `/sites/<slug>`. The preview's booking journey makes a real booking **as the signed-in owner or admin** through the workspace's authorized action (the preview is inside the workspace); the published Site uses the public path below.
+
+### A visitor's booking: tenant resolution
+
+`submitPublicBookingAction` is the one anonymous Server Action. A request names a **Site (by its public address)**, a **Service (by its slug)**, a time and the visitor's details; it never names an organization, and anything extra in it is dropped when it is parsed. The server: (1) parses and bounds every field (plain text only, a valid email and phone, a key of 8–64 safe characters), (2) **rate limits** by Site and the visitor's address, (3) reads the Site as a visitor would (published only) to get the business's hours, clock and Services, (4) checks the Service is one the business offers for online booking, the time is one of that Service's slots on a day the business is open and not in the past, and the answers are among the Service's options, with the **same rules the workspace uses** (`checkPublicBooking`), and (5) calls `app_public_create_booking`, which **finds the organization from the Site again**, checks the Service belongs to it and is active and bookable online, allocates the business's next number, and writes one booking: `source = 'Website'`, status from the Service's booking method (instant → confirmed, otherwise pending), **`customer_id` NULL** (a visitor is not a customer record; the business matches them when it reviews the request) and the details as typed. The answer is a reference, a status and whether it was a repeat: **a visitor can read no booking record.** A database error is never shown.
+
+- **Duplicate protection.** A random key per journey (`submission_key`, unique per business) makes a double click or a retry one booking; the same person asking for the same Service at the same time again finds the first booking. Six identical submissions at once make one booking (tested).
+- **Rate limit.** 12 requests per 10 minutes per (Site, address), held in this server process (`src/server/rate-limit.ts`). The address is the **right-most** entry of `X-Forwarded-For` (the one the nearest proxy appended); a forged left-hand address evades nothing. One process, no storage outside memory: a second instance has its own windows, which only loosens the limit. It is a blunt instrument against a script, not a fraud system; a shared limiter belongs with the AWS deployment.
+- **Refused without a booking:** another business's Service, an unknown, retired, internal or listed-only Service, a private or unknown Site, a closed day, a past date, a time that is not a slot, bad contact details, markup anywhere. Each has a safe message.
+- The sample business keeps its fixed day (`fixedClock`), so its bookings are dated around the product's fixed "today", as every other module's are.
+
+### The Marketplace listing
+
+`marketplace_listings` holds **only listing-specific configuration**: `public_slug` (its public identity, unique everywhere), `status` (`draft`, `published`, `hidden`), `description` (1–300 characters), `cover` (one of three CSS treatments, or none: there is no image upload), the five contact-detail switches, the three action switches and `published_at`. `marketplace_listing_services` holds the Services it shows (`sort_order`); **a row exists exactly for a selected Service**. The listing owns no copy of the business's name, phone, email, address or hours, nor of a Service's name, price or duration: they are read when the page is drawn. A listing's "Website" row is the primary Site's platform address; a recorded custom domain does not replace it, and the public listing links to the Site only while it is published.
+
+- **A business has at most one listing, and no listing is the "not set up" state.** Nothing is created until the owner sets one up (`setUpListingAction` creates and publishes it at an address derived from the organization's own, numbered if taken); a new business has none, and `/listings/<its address>` is "not found".
+- **Apex's approved listing is Published and shows exactly five of its six Services; Emergency No-Heat / No-Cool Service is not selected** (and a business can select it later: it is public and active). Northstar's listing shows its own two. A selection must be an **active, public** Service of the same business (a trigger and a composite foreign key); a Service retired or made internal later stops being shown without being deleted from the selection.
+- **A listing is published once and is then published or hidden, never a draft again** (a trigger); hiding keeps the configuration and the first publication time. Nobody deletes a listing.
+- The editor persists (Save, Save & publish, Hide, Publish) through `src/server/actions/marketplace.ts`, validated again on the server (`parseListingConfig`); the editor adopts the configuration the server stored.
+
+### Authorization and tenant isolation
+
+`website:manage` and `marketplace:manage` (`src/lib/policy.ts`) are owner and admin; a member reads and changes nothing (the screens hide what a member cannot do, the server and PostgreSQL still decide). Every Website write goes through one helper whose first step is `authorize("website:manage")`; every Marketplace write through one that authorizes `marketplace:manage`; neither accepts an organization or a Site from the request (source scans hold both). **Row Level Security** is on all seven tables: members of the **active** organization read, owners and admins write what the policies and column grants allow, and every `UPDATE` is by column. **Cross-tenant Site, Version, Page, Section or Marketplace leakage, a Draft reaching a visitor, a Published snapshot changed by a Draft edit, a broken Publish atomicity, an organization chosen by the browser in a public booking, and a Service of another business bookable from a Site are release blockers**; each is tested at the database (as `climvia_app`), through replayed Server Actions and in the pages.
+
+### Domain record (nothing is routed)
+
+`custom_domain` and `custom_domain_status` (`configured | pending_verification | verified`) are a **record**: a domain the business wants to use. Recording one stores it as `pending_verification` (the Apex baseline's is `configured`); the main address is the platform address unless the owner chooses the recorded domain. **Nothing verifies, resolves or routes a custom domain, and no screen says otherwise.** A domain is a *claim* until it is verified: several businesses may record the same name and none learns of the others; only a **verified** domain belongs to exactly one Site (a partial unique index), and the runtime role cannot mark one verified or create a Site already verified (triggers), so only the platform (the owner role, in the domain-routing phase) can. No DNS, Route 53 or certificate work exists.
+
+### Assets and uploaded files (deferred)
+
+**Object storage required for durable uploaded logos/assets.** There is no image upload, no image library and no binary column anywhere: a cover is one of three CSS treatments, a section holds text only, and the Site's mark is the business's initials. Settings → Branding still lets a person choose a logo for the visit, but it is a browser object URL that dies with the session, so **no public page, Site or listing, ever shows one**. The future shape is a private S3 bucket per environment with the object key and metadata in a table and a signed read path (§17); the Builder's image library and the Branding logo both wait for it.
+
+### What the tests prove
+
+`site-rules.spec.ts` (the pure rules), `website-database.spec.ts` (SQL as `climvia_app` and the owner: templates, reads and writes per business and role, column grants, immutability of a Published version, composite foreign keys, Site/domain/identity guards, version/page/section structure, the Marketplace guards, the three public functions called with no session, a visitor's booking at the database), `website-lifecycle.spec.ts` (the operations as the application runs them on a test copy: publish, atomicity, concurrency, make private, more than one Site, template application, the domain record, the stored website is the approved one), `website-actions.spec.ts` (the Server Actions replayed as a member, as nobody, as another business's owner and with forged arguments, six publishes at once), `website-public.spec.ts` (the public pages, live bindings, the Draft preview, a visitor's booking, a new business, the client bundle), `website-roundtrip.spec.ts` (what the seed wrote is what is read, stable ids, a second seed changes nothing, a test copy restored, the Marketplace operations), plus `website.spec.ts` and `marketplace.spec.ts` (the screens) and the existing server-boundary scans.
+
+### Where the data meets the screens
+
+The server reads the active business's primary Site (its Draft, and the Published snapshot while it is published) and its listing with the rest of its core data (`getCoreSnapshot`), `WebsiteProvider` and `MarketplaceProvider` hold them, and each change goes to a Server Action which answers with the website **as stored**; only then does the working copy change. The published pages are drawn on the server from the public projection and send the browser only the markup and the booking form.
+
+### The Phase 16 Builder boundary
+
+Built here and **kept by the Builder**: the model above, the registry and server-side validation, the Draft/Published lifecycle and its guarantees, the policies and grants, the public functions, the preview's authentication, the rule that text is plain and styling is tokens. **Not built (Phase 16 and later), and needing no change to the schema above except where noted:** dragging and reordering sections, inserting and removing sections and pages, a template gallery and choosing a template, a Sites screen (choose, add, archive), a Theme editor, an image/asset library (**needs object storage and a new assets table**), per-page SEO, rollback to an earlier version, Host → Site routing and custom-domain verification (§20), a delivered contact-form message, email and SMS. A new section type is a new entry in the registry (code); a richer template is a new migration row.
+
+No Docker image was built or run for this phase: the Dockerfile and compose file are unchanged and compatible with the new migrations (`0012`, `0013`), which were applied and tested on the PostgreSQL stand-in used for development. **Docker verification is required before AWS deployment** (§17). An existing development database needs `npm run db:reset` to pick up the new tables and the seeded websites and listings.

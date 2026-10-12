@@ -5,7 +5,8 @@ import { SERVICES } from "./apex-data";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
 const main = (page: Page) => page.getByRole("main");
-const toast = (page: Page) => page.getByRole("status");
+/** The toast region (the unsaved-changes notice is role="status" too, but it is a paragraph, not this live region). */
+const toast = (page: Page) => page.locator('div[role="status"]');
 const websiteTabs = (page: Page) => page.getByRole("navigation", { name: "Website sections" });
 const card = (page: Page, name: string) => page.getByRole("region", { name });
 
@@ -14,7 +15,8 @@ async function editHeadline(page: Page, text: string) {
 }
 
 test.describe("Website overview", () => {
-  test("Published: header, tabs, status tiles, publishing, address and checklist", async ({ page }) => {
+  test("Published: header, tabs, status tiles, publishing, address and checklist", async ({ page, workerTenant }) => {
+    const host = `${workerTenant.platformSlug}.climvia.com`;
     await page.goto("/website");
     await expect(page.getByRole("heading", { level: 1, name: "Website" })).toBeVisible();
     await expect(page.getByText("Manage your public website, service pages, booking experience, and domain.")).toBeVisible();
@@ -25,7 +27,7 @@ test.describe("Website overview", () => {
     await expect(websiteTabs(page).getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
 
     // The four status tiles.
-    await expect(main(page)).toContainText("Live at apexclimate.climvia.com");
+    await expect(main(page)).toContainText(`Live at ${host}`);
     await expect(main(page)).toContainText("5 pages");
     await expect(main(page)).toContainText("6 Services");
     await expect(main(page)).toContainText("Enabled");
@@ -37,8 +39,10 @@ test.describe("Website overview", () => {
     await expect(publishing).toContainText("Unpublishing makes the website private without deleting any pages or content.");
 
     const address = card(page, "Website address");
-    await expect(address).toContainText("apexclimate.climvia.com");
+    await expect(address).toContainText(host);
     await expect(address).toContainText("www.apexclimateair.com");
+    // A recorded custom domain is not described as live: it is only configured.
+    await expect(address).toContainText("Configured");
 
     const checklist = card(page, "Website checklist");
     for (const item of ["Business information", "Services", "Business hours", "Booking experience"]) await expect(checklist).toContainText(item);
@@ -147,13 +151,18 @@ test.describe("Page editors", () => {
     await expect(page.getByRole("button", { name: /^Hero/ })).toContainText("Edited · Unsaved");
   });
 
-  test("Save changes keeps the edit as Saved · unpublished changes; Publish makes it live", async ({ page }) => {
+  test("Save changes keeps the edit as Saved · unpublished changes; Publish makes it live", async ({ page, workerTenant }) => {
     await page.goto("/website/pages/home");
     await editHeadline(page, "Cool homes, fair prices");
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(toast(page)).toContainText("Home page saved. Publish to make it live.");
     await expect(page.getByText("Saved · unpublished changes")).toBeVisible();
     await expect(page.getByRole("link", { name: "Preview" })).toBeVisible();
+
+    // Stored: the saved edit survives a reload.
+    await page.reload();
+    await expect(page.getByLabel("Headline", { exact: true })).toHaveValue("Cool homes, fair prices");
+    await expect(page.getByText("Saved · unpublished changes")).toBeVisible();
 
     // The Website header and the list now say the same thing.
     await backToWorkspaceViaTabs(page);
@@ -162,11 +171,12 @@ test.describe("Page editors", () => {
     await expect(home).toContainText("Saved · unpublished changes");
     await expect(page.getByRole("region", { name: "Website pages" }).getByRole("listitem").filter({ hasText: "About" })).toContainText("Published");
 
-    // Live visitors still see the old headline until publishing.
+    // Live visitors still see the old headline until publishing: the live website is the published site, its own page.
     await page.getByRole("link", { name: "View live website" }).click();
-    await expect(page).toHaveURL(/view=live/);
-    await expect(main(page).or(page.locator("body"))).not.toContainText("Cool homes, fair prices");
-    await page.getByRole("link", { name: "Back to Website" }).click();
+    await expect(page).toHaveURL(`/sites/${workerTenant.platformSlug}`);
+    await expect(page.locator("body")).not.toContainText("Cool homes, fair prices");
+    await expect(page.getByRole("heading", { level: 1, name: "Heating & cooling service when you need it." })).toBeVisible();
+    await page.goBack();
 
     await page.getByRole("button", { name: "Publish changes" }).first().click();
     await expect(toast(page)).toContainText("Website published.");
@@ -336,10 +346,11 @@ test.describe("Customer-facing preview", () => {
     await expect(page.getByRole("tablist", { name: "Booking lists" }).getByRole("tab")).toHaveText([/^Requests\s*2$/, /^Upcoming\s*6$/, /^Past\s*6$/, /^Cancelled\s*0$/]);
   });
 
-  test("Preview and the live view are different versions, and live follows publishing", async ({ page }) => {
+  test("Preview and the live site are different versions, and live follows publishing", async ({ page, workerTenant }) => {
     await page.goto("/website/pages/home");
     await editHeadline(page, "Cool homes, fair prices");
     await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(toast(page)).toContainText("Home page saved.");
     await page.getByRole("link", { name: "Preview" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Cool homes, fair prices" })).toBeVisible();
     await expect(page.getByText("Preview", { exact: true }).first()).toBeVisible();
@@ -349,11 +360,17 @@ test.describe("Customer-facing preview", () => {
     await page.getByRole("link", { name: "Website" }).first().click();
     await expect(page).toHaveURL("/website");
     await page.getByRole("link", { name: "View live website" }).first().click();
+    await expect(page).toHaveURL(`/sites/${workerTenant.platformSlug}`);
     await expect(page.getByRole("heading", { level: 1, name: "Heating & cooling service when you need it." })).toBeVisible();
-    await expect(page.getByText("Live", { exact: true })).toBeVisible();
-    // Links inside the live view stay on the live version.
+    // The published site has no preview toolbar: it is the website itself.
+    await expect(page.getByText("Preview", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Back to editor" })).toHaveCount(0);
+    // Links inside the live site stay on the live site.
     await page.getByRole("navigation", { name: "Website" }).getByRole("link", { name: "About" }).click();
-    await expect(page).toHaveURL(/\/website\/preview\/about\?view=live/);
+    await expect(page).toHaveURL(`/sites/${workerTenant.platformSlug}/about`);
+    // An older "live view" link of the preview leads to the published site.
+    await page.goto("/website/preview/about?view=live");
+    await expect(page).toHaveURL(`/sites/${workerTenant.platformSlug}/about`);
   });
 
   test("the Desktop / Mobile switch narrows the customer's page", async ({ page }) => {
@@ -507,7 +524,8 @@ test.describe("Booking on the website", () => {
 });
 
 test.describe("Publishing", () => {
-  test("Unpublish asks first, makes the site private everywhere, and Publish restores it", async ({ page }) => {
+  test("Unpublish asks first, makes the site private everywhere, and Publish restores it", async ({ page, workerTenant, consoleGuard }) => {
+    consoleGuard.allow(/status of 404/);
     await page.goto("/website");
     await card(page, "Publishing").getByRole("button", { name: "Unpublish" }).click();
     const dialog = page.getByRole("dialog", { name: "Unpublish website?" });
@@ -524,6 +542,10 @@ test.describe("Publishing", () => {
     await expect(card(page, "Publishing")).toContainText("Your website is ready to preview.");
     await expect(card(page, "Publishing")).toContainText("Publishing does not change your Bookings, Services, Customers, Jobs, Invoices, or Payments.");
     await expect(page.getByRole("link", { name: /View live website/ })).toHaveCount(0);
+    // Visitors can no longer open it.
+    const closed = await page.goto(`/sites/${workerTenant.platformSlug}`);
+    expect(closed?.status()).toBe(404);
+    await page.goto("/website");
 
     // Private: the pages say so, the draft is still previewable, the live view is not available.
     await websiteTabs(page).getByRole("link", { name: "Pages & content" }).click();
@@ -535,13 +557,17 @@ test.describe("Publishing", () => {
 
     await page.getByRole("button", { name: "Publish website" }).first().click();
     await expect(toast(page)).toContainText("Website published.");
-    await expect(main(page)).toContainText("Live at apexclimate.climvia.com");
+    await expect(main(page)).toContainText(`Live at ${workerTenant.platformSlug}.climvia.com`);
+    // And visitors can open it again.
+    const open = await page.goto(`/sites/${workerTenant.platformSlug}`);
+    expect(open?.status()).toBe(200);
   });
 
-  test("the live view of a private site is a private notice", async ({ page }) => {
+  test("a private site keeps its Draft: it can still be edited and previewed", async ({ page }) => {
     await page.goto("/website");
     await card(page, "Publishing").getByRole("button", { name: "Unpublish" }).click();
     await page.getByRole("dialog", { name: "Unpublish website?" }).getByRole("button", { name: "Unpublish" }).click();
+    await expect(toast(page)).toContainText("Website unpublished.");
     await page.getByRole("link", { name: "Edit website" }).first().click();
     await page.getByRole("link", { name: "Preview" }).first().click();
     await page.getByRole("link", { name: "Back to editor" }).click();
@@ -550,14 +576,14 @@ test.describe("Publishing", () => {
 });
 
 test.describe("Domain", () => {
-  test("shows the Climvia address and the connected custom domain, with the Climvia one primary", async ({ page }) => {
+  test("shows the Climvia address and the recorded custom domain, with the Climvia one primary", async ({ page, workerTenant }) => {
     await page.goto("/website/domain");
     await expect(websiteTabs(page).getByRole("link", { name: "Domain" })).toHaveAttribute("aria-current", "page");
     await expect(page.getByText("Domain and publishing are separate")).toBeVisible();
     await expect(page.getByText("Connecting or removing a domain does not change your Website content or Published status.")).toBeVisible();
 
     const climvia = card(page, "Website address");
-    await expect(climvia).toContainText("apexclimate.climvia.com");
+    await expect(climvia).toContainText(`${workerTenant.platformSlug}.climvia.com`);
     await expect(climvia).toContainText("Climvia domain");
     await expect(climvia).toContainText("Active");
     await expect(climvia).toContainText("Primary website address");
@@ -566,14 +592,17 @@ test.describe("Domain", () => {
 
     const custom = card(page, "Custom domain");
     await expect(custom).toContainText("www.apexclimateair.com");
-    await expect(custom).toContainText("Connected");
+    // It is a record: configured, not connected, and the page says nothing opens on it yet.
+    await expect(custom).toContainText("Configured");
+    await expect(custom).toContainText("Visitors can't open www.apexclimateair.com yet");
     await expect(custom.getByRole("button", { name: "Make primary" })).toBeVisible();
     await expect(custom.getByRole("link", { name: /View website/ })).toBeVisible();
-    // No verification, DNS or certificate states.
-    for (const banned of [/dns/i, /verif/i, /ssl/i, /certificate/i, /propagat/i, /nameserver/i]) await expect(main(page)).not.toContainText(banned);
+    // No DNS, certificate or propagation states, and nothing claims the domain is live or verified.
+    for (const banned of [/dns/i, /ssl/i, /certificate/i, /propagat/i, /nameserver/i, /\bverified\b/i]) await expect(main(page)).not.toContainText(banned);
+    await expect(custom).not.toContainText(/\bconnected\b/i);
   });
 
-  test("Make primary swaps which address is primary, and either can be made primary again", async ({ page }) => {
+  test("Make primary swaps which address is primary, and either can be made primary again", async ({ page, workerTenant }) => {
     await page.goto("/website/domain");
     await card(page, "Custom domain").getByRole("button", { name: "Make primary" }).click();
     await expect(toast(page)).toContainText("www.apexclimateair.com is now the primary website address.");
@@ -589,7 +618,7 @@ test.describe("Domain", () => {
     await websiteTabs(page).getByRole("link", { name: "Domain" }).click();
     await card(page, "Website address").getByRole("button", { name: "Make primary" }).click();
     await expect(card(page, "Website address")).toContainText("Primary website address");
-    await expect(page.getByText("Current primary address:")).toContainText("apexclimate.climvia.com");
+    await expect(page.getByText("Current primary address:")).toContainText(`${workerTenant.platformSlug}.climvia.com`);
   });
 
   test("the overflow menu opens with the keyboard, closes with Escape, and offers Remove domain", async ({ page }) => {
@@ -609,14 +638,15 @@ test.describe("Domain", () => {
     await expect(menu).toBeHidden();
   });
 
-  test("Remove custom domain explains the change, restores Climvia as primary and keeps publishing as it was", async ({ page }) => {
+  test("Remove custom domain explains the change, restores Climvia as primary and keeps publishing as it was", async ({ page, workerTenant }) => {
+    const host = `${workerTenant.platformSlug}.climvia.com`;
     await page.goto("/website/domain");
     await page.getByRole("button", { name: "More actions for www.apexclimateair.com" }).click();
     await page.getByRole("menuitem", { name: "Remove domain" }).click();
 
     const dialog = page.getByRole("dialog", { name: "Remove custom domain?" });
     await expect(dialog).toContainText("www.apexclimateair.com will no longer be connected to this Website. The Climvia domain will remain available.");
-    await expect(dialog).toContainText("apexclimate.climvia.com will become the primary website address.");
+    await expect(dialog).toContainText(`${host} will become the primary website address.`);
     await expect(dialog).toContainText("Domain being removed");
     await expect(dialog).toContainText("New primary address");
 
@@ -631,7 +661,7 @@ test.describe("Domain", () => {
     await page.getByRole("button", { name: "More actions for www.apexclimateair.com" }).click();
     await page.getByRole("menuitem", { name: "Remove domain" }).click();
     await dialog.getByRole("button", { name: "Remove domain" }).click();
-    await expect(toast(page)).toContainText("Custom domain removed. apexclimate.climvia.com is now your primary website address.");
+    await expect(toast(page)).toContainText(`Custom domain removed. ${host} is now your primary website address.`);
 
     // Restored state.
     await expect(card(page, "Website address")).toContainText("Primary website address");
@@ -660,7 +690,11 @@ test.describe("Domain", () => {
     await expect(dialog.getByText("Enter a domain name like www.yourbusiness.com.")).toBeVisible();
     await dialog.getByLabel("Domain name").fill("https://www.apexheatingair.com/");
     await dialog.getByRole("button", { name: "Connect domain" }).click();
-    await expect(toast(page)).toContainText("Domain connected. www.apexheatingair.com is now connected to your Website.");
+    await expect(toast(page)).toContainText("Domain added. www.apexheatingair.com is recorded for your Website and waiting for verification.");
+    await expect(card(page, "Custom domain")).toContainText("www.apexheatingair.com");
+    // A newly entered domain is pending verification, never "connected".
+    await expect(card(page, "Custom domain")).toContainText("Pending verification");
+    await page.reload();
     await expect(card(page, "Custom domain")).toContainText("www.apexheatingair.com");
     // A newly connected domain is not primary until the owner says so.
     await expect(card(page, "Website address")).toContainText("Primary website address");

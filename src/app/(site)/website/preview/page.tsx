@@ -1,8 +1,7 @@
-import { PublicPage } from "@/components/website/preview/PublicPage";
-import { publicGate } from "@/server/fixture-gate";
+import { PreviewRoute } from "@/server/preview-route";
 
-export default async function PreviewHomePage() {
-  const gate = await publicGate();
-  if (gate) return gate;
-  return <PublicPage page="home" />;
+/** The saved Draft's home page, for someone signed in to the business. */
+export default async function PreviewHome({ searchParams }: PageProps<"/website/preview">) {
+  const { view } = await searchParams;
+  return <PreviewRoute segments={[]} view={typeof view === "string" ? view : undefined} />;
 }

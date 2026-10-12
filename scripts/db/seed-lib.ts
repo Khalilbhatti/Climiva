@@ -43,6 +43,8 @@ import { clearCoreData, insertCustomerBook, insertServices, persistTeamData } fr
 import { clearFinancials, insertFinancials, loadFinRefs } from "../../src/db/fin-queries";
 import { clearMaintenance, insertMaintenance, type SeedPlans } from "../../src/db/maint-queries";
 import { clearMarketing, insertMarketing, type SeedMarketing } from "../../src/db/marketing-queries";
+import { clearMarketplace, insertSeedListing } from "../../src/db/marketplace-queries";
+import { clearSiteContent, insertSeedSite } from "../../src/db/site-queries";
 import { clearOperations, insertOperations, loadRefs, type SeedNumbers } from "../../src/db/ops-queries";
 import { clearReviews, insertReviews } from "../../src/db/review-queries";
 import { createAuth, type Auth } from "../../src/lib/auth";
@@ -52,6 +54,7 @@ import { CUSTOMERS, EQUIPMENT, PROPERTIES } from "./seed-data/customers";
 import { FINANCIALS } from "./seed-data/financials";
 import { MAINTENANCE } from "./seed-data/maintenance";
 import { MARKETING } from "./seed-data/marketing";
+import { APEX_WEBSITE, NORTHSTAR_WEBSITE, type WebsiteSeed } from "./seed-data/website";
 import { OPERATIONS } from "./seed-data/operations";
 import { REVIEWS_DATA } from "./seed-data/reviews";
 import { APEX_APPROVED, NORTHSTAR_APPROVED, type ApprovedReporting } from "./seed-data/reporting";
@@ -71,7 +74,7 @@ import {
 import { SERVICES } from "./seed-data/services";
 import { ROLES, TEAM } from "./seed-data/team";
 
-const { authUser, organizationBusinessHours, organizationMemberships, organizations, profiles, services, sites, teamMembers } = schema;
+const { authUser, marketplaceListings, organizationBusinessHours, organizationMemberships, organizations, profiles, services, siteVersions, sites, teamMembers } = schema;
 
 type AdminDb = ReturnType<typeof adminDb>["db"];
 
@@ -89,7 +92,10 @@ export type OrganizationSpec = {
   timeFormat: "12h" | "24h";
   hours: WeeklyHours;
   fixtureSet: string | null;
-  sites: { name: string; slug: string }[];
+  /** `platformSlug` is the site's public identity (globally unique). Left out, the database makes one from the organization's address. */
+  sites: { name: string; slug: string; platformSlug?: string; isPrimary?: boolean }[];
+  /** The site content and Marketplace listing written for the business. None: its sites stay empty and it has no listing. */
+  website?: WebsiteSeed;
 };
 
 /** The approved canonical business record, read from the existing fixtures. */
@@ -108,9 +114,10 @@ export const APEX: OrganizationSpec = {
   hours: businessHoursByWeekday,
   fixtureSet: "apex-demo",
   sites: [
-    { name: business.name, slug: "main" },
-    { name: `${business.name} Commercial`, slug: "commercial" },
+    { name: business.name, slug: "main", platformSlug: "apexclimate", isPrimary: true },
+    { name: `${business.name} Commercial`, slug: "commercial", platformSlug: "apexclimate-commercial", isPrimary: false },
   ],
+  website: APEX_WEBSITE,
 };
 
 /** Invented, and unlike Apex in every setting the app shows. */
@@ -136,7 +143,8 @@ export const NORTHSTAR: OrganizationSpec = {
     6: { open: "09:00", close: "13:00" },
   },
   fixtureSet: null,
-  sites: [{ name: "Northstar Heating & Cooling", slug: "main" }],
+  sites: [{ name: "Northstar Heating & Cooling", slug: "main", platformSlug: "northstar", isPrimary: true }],
+  website: NORTHSTAR_WEBSITE,
 };
 
 /** A business's core records: what the Customers, Services, Team, Bookings, Jobs and Schedule modules show. */
@@ -252,8 +260,16 @@ export async function ensureOrganization(admin: AdminDb, spec: OrganizationSpec)
       })
       .returning({ id: organizations.id });
     await tx.insert(organizationBusinessHours).values(hoursRowsFromWeekly(row.id, spec.hours));
-    for (const site of spec.sites) {
-      await tx.insert(sites).values({ organizationId: row.id, name: site.name, slug: site.slug, status: "draft" });
+    for (const [index, site] of spec.sites.entries()) {
+      await tx.insert(sites).values({
+        organizationId: row.id,
+        name: site.name,
+        slug: site.slug,
+        // Left out, the database names it from the organization's address (migration 0013): the column is NOT NULL, but a trigger fills it.
+        platformSlug: site.platformSlug as string,
+        isPrimary: site.isPrimary ?? index === 0,
+        status: "draft",
+      });
     }
     return row.id;
   });
@@ -318,6 +334,30 @@ export async function ensureCoreData(
   return true;
 }
 
+/** Write a business's sites (with their draft and published versions) and its Marketplace listing, as the owner connection. */
+export async function writeWebsite(tx: AdminTx, organizationId: string, website: WebsiteSeed): Promise<void> {
+  const db = tx as never;
+  const [organization] = await tx.select({ slug: organizations.slug }).from(organizations).where(eq(organizations.id, organizationId));
+  for (const site of website.sites) await insertSeedSite(db, organizationId, site);
+  if (website.listing) await insertSeedListing(db, organizationId, organization.slug, website.listing);
+}
+
+/** Give a business its website and listing unless it already has site content. Returns true when it wrote them. */
+export async function ensureWebsite(db: AdminDb, organizationId: string, website: WebsiteSeed | undefined): Promise<boolean> {
+  if (!website) return false;
+  const existing = await db.select({ id: siteVersions.id }).from(siteVersions).where(eq(siteVersions.organizationId, organizationId)).limit(1);
+  const listing = await db.select({ id: marketplaceListings.id }).from(marketplaceListings).where(eq(marketplaceListings.organizationId, organizationId)).limit(1);
+  if (existing.length > 0 || listing.length > 0) return false;
+  await db.transaction((tx) => writeWebsite(tx, organizationId, website));
+  return true;
+}
+
+/** Remove a business's site content and listing (and, when `keepSites` is given, any site not named in it), so they can be written again. */
+export async function clearWebsite(tx: AdminTx, organizationId: string, keepSites?: readonly string[]): Promise<void> {
+  await clearMarketplace(tx as never, organizationId);
+  await clearSiteContent(tx as never, organizationId, keepSites);
+}
+
 export type SeedResult = { apexId: string; northstarId: string; users: Record<keyof typeof SEED_USERS, string> };
 
 /** The standing development data: two businesses and four people. */
@@ -345,6 +385,8 @@ export async function seedDevelopmentData(database?: string): Promise<SeedResult
     const loginIds = (core: CoreDataset) => Object.fromEntries(Object.entries(core.logins).map(([member, key]) => [member, users[key]]));
     await ensureCoreData(db, apexId, APEX.timezone, APEX_CORE, loginIds(APEX_CORE));
     await ensureCoreData(db, northstarId, NORTHSTAR.timezone, NORTHSTAR_CORE, loginIds(NORTHSTAR_CORE));
+    await ensureWebsite(db, apexId, APEX.website);
+    await ensureWebsite(db, northstarId, NORTHSTAR.website);
     return { apexId, northstarId, users };
   } finally {
     await close();
@@ -365,17 +407,21 @@ export const APEX_BASELINE = APEX;
 export async function ensureTestTenant(
   index: number,
   database?: string,
-): Promise<{ userId: string; organizationId: string; email: string; password: string }> {
+): Promise<{ userId: string; organizationId: string; email: string; password: string; platformSlug: string; listingSlug: string }> {
   const password = requireEnv("SEED_PASSWORD");
   const email = `e2e-worker-${index}@apex.test`;
   const { pool, db } = adminDb(database ? adminUrl(database) : undefined);
   const { auth, close } = seedAuth(database);
   try {
     const userId = await ensureUser(auth, db, { email, name: currentUser.name }, password);
-    const organizationId = await ensureOrganization(db, { ...APEX, slug: `apex-e2e-${index}` });
+    // A copy's sites need public identities of their own: they are unique across all sites.
+    const sitesOfCopy = APEX.sites.map((site) => ({ ...site, platformSlug: `${site.platformSlug}-e2e-${index}` }));
+    const organizationId = await ensureOrganization(db, { ...APEX, slug: `apex-e2e-${index}`, sites: sitesOfCopy });
     await ensureMembership(db, { organizationId, userId, role: "owner", jobTitle: currentUser.role });
     await ensureCoreData(db, organizationId, APEX.timezone, APEX_CORE, { "alex-morgan": userId });
-    return { userId, organizationId, email, password };
+    await ensureWebsite(db, organizationId, APEX.website);
+    // The copy's public addresses: its primary site's, and its Marketplace listing's (the organization's own address).
+    return { userId, organizationId, email, password, platformSlug: sitesOfCopy[0].platformSlug!, listingSlug: `apex-e2e-${index}` };
   } finally {
     await close();
     await pool.end();
@@ -419,7 +465,26 @@ export async function coreFingerprint(db: AdminDb, organizationId: string): Prom
   return result.rows[0].fingerprint;
 }
 
+/**
+ * The same for the website and the Marketplace listing: how many rows there are and when the newest of each was changed, plus each
+ * site's state (published pointer, domain record). Kept apart from the core fingerprint so that a test that only edits the website puts back
+ * only the website, which is far cheaper than rewriting every customer, booking and invoice.
+ */
+export async function websiteFingerprint(db: AdminDb, organizationId: string): Promise<string> {
+  const result = await db.execute<{ fingerprint: string }>(sql`
+    select concat_ws('|',
+      (select coalesce(string_agg(slug || ':' || status || ':' || coalesce(published_version_id::text, '') || ':' || coalesce(custom_domain, '') || ':' || coalesce(custom_domain_status, '') || ':' || coalesce(primary_domain, '') || ':' || updated_at::text, ',' order by slug), '') from sites where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') from site_versions where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') from site_pages where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') from site_sections where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') || ':' || coalesce(string_agg(status, ''), '') from marketplace_listings where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(sum(sort_order), 0) from marketplace_listing_services where organization_id = ${organizationId})
+    ) as fingerprint`);
+  return result.rows[0].fingerprint;
+}
+
 const seededFingerprints = new Map<string, string>();
+const seededWebsiteFingerprints = new Map<string, string>();
 
 /** Put a test tenant back to the canonical Apex record: settings, hours, profile and the owner membership. */
 export async function resetTestTenant(db: AdminDb, tenant: { userId: string; organizationId: string }): Promise<void> {
@@ -458,6 +523,8 @@ export async function resetTestTenant(db: AdminDb, tenant: { userId: string; org
   const seeded = seededFingerprints.get(tenant.organizationId);
   if (seeded === undefined || seeded !== (await coreFingerprint(db, tenant.organizationId))) {
     await db.transaction(async (tx) => {
+      // A listing selects Services, so the website and the listing go before them (and are written again after the core records).
+      await clearWebsite(tx, tenant.organizationId, APEX.sites.map((site) => site.slug));
       // Documents, plans, reviews and campaigns point at jobs, bookings and customers, and those at Services and team members, so they go first.
       await clearReporting(tx as never, tenant.organizationId);
       await clearMarketing(tx as never, tenant.organizationId);
@@ -467,7 +534,19 @@ export async function resetTestTenant(db: AdminDb, tenant: { userId: string; org
       await clearOperations(tx as never, tenant.organizationId);
       await clearCoreData(tx as never, tenant.organizationId);
       await writeCoreData(tx, tenant.organizationId, APEX.timezone, APEX_CORE, { "alex-morgan": tenant.userId });
+      await writeWebsite(tx, tenant.organizationId, APEX.website!);
     });
     seededFingerprints.set(tenant.organizationId, await coreFingerprint(db, tenant.organizationId));
+    seededWebsiteFingerprints.set(tenant.organizationId, await websiteFingerprint(db, tenant.organizationId));
+  }
+
+  // The website and the listing, when a test changed only them.
+  const websiteSeeded = seededWebsiteFingerprints.get(tenant.organizationId);
+  if (websiteSeeded === undefined || websiteSeeded !== (await websiteFingerprint(db, tenant.organizationId))) {
+    await db.transaction(async (tx) => {
+      await clearWebsite(tx, tenant.organizationId, APEX.sites.map((site) => site.slug));
+      await writeWebsite(tx, tenant.organizationId, APEX.website!);
+    });
+    seededWebsiteFingerprints.set(tenant.organizationId, await websiteFingerprint(db, tenant.organizationId));
   }
 }

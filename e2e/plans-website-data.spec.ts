@@ -22,31 +22,14 @@ import {
   getRecordedPaymentsCount,
 } from "../src/data/financials";
 import { getPublicActiveServices } from "../src/data/services";
-import {
-  CLIMVIA_DOMAIN,
-  DEFAULT_CUSTOM_DOMAIN,
-  PAGE_SCHEMA,
-  WEBSITE_PAGES,
-  defaultSiteContent,
-  getPageStatus,
-  getPrimaryDomain,
-  getShownServices,
-  hasUnpublishedChanges,
-  initialWebsiteState,
-} from "../src/data/website";
+import { getPageStatus, getPrimaryDomain, getShownServices, hasUnpublishedChanges, orderedPages, platformHost } from "../src/data/website";
+import { DEFAULT_TEMPLATE_KEY } from "../src/db/default-template";
+import { normalizeDomain } from "../src/lib/site-domain";
+import { validateTemplateDefinition } from "../src/lib/site-template";
 import { parseNewPlan, planSlug, visitsOf } from "../src/lib/maintenance-rules";
-import {
-  connectCustomDomain,
-  makeClimviaPrimary,
-  makeCustomPrimary,
-  normalizeDomain,
-  publish,
-  removeCustomDomain,
-  savePage,
-  unpublish,
-} from "../src/lib/website-state";
-import { BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, JOBS, OPERATIONS, OVERVIEW_TOTALS, PLANS, PLANS_DATA, PLAN_ADJUSTMENT, PROPERTIES, SERVICES } from "./apex-data";
+import { APEX_CONTENT, BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, JOBS, OPERATIONS, OVERVIEW_TOTALS, PLANS, PLANS_DATA, PLAN_ADJUSTMENT, PROPERTIES, SERVICES } from "./apex-data";
 import { cancelled } from "./operations-edits";
+import { websiteOf, withEditedSection, withPublished } from "./website-edits";
 
 // Pure data/selector/state tests: no browser needed.
 
@@ -238,25 +221,29 @@ test.describe("creating a plan and scheduling an included visit", () => {
   });
 });
 
+const SITE = websiteOf(APEX_CONTENT);
+
 test.describe("website data", () => {
   test("the site has exactly Home, Services, About, Contact and Booking", () => {
-    expect(WEBSITE_PAGES.map((page) => page.id)).toEqual(["home", "services", "about", "contact", "booking"]);
-    expect(Object.keys(PAGE_SCHEMA)).toEqual(["home", "services", "about", "contact", "booking"]);
+    expect(APEX_CONTENT.pages.map((page) => page.key)).toEqual(["home", "services", "about", "contact", "booking"]);
+    expect(APEX_CONTENT.pages.map((page) => page.title)).toEqual(["Home", "Services", "About", "Contact", "Booking"]);
+    expect(APEX_CONTENT.pages.map((page) => page.slug)).toEqual(["", "services", "about", "contact", "booking"]);
+    expect(validateTemplateDefinition({ schema: 1, ...APEX_CONTENT }).ok).toBe(true);
   });
 
-  test("the website owns no business details: it reads them from the Business fixture and the Services catalog", () => {
-    const text = JSON.stringify(PAGE_SCHEMA) + JSON.stringify(defaultSiteContent(SERVICES));
+  test("the website owns no business details: it reads them from the organization and the Services catalog", () => {
+    const text = JSON.stringify(APEX_CONTENT);
     for (const value of [business.phone, business.email, business.address.street, business.hours[0].hours]) expect(text).not.toContain(value);
     for (const service of SERVICES) {
       expect(text).not.toContain(service.name);
       expect(text).not.toContain(service.description);
     }
-    // Services are held as ids only.
-    expect(defaultSiteContent(SERVICES).services.order).toEqual(getPublicActiveServices(SERVICES).map((service) => service.id));
+    // Which Services show is a list of references (none hidden, the catalog's own order), never a copy.
+    expect(APEX_CONTENT.settings.serviceDisplay).toEqual({ order: [], hidden: [] });
   });
 
   test("no invented credentials, founding dates, awards or SEO and debug fields", () => {
-    const text = (JSON.stringify(PAGE_SCHEMA) + JSON.stringify(defaultSiteContent(SERVICES))).toLowerCase();
+    const text = JSON.stringify(APEX_CONTENT).toLowerCase();
     for (const phrase of ["licensed", "insured", "certified", "founded", "since 19", "since 20", "award", "years of experience", "seo", "meta ", "debug", "5-star", "4.9"]) {
       expect(text, phrase).not.toContain(phrase);
     }
@@ -264,87 +251,71 @@ test.describe("website data", () => {
 
   test("showing, hiding and ordering services never changes the Services themselves", () => {
     const before = JSON.stringify(SERVICES);
-    const content = defaultSiteContent(SERVICES);
-    const shown = getShownServices({ order: [...content.services.order].reverse(), hidden: ["annual-cooling-tune-up"] }, SERVICES);
-    expect(shown.map((service) => service.id)).toEqual(
-      [...content.services.order].reverse().filter((id) => id !== "annual-cooling-tune-up"),
-    );
+    const order = getPublicActiveServices(SERVICES).map((service) => service.id);
+    const shown = getShownServices({ order: [...order].reverse(), hidden: ["annual-cooling-tune-up"] }, SERVICES);
+    expect(shown.map((service) => service.id)).toEqual([...order].reverse().filter((id) => id !== "annual-cooling-tune-up"));
     expect(shown.every((service) => SERVICES.includes(service))).toBe(true);
     expect(JSON.stringify(SERVICES)).toBe(before);
   });
 });
 
 test.describe("website state", () => {
-  test("the baseline is published on both addresses, with the Climvia address primary", () => {
-    const site = initialWebsiteState(SERVICES);
-    expect(site.published).toBe(true);
-    expect(site.domain).toEqual({ custom: DEFAULT_CUSTOM_DOMAIN, primary: "climvia" });
-    expect(CLIMVIA_DOMAIN).toBe("apexclimate.climvia.com");
-    expect(DEFAULT_CUSTOM_DOMAIN).toBe("www.apexclimateair.com");
-    expect(getPrimaryDomain(site.domain)).toBe(CLIMVIA_DOMAIN);
-    expect(WEBSITE_PAGES.every((page) => getPageStatus(site, page.id) === "published")).toBe(true);
-    expect(hasUnpublishedChanges(site)).toBe(false);
+  test("the baseline is published, with the Climvia address primary and nothing to publish", () => {
+    expect(SITE.published).toBe(true);
+    expect(getPrimaryDomain(SITE.site, SITE.domain)).toBe("apexclimate.climvia.com");
+    expect(platformHost("apexclimate")).toBe("apexclimate.climvia.com");
+    expect(orderedPages(SITE.draft).every((page) => getPageStatus(SITE, page.key) === "published")).toBe(true);
+    expect(hasUnpublishedChanges(SITE)).toBe(false);
   });
 
   test("saving a page changes the draft only; publishing makes it live", () => {
-    const site = initialWebsiteState(SERVICES);
-    const home = { ...site.draft.pages.home, hero: { ...site.draft.pages.home.hero, values: { ...site.draft.pages.home.hero.values, headline: "Cool homes, fair prices" } } };
-    const saved = savePage(site, "home", home);
-    expect(site.draft.pages.home.hero.values.headline).not.toBe("Cool homes, fair prices");
-    expect(saved.live.pages.home.hero.values.headline).not.toBe("Cool homes, fair prices");
+    const saved = withEditedSection(SITE, "home", "hero", { headline: "Cool homes, fair prices" });
+    const heroOf = (version: typeof SITE.draft) => version.pages.find((page) => page.key === "home")!.sections.find((section) => section.key === "hero")!.props.headline;
+    expect(heroOf(SITE.draft)).not.toBe("Cool homes, fair prices");
+    expect(heroOf(saved.draft)).toBe("Cool homes, fair prices");
+    expect(heroOf(saved.live!)).not.toBe("Cool homes, fair prices");
     expect(getPageStatus(saved, "home")).toBe("unpublished-changes");
     expect(getPageStatus(saved, "about")).toBe("published");
-    const live = publish(saved);
-    expect(live.live.pages.home.hero.values.headline).toBe("Cool homes, fair prices");
+    const live = withPublished(saved);
+    expect(heroOf(live.live!)).toBe("Cool homes, fair prices");
+    expect(live.live!.number).toBe(2);
     expect(getPageStatus(live, "home")).toBe("published");
+    expect(hasUnpublishedChanges(live)).toBe(false);
   });
 
   test("changing which services are shown marks the pages that list services", () => {
-    const site = initialWebsiteState(SERVICES);
-    const saved = savePage(site, "services", site.draft.pages.services, { ...site.draft.services, hidden: ["furnace-safety-inspection"] });
+    const saved = { ...SITE, draft: { ...SITE.draft, settings: { serviceDisplay: { order: [], hidden: ["furnace-safety-inspection"] } } } };
     expect(getPageStatus(saved, "services")).toBe("unpublished-changes");
     expect(getPageStatus(saved, "home")).toBe("unpublished-changes");
     expect(getPageStatus(saved, "booking")).toBe("unpublished-changes");
     expect(getPageStatus(saved, "contact")).toBe("published");
+    expect(getPageStatus(saved, "about")).toBe("published");
   });
 
-  test("unpublishing makes every page private and keeps the content; publishing again restores it", () => {
-    const site = unpublish(initialWebsiteState(SERVICES));
+  test("a private site has no published snapshot: every page is private, and the content is kept", () => {
+    const site = websiteOf(APEX_CONTENT, { published: false });
     expect(site.published).toBe(false);
-    expect(WEBSITE_PAGES.every((page) => getPageStatus(site, page.id) === "private")).toBe(true);
-    expect(site.draft).toEqual(initialWebsiteState(SERVICES).draft);
-    expect(publish(site).published).toBe(true);
+    expect(site.live).toBeNull();
+    expect(orderedPages(site.draft).every((page) => getPageStatus(site, page.key) === "private")).toBe(true);
+    expect(site.draft).toEqual(websiteOf(APEX_CONTENT).draft);
+    expect(hasUnpublishedChanges(site)).toBe(true);
   });
 
-  test("domains and publishing are independent", () => {
-    const private_ = unpublish(initialWebsiteState(SERVICES));
-    const removed = removeCustomDomain(private_);
-    expect(removed.published).toBe(false);
-    expect(removed.draft).toEqual(private_.draft);
-    expect(removed.live).toEqual(private_.live);
-    // A site with no custom domain still publishes.
-    expect(publish(removed).published).toBe(true);
+  test("the main address is the platform address unless a recorded custom domain is made main", () => {
+    expect(getPrimaryDomain(SITE.site, { primary: "climvia" })).toBe("apexclimate.climvia.com");
+    expect(getPrimaryDomain(SITE.site, { custom: "www.apexclimateair.com", customStatus: "configured", primary: "custom" })).toBe("www.apexclimateair.com");
+    // A "custom" choice with no domain recorded falls back to the platform address.
+    expect(getPrimaryDomain(SITE.site, { primary: "custom" })).toBe("apexclimate.climvia.com");
+    expect(DEFAULT_TEMPLATE_KEY).toBe("climvia-starter");
   });
 
-  test("remove restores the Climvia address as primary; make primary and connect behave", () => {
-    const site = initialWebsiteState(SERVICES);
-    const custom = makeCustomPrimary(site);
-    expect(getPrimaryDomain(custom.domain)).toBe(DEFAULT_CUSTOM_DOMAIN);
-    expect(getPrimaryDomain(makeClimviaPrimary(custom).domain)).toBe(CLIMVIA_DOMAIN);
-    const removed = removeCustomDomain(custom);
-    expect(removed.domain).toEqual({ custom: undefined, primary: "climvia" });
-    expect(getPrimaryDomain(removed.domain)).toBe(CLIMVIA_DOMAIN);
-    // Nothing to make primary without a custom domain.
-    expect(makeCustomPrimary(removed)).toBe(removed);
-    expect(connectCustomDomain(removed, "www.example.com").domain).toEqual({ custom: "www.example.com", primary: "climvia" });
-    expect(site.domain.custom).toBe(DEFAULT_CUSTOM_DOMAIN);
-  });
-
-  test("a domain name is only checked for shape; nothing is looked up", () => {
+  test("a domain name is only checked for shape and for not being one of Climvia's own; nothing is looked up", () => {
     expect(normalizeDomain(" https://WWW.Example.com/path ")).toBe("www.example.com");
     expect(normalizeDomain("not a domain")).toBeUndefined();
     expect(normalizeDomain("nodots")).toBeUndefined();
-    expect(normalizeDomain(CLIMVIA_DOMAIN)).toBeUndefined();
+    expect(normalizeDomain("apexclimate.climvia.com")).toBeUndefined();
+    expect(normalizeDomain("climvia.com")).toBeUndefined();
+    expect(normalizeDomain("sub.climvia.com")).toBeUndefined();
   });
 });
 
@@ -395,7 +366,10 @@ test.describe("Phase 5 source", () => {
       "src/data/maintenance-plans.ts",
       "src/data/website.ts",
       "src/lib/maintenance-rules.ts",
-      "src/lib/website-state.ts",
+      "src/lib/site-sections.ts",
+      "src/lib/site-template.ts",
+      "src/lib/site-theme.ts",
+      "src/lib/site-domain.ts",
     ];
     const hits: string[] = [];
     for (const file of files) {

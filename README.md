@@ -8,7 +8,7 @@ several businesses, and one business's data is never visible to another.
 ## What this is, and what it is not
 
 The **front end is complete** and the **SaaS foundation is in place**: real accounts, businesses ("organizations"), roles,
-workspace switching, and a PostgreSQL database that keeps businesses apart. Not every module is on the database yet.
+workspace switching, and a PostgreSQL database that keeps businesses apart. Every module is on the database.
 
 - **On PostgreSQL now:** accounts and sessions, organizations, memberships and roles, the Business information, Business
   hours and Workspace preferences of each business, each person's profile name, the `sites` a business owns, its
@@ -16,14 +16,18 @@ workspace switching, and a PostgreSQL database that keeps businesses apart. Not 
   photo records, the schedule derived from them, blocked time), its **money** (quotes, invoices and payments, in whole
   cents), its **maintenance plans and reviews** (plans with their coverage and included visits, reviews with replies
   and review requests), its **marketing campaigns** (Draft, Scheduled and Sent, with a snapshot of each campaign's
-  recipients) and **Analytics** (reporting queries over those records; the sample business's approved history that its
-  detailed records cannot reproduce is stored as explicit imported adjustments). Each business sees only its own.
-- **Still on built-in sample data** (in memory for the visit, gone on reload): Website and Marketplace. That sample
-  belongs to **one** business, Apex Climate Heating & Air; every other business sees those modules as "not available
-  yet", never Apex's records.
+  recipients), **Analytics** (reporting queries over those records; the sample business's approved history that its
+  detailed records cannot reproduce is stored as explicit imported adjustments), its **Website** (one primary Site and
+  any others, each with one editable Draft and immutable Published versions of pages and sections, built from an
+  application-owned template; published pages are public, the Draft only to people signed in; a visitor can book) and its
+  **Marketplace listing**. Each business sees only its own.
+- **No module runs on sample data any more.** The sample business, Apex Climate Heating & Air, and a second one,
+  Northstar, are seed data. A new business starts with a private Site and a Draft in neutral words, and no listing.
 - **Not built:** email (so no verification, password reset or invitations by email), billing for Climvia itself, a payment
-  processor, delivery of campaigns (a campaign is recorded as sent; no email or SMS provider exists), real domain
-  connection, file storage (logo and photo last for the session), the Website Builder, deployment to AWS.
+  processor, delivery of campaigns (a campaign is recorded as sent; no email or SMS provider exists) or of the Website's
+  contact form, real domain connection (a custom domain is only a record; nothing resolves a `<site>.climvia.com` host yet),
+  file storage (logo and photo last for the session; **object storage is required for durable uploaded logos and assets**),
+  the visual Website Builder, deployment to AWS.
 
 Read [docs/saas-architecture.md](docs/saas-architecture.md) first: it explains the model, the isolation rules and what comes next.
 [docs/production-handoff.md](docs/production-handoff.md) covers the front end.
@@ -74,9 +78,9 @@ All use the `SEED_PASSWORD` from your `.env`.
 
 | Email | Workspaces |
 | --- | --- |
-| `alex.morgan@apex.test` | Apex Climate Heating & Air, owner (has the canonical customers, Services, team, bookings, jobs, financials, plans, reviews, marketing campaigns and imported Analytics history, and the sample data of the modules not yet on the database) |
+| `alex.morgan@apex.test` | Apex Climate Heating & Air, owner (has the canonical customers, Services, team, bookings, jobs, financials, plans, reviews, marketing campaigns and imported Analytics history, and the approved website at `/sites/apexclimate` and listing) |
 | `jamie.rivera@apex.test` | Apex, member (can view Settings, not change them) |
-| `taylor.brooks@northstar.test` | Northstar Heating & Cooling, owner (a small set of its own customers, Services, team, two bookings and a job; none of Apex's, and no sample data) |
+| `taylor.brooks@northstar.test` | Northstar Heating & Cooling, owner (a small set of its own customers, Services, team, two bookings and a job, and its own website at `/sites/northstar` and listing; none of Apex's) |
 | `casey.nguyen@climvia.test` | admin in **both** (use the workspace switcher) |
 
 Or sign up with a new email and the setup flow creates a business of your own.
@@ -109,33 +113,32 @@ src/
   app/
     (auth)/         Log in, Sign up and business set-up: no shell
     (workspace)/    every module, inside the one shell (sidebar + top bar), behind a verified workspace
-    (site)/         the customer-facing Website preview and Marketplace listing, no shell
+    (site)/         no shell: the published Websites (`/sites/<slug>`) and Marketplace listings (`/listings/<slug>`), public; the signed-in Draft previews
     api/auth/       Better Auth's endpoints
     layout.tsx      fonts, global styles, and the providers for the signed-in workspace
   components/       one folder per module, plus auth/, shell/ (layout), workspace/ and ui/ (shared primitives)
   config/           navigation (the sidebar) and typed route helpers
-  data/             types and selectors per module; the sample records of the modules not yet on the database (customers, Services, the team and the operations are read from PostgreSQL)
+  data/             types and selectors per module (every module is read from PostgreSQL for the active business)
   db/               the PostgreSQL schema (Drizzle), the connection, and the tenant-context helpers
   lib/              auth setup, validation, state transitions, the operations rules, business-time conversions, date and display helpers
-  server/           server-only code: session, active workspace, organizations, Server Actions (including bookings and jobs), the sample-data gate
+  server/           server-only code: session, active workspace, organizations, Server Actions (including bookings and jobs, the Website and the Marketplace, and the visitor's booking), the public read path
   proxy.ts          the early "no session cookie" redirect (not the security boundary)
 drizzle/            SQL migrations, including the Row Level Security policies
-scripts/db/         migrate, seed (and seed-data/, the canonical Apex and the Northstar records), reset and test-database preparation
+scripts/db/         migrate, seed (and seed-data/, the canonical Apex and the Northstar records, websites and listings included), reset, test-database preparation and `template-sql.ts` (prints the default site template's `INSERT`)
 e2e/                Playwright specs and their helpers
 docs/               SaaS architecture, design map, visual audit, production handoff
 ```
 
 - **The shell.** `AppShell` (top bar, 240 px sidebar, content area) wraps every route in `(workspace)` and stays mounted
-  as the user moves between modules. The public previews live in `(site)` so they never get the workspace chrome.
+  as the user moves between modules. The published Sites and listings and the Draft previews live in `(site)` so they never get the workspace chrome.
 - **Who is signed in, and where.** `resolveWorkspace()` (`src/server/workspace.ts`) validates the session in the database,
   lists the person's memberships and picks the active workspace (a cookie is only a preference, re-checked each time).
   Every page and Server Action asks it again next to its data; PostgreSQL's Row Level Security checks once more.
-- **Providers.** One provider per area is mounted once at the root, around the signed-in workspace only, so the public
-  previews read the same session as the workspace. Signing in or out and switching workspace are full page loads, so one
+- **Providers.** One provider per area is mounted once at the root, around the signed-in workspace only, so the Draft
+  previews read the same session as the workspace. The published pages need no session and read nothing from a provider. Signing in or out and switching workspace are full page loads, so one
   business's state can never carry into another's.
-- **Records and selectors.** `src/data/*` holds the types, the pure selectors that derive everything shown, and the sample
-  records of the modules not yet on the database. Those change in memory only; reloading restores the sample. Customers,
-  Services, the team, bookings, jobs and blocked time come from PostgreSQL for the active business.
+- **Records and selectors.** `src/data/*` holds the types and the pure selectors that derive everything shown; the records
+  themselves come from PostgreSQL for the active business. The approved sample records are seed data (`scripts/db/seed-data`).
 - **A clock per business.** The sample business's "today" is Friday, October 25, 2024, 10:45, in its time zone; every
   other business's is the real time in its own zone, worked out on the server (`useClock()`). Appointments are stored as
   local dates and times and never converted. The browser never reads the system clock or its own time zone, so the server
@@ -155,7 +158,8 @@ docs/               SaaS architecture, design map, visual audit, production hand
 | Quotes, invoices, payments | Quotes & Invoices, Payments | PostgreSQL (`quotes`, `invoices`, `payments` …), money in integer cents |
 | Maintenance plans, coverage, visits; reviews, replies, review requests | Maintenance Plans, Reviews | PostgreSQL (`maintenance_plans`, `maintenance_plan_visits`, `reviews`, `review_replies`, `review_requests` …) |
 | Marketing campaigns, chosen customers, recipient snapshots | Marketing | PostgreSQL (`marketing_campaigns`, `marketing_campaign_selected_customers`, `marketing_campaign_recipients`) |
-| Everything else (website, marketplace) | its module | the sample data, sample business only |
+| Websites: Sites, versions, pages, sections, theme; the template | Website | PostgreSQL (`sites`, `site_versions`, `site_pages`, `site_sections`, `site_templates`); business details and Services are read live, never copied |
+| Marketplace listing and its selected Services | Marketplace | PostgreSQL (`marketplace_listings`, `marketplace_listing_services`) |
 
 Analytics owns no records: its figures are computed from the other modules' rows, plus the sample business's imported
 adjustments (`analytics_imported_baselines`, written by the seed, read-only for the application).
@@ -171,7 +175,7 @@ expiry, business set-up, workspace switching, tenant isolation (through the brow
 the restricted runtime role), Settings persistence, and source-level checks of the server boundaries. Each worker signs
 in as the owner of its own copy of the Apex workspace, restored before every test.
 
-At the last run all 2547 tests passed (73 spec files, about fourteen minutes on six workers): the earlier front-end and SaaS tests, none skipped and adapted only where Settings, customers, Services, the team, bookings, jobs, quotes, invoices, payments, maintenance plans, reviews, marketing campaigns and Analytics are stored or every page needs a sign-in, plus the operations specs (SQL as the restricted role, bookings, jobs, the schedule, the cross-module checks and the business-time conversions) and the financial specs (money in cents, the payment and invoice rules, SQL as the restricted role with the concurrency tests, the seed round trip, and the record-payment, void and create-invoice flows through the real application) and the maintenance and review specs (the pure rules and totals, SQL as the restricted role with the concurrency tests, the seed round trip, and the create-plan, schedule-visit, reply, edit-reply and request-review flows through the real application) and the marketing and analytics specs (the pure campaign and reporting rules, SQL as the restricted role with the campaign concurrency tests, the seed round trip, and the save-draft, schedule, send, cancel, duplicate, date-range and export flows through the real application).
+At the last run all 2765 tests passed (79 spec files, about 13 minutes on six workers): the earlier front-end and SaaS tests, none skipped and adapted only where Settings, customers, Services, the team, bookings, jobs, quotes, invoices, payments, maintenance plans, reviews, marketing campaigns, Analytics, the Website and the Marketplace are stored or every page needs a sign-in, plus the operations specs (SQL as the restricted role, bookings, jobs, the schedule, the cross-module checks and the business-time conversions) and the financial specs (money in cents, the payment and invoice rules, SQL as the restricted role with the concurrency tests, the seed round trip, and the record-payment, void and create-invoice flows through the real application) and the maintenance and review specs (the pure rules and totals, SQL as the restricted role with the concurrency tests, the seed round trip, and the create-plan, schedule-visit, reply, edit-reply and request-review flows through the real application) and the marketing and analytics specs (the pure campaign and reporting rules, SQL as the restricted role with the campaign concurrency tests, the seed round trip, and the save-draft, schedule, send, cancel, duplicate, date-range and export flows through the real application) and the website and marketplace specs (the pure section, theme, template and booking rules, SQL as the restricted role and as nobody through the three public functions, publishing's atomicity and concurrency, more than one Site in a business, the Server Actions replayed as a member, as nobody, as another business and six at once, the public pages and what they never show, a visitor's booking, a new business, the built JavaScript, and the seed round trip).
 See [docs/production-handoff.md](docs/production-handoff.md#testing-status) for what each group covers.
 
 ## Deploying

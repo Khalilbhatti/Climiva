@@ -26,14 +26,19 @@ export function SiteStatusBadge({ published }: { published: boolean }) {
 
 /** Publish and unpublish with their confirmations. Neither touches Bookings, Services, Customers, Jobs, Invoices or Payments. */
 export function usePublishing() {
-  const { site, publish, unpublish } = useWebsite();
+  const { website, publish, unpublish } = useWebsite();
   const { toast } = useToast();
   const [confirmingUnpublish, setConfirmingUnpublish] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   return {
-    publishNow() {
-      publish();
-      toast("Website published.");
+    busy,
+    async publishNow() {
+      if (busy) return;
+      setBusy(true);
+      const result = await publish();
+      setBusy(false);
+      toast(result.ok ? "Website published." : result.error);
     },
     askUnpublish: () => setConfirmingUnpublish(true),
     unpublishModal: (
@@ -49,10 +54,10 @@ export function usePublishing() {
             </Button>
             <Button
               variant="destructive-solid"
-              onClick={() => {
-                unpublish();
+              onClick={async () => {
+                const result = await unpublish();
                 setConfirmingUnpublish(false);
-                toast("Website unpublished. It is now private.");
+                toast(result.ok ? "Website unpublished. It is now private." : result.error);
               }}
             >
               Unpublish
@@ -62,7 +67,7 @@ export function usePublishing() {
       >
         <p className="rounded-card bg-surface-low p-3 text-sm text-ink-muted">
           Customers can no longer open the live website
-          {site.domain.custom ? " on either address" : ""}. Bookings, Services, Customers, Jobs, Invoices and Payments are not changed.
+          {website?.domain.custom ? " on either address" : ""}. Bookings, Services, Customers, Jobs, Invoices and Payments are not changed.
         </p>
       </Modal>
     ),

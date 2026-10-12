@@ -22,7 +22,9 @@ export type AppHref =
   | `/payments/${string}`
   | `/maintenance-plans/${string}`
   | `/website/pages/${string}`
-  | `/website/preview/booking/${string}`
+  | `/website/preview/${string}`
+  | `/sites/${string}`
+  | `/listings/${string}`
   | `/reviews/${string}`
   | `/marketing/${string}`
   | `/marketing/${string}/edit`;

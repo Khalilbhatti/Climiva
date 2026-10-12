@@ -178,8 +178,9 @@ test.describe("every Server Action authorizes its caller", () => {
   const actionFiles = walk(join(SRC, "server", "actions"), (path) => path.endsWith(".ts"));
 
   test("each exported action resolves the caller from the session before it does anything else", () => {
-    // signOutAction only ends the caller's own session: it needs no workspace and is safe when already signed out.
-    const exempt = new Set(["signOutAction"]);
+    // signOutAction only ends the caller's own session: it needs no workspace and is safe when already signed out. submitPublicBookingAction is
+    // the visitor's: it has no session by design and is held to its own rules in "a visitor's booking" below.
+    const exempt = new Set(["signOutAction", "submitPublicBookingAction"]);
     const CHECKS = /resolveWorkspace\(|getSessionUser\(|manager\(|authorize\(|requireMember\(/;
     for (const path of actionFiles) {
       const source = read(path);
@@ -267,7 +268,28 @@ test.describe("every Server Action authorizes its caller", () => {
     expect(marketingReads).not.toMatch(/authorize\(/);
     expect(marketingReads.match(/await requireMember\(\)/g)?.length).toBe(2);
     expect(marketingReads).not.toMatch(/\.(insert|update|delete)\(|Tx\(/);
+    // Every Website write goes through the one helper that authorizes "website:manage" first, and every Marketplace write through the one that
+    // authorizes "marketplace:manage" first. Neither names an organization or a site: both are found from the verified business.
+    const website = read(join(SRC, "server", "actions", "website.ts"));
+    expect(website.match(/authorize\("website:manage"/g)?.length).toBe(1);
+    expect(website).not.toMatch(/requireMember\(/);
+    const websiteActions = [...website.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)];
+    expect(websiteActions.map(([, name]) => name).sort()).toEqual(
+      ["connectDomainAction", "createWebsiteAction", "publishWebsiteAction", "removeDomainAction", "savePageAction", "setPrimaryAddressAction", "unpublishWebsiteAction"].sort(),
+    );
+    for (const [, name, body] of websiteActions) expect(/>\s\{\s+return mutate\(/.test(body), `${name} must start by handing everything to mutate()`).toBe(true);
+    expect(website).not.toMatch(/organizationId:\s*(input|payload|body)|siteId:\s*(input|payload|body)/);
+    expect(website).toContain("findPrimarySite(tx, organizationId)");
+    const marketplace = read(join(SRC, "server", "actions", "marketplace.ts"));
+    expect(marketplace.match(/authorize\("marketplace:manage"/g)?.length).toBe(1);
+    expect(marketplace).not.toMatch(/requireMember\(/);
+    const marketplaceActions = [...marketplace.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)];
+    expect(marketplaceActions.map(([, name]) => name).sort()).toEqual(["hideListingAction", "publishListingAction", "saveListingAction", "setUpListingAction"]);
+    for (const [, name, body] of marketplaceActions) expect(/>\s\{\s+return mutate\(/.test(body), `${name} must start by handing everything to mutate()`).toBe(true);
+    expect(marketplace).not.toMatch(/organizationId:\s*(input|payload|body)/);
     // The capabilities are decided in one place.
+    expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"website:manage": \["owner", "admin"\]/);
+    expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"marketplace:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"marketing:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"financials:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"services:manage": \["owner", "admin"\]/);
@@ -275,6 +297,26 @@ test.describe("every Server Action authorizes its caller", () => {
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"operations:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"maintenance:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"reviews:manage": \["owner", "admin"\]/);
+  });
+
+  test("a visitor's booking is the one anonymous action: it names a Site and a Service, never a business, and reaches the database only through the public functions", () => {
+    const path = join(SRC, "server", "actions", "public-booking.ts");
+    const source = read(path).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    // The only action file that does not authorize is this one (the workspace actions resolve the session in their own ways).
+    const anonymous = actionFiles.filter((file) => !/authorize\(|resolveWorkspace\(|getSessionUser\(|requireMember\(/.test(read(file))).map(posix);
+    expect(anonymous).toEqual(["src/server/actions/public-booking.ts"]);
+    expect([...source.matchAll(/export async function (\w+)\(/g)].map(([, name]) => name)).toEqual(["submitPublicBookingAction"]);
+    // The request is parsed and rate limited before anything is looked up, and the answer is a reference, a status and whether it repeated one.
+    expect(source.indexOf("parsePublicBooking(")).toBeGreaterThan(-1);
+    expect(source.indexOf("withinLimit(")).toBeGreaterThan(source.indexOf("parsePublicBooking("));
+    expect(source.indexOf("loadPublicSite(")).toBeGreaterThan(source.indexOf("withinLimit("));
+    expect(source.indexOf("createPublicBooking(")).toBeGreaterThan(source.indexOf("checkPublicBooking("));
+    // No organization anywhere in it, no tenant transaction, no table.
+    expect(source).not.toMatch(/organization/i);
+    expect(source).not.toMatch(/withTenant|withUser|@\/db\/schema|@\/db\/index|getDb\(/);
+    expect(source).not.toMatch(/cookies\(|session/i);
+    // The visitor's address is the right-most entry of the forwarded header (the one the nearest proxy appended), never the first.
+    expect(read(join(SRC, "server", "rate-limit.ts"))).toContain("parts[parts.length - 1]");
   });
 
   test("no action takes an organization id from the client and trusts it", () => {
@@ -318,36 +360,28 @@ test.describe("tenant data is never cached or prerendered", () => {
   });
 });
 
-test.describe("every fixture-backed page checks its caller and its tenant", () => {
-  const FIXTURE_MODULES = ["marketplace", "website"];
-  /** Customers, Services, Team, Bookings, Jobs, the Schedule, Payments, Quotes & Invoices, Maintenance Plans, Reviews, Marketing and Analytics are on PostgreSQL: they work for every workspace, with that workspace's own rows. */
-  const DATABASE_MODULES = ["analytics", "bookings", "customers", "jobs", "maintenance-plans", "marketing", "payments", "quotes-invoices", "reviews", "schedule", "services", "team"];
+test.describe("every module reads the database for the verified workspace", () => {
+  /** Every module is on PostgreSQL: it works for every workspace, with that workspace's own rows. Nothing runs on the sample dataset any more. */
+  const DATABASE_MODULES = ["analytics", "bookings", "customers", "jobs", "maintenance-plans", "marketing", "marketplace", "payments", "quotes-invoices", "reviews", "schedule", "services", "team", "website"];
   const workspaceDir = join(SRC, "app", "(workspace)");
-  const entries = FIXTURE_MODULES.flatMap((module) => walk(join(workspaceDir, module), (path) => /(page|layout)\.tsx$/.test(path)));
 
-  test("the module list matches the sidebar", () => {
-    // Settings, Help and the twelve database-backed modules are real for every workspace; every other module folder still runs on the sample dataset and must be listed here.
-    const present = readdirSync(workspaceDir).filter((entry) => statSync(join(workspaceDir, entry)).isDirectory() && !["settings", "help", ...DATABASE_MODULES].includes(entry));
-    expect(present.sort()).toEqual([...FIXTURE_MODULES].sort());
-    expect(entries.length).toBeGreaterThan(5);
+  test("the module list matches the sidebar: every module folder is a database module", () => {
+    const present = readdirSync(workspaceDir).filter((entry) => statSync(join(workspaceDir, entry)).isDirectory() && !["settings", "help"].includes(entry));
+    expect(present.sort()).toEqual([...DATABASE_MODULES].sort());
   });
 
-  test("each page and layout calls fixtureGate() before it renders anything", () => {
-    const missing = entries.filter((path) => !/await fixtureGate\("[^"]+"\)/.test(read(path))).map(posix);
-    expect(missing).toEqual([]);
+  test("no sample-data gate, unavailable-module screen or fixture access check is left anywhere in src", () => {
+    const leftovers = sourceFiles.filter((path) => /fixtureGate|hasSampleDataAccess|publicGate|ModuleUnavailable|isn't available for/.test(read(path))).map(posix);
+    expect(leftovers).toEqual([]);
+    expect(existsSync(join(SRC, "server", "fixture-gate.tsx"))).toBe(false);
   });
 
-  test("each dynamic-metadata function asks hasSampleDataAccess()", () => {
-    const missing = entries.filter((path) => /export async function generateMetadata/.test(read(path)) && !/hasSampleDataAccess\(\)/.test(read(path))).map(posix);
-    expect(missing).toEqual([]);
-  });
-
-  test("Customers, Services, Team, Bookings, Jobs, Schedule, Payments, Quotes & Invoices, Maintenance Plans, Reviews, Marketing and Analytics read the database for the verified workspace: no sample gate, no sample data", () => {
+  test("every page and layout of every module verifies the workspace next to its data: no sample gate, no sample data", () => {
     const pages = DATABASE_MODULES.flatMap((module) => walk(join(workspaceDir, module), (path) => /(page|layout)\.tsx$/.test(path)));
-    expect(pages.length).toBeGreaterThan(20);
+    expect(pages.length).toBeGreaterThan(25);
     const ASKS_THE_SERVER = /await requireWorkspaceContext\(\)|await getCustomerBook\(\)|await getCustomerDetail\(|await getServices\(\)|await getTeam\(\)/;
     expect(pages.filter((path) => !ASKS_THE_SERVER.test(read(path))).map(posix), "pages that do not verify the workspace next to their data").toEqual([]);
-    expect(pages.filter((path) => /fixtureGate|hasSampleDataAccess|@\/data\/fixtures/.test(read(path))).map(posix)).toEqual([]);
+    expect(pages.filter((path) => /@\/data\/fixtures/.test(read(path))).map(posix)).toEqual([]);
     // A record is asked for by its reference, and the answer for one the active business does not have is "not found".
     for (const file of [
       "customers/[customerId]/layout.tsx",
@@ -356,15 +390,40 @@ test.describe("every fixture-backed page checks its caller and its tenant", () =
       "services/[serviceId]/layout.tsx",
       "team/[memberId]/layout.tsx",
       "team/roles/[roleId]/page.tsx",
+      "website/pages/[pageId]/page.tsx",
     ]) {
       expect(read(join(workspaceDir, file)), file).toMatch(/notFound\(\)/);
     }
   });
 
-  test("the customer-facing previews call publicGate()", () => {
-    const pages = walk(join(SRC, "app", "(site)"), (path) => /(page|layout)\.tsx$/.test(path)).filter((path) => !path.endsWith(join("(site)", "layout.tsx")));
+  test("the published pages and the Draft previews are separate: a published page asks for no session and no business, a preview requires a verified one", () => {
+    const siteDir = join(SRC, "app", "(site)");
+    const pages = walk(siteDir, (path) => /(page|layout)\.tsx$/.test(path)).filter((path) => !path.endsWith(join("(site)", "layout.tsx")));
     expect(pages.length).toBeGreaterThan(6);
-    expect(pages.filter((path) => !/await publicGate\(\)/.test(read(path))).map(posix)).toEqual([]);
+    const published = pages.filter((path) => /(\\|\/)(sites|listings)(\\|\/)/.test(path));
+    const previews = pages.filter((path) => !published.includes(path));
+    expect(published.map(posix).sort()).toEqual([
+      "src/app/(site)/listings/[listingSlug]/page.tsx",
+      "src/app/(site)/sites/[siteSlug]/[...slug]/page.tsx",
+      "src/app/(site)/sites/[siteSlug]/page.tsx",
+    ]);
+    for (const path of published) {
+      const source = read(path);
+      // A visitor's page reads the public projection only: it names a site or a listing by its public identity, and nothing else.
+      expect(source, posix(path)).toMatch(/@\/server\/public-site/);
+      expect(source, posix(path)).not.toMatch(/requireWorkspaceContext|getCoreSnapshot|withTenant|@\/db\/schema|cookies\(|headers\(/);
+    }
+    // A preview is the signed-in person's own Draft: every one goes through requireWorkspaceContext (directly or through the preview route).
+    expect(previews.map(posix).sort()).toEqual([
+      "src/app/(site)/marketplace/preview/page.tsx",
+      "src/app/(site)/website/preview/[...slug]/page.tsx",
+      "src/app/(site)/website/preview/layout.tsx",
+      "src/app/(site)/website/preview/page.tsx",
+    ]);
+    expect(read(join(SRC, "app", "(site)", "website", "preview", "layout.tsx"))).toContain("await requireWorkspaceContext()");
+    expect(read(join(SRC, "app", "(site)", "marketplace", "preview", "page.tsx"))).toContain("await requireWorkspaceContext()");
+    expect(read(join(SRC, "server", "preview-route.tsx"))).toContain("await requireWorkspaceContext()");
+    for (const path of previews.filter((file) => !file.endsWith("layout.tsx") && !file.includes("marketplace"))) expect(read(path), posix(path)).toContain("PreviewRoute");
   });
 
   test("Overview, Settings and Help are real for every workspace and still require a verified one", () => {
@@ -375,8 +434,21 @@ test.describe("every fixture-backed page checks its caller and its tenant", () =
 
 test.describe("database access", () => {
   test("only the database layer and the auth adapter open a connection", () => {
+    // src/db/public-queries.ts is the visitor's door (below): the three public functions, and nothing else.
     const users = sourceFiles.filter((path) => /\bgetDb\(|\bgetPool\(/.test(read(path))).map(posix).sort();
-    expect(users).toEqual(["src/db/index.ts", "src/db/tenant.ts", "src/lib/auth.ts"]);
+    expect(users).toEqual(["src/db/index.ts", "src/db/public-queries.ts", "src/db/tenant.ts", "src/lib/auth.ts"]);
+  });
+
+  test("the visitor's door runs only the three public database functions: no table, no tenant context, no organization", () => {
+    const source = read(join(SRC, "db", "public-queries.ts")).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const calls = [...source.matchAll(/select (app_\w+)\(/g)].map(([, name]) => name).sort();
+    expect(calls).toEqual(["app_public_create_booking", "app_public_listing", "app_public_site"]);
+    expect(source).not.toMatch(/@\/db\/schema|\.(select|insert|update|delete)\(|\.from\(|set_config|withTenant|runAsTenant|organization_?id/i);
+    // Only the server's public routes and the visitor's booking action import it.
+    const importers = sourceFiles.filter((path) => importsOf(read(path)).some((specifier) => /public-queries$/.test(specifier))).map(posix).sort();
+    expect(importers).toEqual(["src/server/actions/public-booking.ts", "src/server/public-site.ts"]);
+    // The owner credential is never reachable from a request handler (this file included).
+    expect(source).not.toContain("DATABASE_ADMIN_URL");
   });
 
   test("tenant queries in the server layer go through withTenant / withUser", () => {
@@ -491,6 +563,37 @@ test.describe("the documentation covers the architecture", () => {
     ];
     const headings = doc().split(/\r?\n/).filter((line) => /^## /.test(line));
     for (const topic of required) expect(headings.some((heading) => topic.test(heading)), String(topic)).toBe(true);
+  });
+
+  test("section 28 documents the Website and Marketplace architecture, topic by topic", () => {
+    const text = doc();
+    const start = text.indexOf("## 28. Websites, Site Versions and the Marketplace");
+    expect(start).toBeGreaterThan(0);
+    const section = text.slice(start);
+    const headings = section.split(/\r?\n/).filter((line) => /^###? /.test(line));
+    const required = [
+      /Site ownership and the primary-Site strategy/,
+      /Public identity/,
+      /Template model/,
+      /Site Version model/,
+      /Draft \/ Published lifecycle/,
+      /Pages and Sections/,
+      /section registry/,
+      /Theme model/,
+      /Dynamic bindings/,
+      /Public read security/,
+      /Draft preview security/,
+      /tenant resolution/,
+      /Marketplace listing/,
+      /Authorization and tenant isolation/,
+      /Domain record/,
+      /Assets and uploaded files/,
+      /Builder boundary/,
+    ];
+    for (const topic of required) expect(headings.some((heading) => topic.test(heading)), String(topic)).toBe(true);
+    for (const expected of ["Object storage required for durable uploaded logos/assets", "SELECT … FOR UPDATE", "SECURITY DEFINER", "snapshot-versioned", "Docker verification is required before AWS deployment"]) {
+      expect(text, expected).toContain(expected);
+    }
   });
 
   test("the deployment section documents the container, environment, migration and start commands, and backups", () => {

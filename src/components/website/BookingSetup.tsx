@@ -13,9 +13,9 @@ import {
   formatDuration,
   formatServicePrice,
 } from "@/data/services";
-import { getShownServices } from "@/data/website";
+import { getShownServices, orderedPages } from "@/data/website";
 import { previewHref } from "./site-links";
-import { useWebsite } from "./WebsiteProvider";
+import { useWebsiteState } from "./WebsiteProvider";
 import { useServices } from "@/components/services/ServicesProvider";
 
 /**
@@ -23,9 +23,12 @@ import { useServices } from "@/components/services/ServicesProvider";
  * second place to configure booking: each Service owns its own booking method.
  */
 export function BookingSetup() {
-  const { site } = useWebsite();
+  const website = useWebsiteState();
   const { services: catalog } = useServices();
-  const shown = getShownServices((site.published ? site.live : site.draft).services, catalog);
+  const version = website.published && website.live ? website.live : website.draft;
+  const shown = getShownServices(version.settings.serviceDisplay, catalog);
+  // The Booking page's address: its own slug, whatever it is called (the site may have none).
+  const bookingSlug = orderedPages(website.draft).find((page) => page.type === "booking")?.slug;
   const online = shown.filter((service) => service.visibility === "public-booking");
 
   return (
@@ -52,9 +55,11 @@ export function BookingSetup() {
               </p>
             </div>
           </div>
-          <ButtonLink href={previewHref("booking")} variant="secondary">
-            Preview booking page
-          </ButtonLink>
+          {bookingSlug !== undefined && (
+            <ButtonLink href={previewHref(bookingSlug)} variant="secondary">
+              Preview booking page
+            </ButtonLink>
+          )}
         </div>
       </section>
 
@@ -98,7 +103,7 @@ export function BookingSetup() {
                   <TableCell>{formatServicePrice(service.pricing)}</TableCell>
                   <TableCell className="text-right">
                     <ButtonLink
-                      href={previewHref(`booking/${service.id}`)}
+                      href={previewHref(`${bookingSlug ?? "booking"}/${service.id}`)}
                       variant="tertiary"
                       size="sm"
                       aria-label={`Preview booking for ${service.name}`}

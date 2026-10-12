@@ -1,45 +1,47 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
-import { useServices } from "@/components/services/ServicesProvider";
-import { initialMarketplaceState, type ListingConfig, type MarketplaceState } from "@/data/marketplace";
-import * as state from "@/lib/marketplace-state";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import type { ListingConfig, MarketplaceState } from "@/data/marketplace";
+import type { ActionResult } from "@/lib/action-result";
+import { send } from "@/lib/send-action";
+import { hideListingAction, publishListingAction, saveListingAction, setUpListingAction } from "@/server/actions/marketplace";
+
+type Done = Promise<ActionResult<{ marketplace: MarketplaceState }>>;
 
 type MarketplaceContextValue = {
-  /** The working listing: the baseline plus any demo edits made in this session. */
+  /** The business's listing as stored: not set up, published or hidden, with its saved configuration. */
   listing: MarketplaceState;
-  saveListing: (config: ListingConfig) => void;
-  publishListing: () => void;
-  hideListing: () => void;
-  setUpListing: (config: ListingConfig) => void;
+  saveListing: (config: ListingConfig) => Done;
+  publishListing: () => Done;
+  hideListing: () => Done;
+  setUpListing: (config: ListingConfig) => Done;
 };
 
 const MarketplaceContext = createContext<MarketplaceContextValue | null>(null);
 
 /**
- * The demo copy of the Marketplace listing. Mounted at the app root because the public directory preview sits outside the
- * workspace shell yet must show what was saved inside it. In memory only; a reload restores the baseline.
+ * The business's Marketplace listing for the whole workspace. `initial` is what the server read from PostgreSQL for this page load, for the
+ * ACTIVE organization only. Every change goes to the server, which authorizes it (owner or admin), validates it, resolves every Service
+ * the listing selects inside the business and stores it in one transaction; it answers with the listing as stored, and only then does the
+ * working copy change, so the screen is never ahead of the database.
  */
-export function MarketplaceProvider({ children }: { children: ReactNode }) {
-  // Starts from the business's Services as they were when the page loaded; the listing's own choices are held here.
-  const { services } = useServices();
-  const [listing, setListing] = useState<MarketplaceState>(() => initialMarketplaceState(services));
-  const latest = useRef(listing);
+export function MarketplaceProvider({ initial, children }: { initial: MarketplaceState; children: ReactNode }) {
+  const [listing, setListing] = useState<MarketplaceState>(initial);
 
-  const commit = useCallback((next: MarketplaceState) => {
-    latest.current = next;
-    setListing(next);
+  const adopt = useCallback((result: ActionResult<{ marketplace: MarketplaceState }>) => {
+    if (result.ok) setListing(result.data.marketplace);
+    return result;
   }, []);
 
   const value = useMemo<MarketplaceContextValue>(
     () => ({
       listing,
-      saveListing: (config) => commit(state.saveListing(latest.current, config)),
-      publishListing: () => commit(state.publishListing(latest.current)),
-      hideListing: () => commit(state.hideListing(latest.current)),
-      setUpListing: (config) => commit(state.setUpListing(latest.current, config)),
+      saveListing: async (config) => adopt(await send(() => saveListingAction({ config }))),
+      publishListing: async () => adopt(await send(() => publishListingAction())),
+      hideListing: async () => adopt(await send(() => hideListingAction())),
+      setUpListing: async (config) => adopt(await send(() => setUpListingAction({ config }))),
     }),
-    [listing, commit],
+    [listing, adopt],
   );
 
   return <MarketplaceContext value={value}>{children}</MarketplaceContext>;

@@ -61,8 +61,8 @@ Team, Quotes & Invoices and Payments (Phase 4), Maintenance Plans and Website (P
 | Financials | Quotes & Invoices | `/quotes-invoices` (+ `/quotes/[quoteId]`, `/invoices/[invoiceId]`) | **Built (Phase 4)** |
 | | Payments | `/payments` (+ `/payments/[paymentId]`) | **Built (Phase 4)** |
 | | Maintenance Plans | `/maintenance-plans` (+ `/maintenance-plans/[planId]`) | **Built (Phase 5)** |
-| Growth | Website | `/website`, `/website/pages`, `/website/pages/[pageId]` (5 editors), `/website/booking`, `/website/domain`; customer-facing preview outside the shell at `/website/preview` (+ `/services`, `/about`, `/contact`, `/booking`, `/booking/[serviceId]`) | **Built (Phase 5)** |
-| | Marketplace | `/marketplace`, `/marketplace/edit` (+ `?setup=1`); public directory preview outside the shell at `/marketplace/preview` | **Built (Phase 6)** |
+| Growth | Website | `/website`, `/website/pages`, `/website/pages/[pageId]` (5 editors), `/website/booking`, `/website/domain`; the signed-in Draft preview outside the shell at `/website/preview` (+ `/services`, `/about`, `/contact`, `/booking`, `/booking/[serviceSlug]`) and, since Phase 15, the same pages published for anyone at `/sites/[siteSlug]` (+ the same page addresses) | **Built (Phase 5); stored and published in Phase 15** |
+| | Marketplace | `/marketplace`, `/marketplace/edit` (+ `?setup=1`); signed-in listing preview outside the shell at `/marketplace/preview`; the published listing at `/listings/[listingSlug]` (Phase 15) | **Built (Phase 6); stored and published in Phase 15** |
 | | Reviews | `/reviews` (+ `/reviews/[reviewId]`) | **Built (Phase 6)** |
 | | Marketing | `/marketing` (+ `/marketing/new`, `/marketing/[campaignId]`, `/marketing/[campaignId]/edit`) | **Built (Phase 6)** |
 | Insights | Analytics | `/analytics` (tab and date range in the query string) | **Built (Phase 7)** |
@@ -533,11 +533,10 @@ The empty state (`?state=empty`) has one primary action and no promotional cards
 
 ### Website: data architecture and content ownership
 
-- The site has exactly five pages: **Home, Services, About, Contact, Booking**, each a fixed list of sections (`PAGE_SCHEMA`). There is no page builder, drag-and-drop, SEO or debug field.
-- The Website stores only what it owns: section visibility and text, and which Services are shown and in what order (ids). **Business name, phone, email, address and hours** are read from the Business
-  fixture; **every Service's** name, description, price, duration and booking method is read from the Services catalog. A "connected" section holds no text of its own.
+- The site has exactly five pages: **Home, Services, About, Contact, Booking**, each a list of registered sections (Phase 15: stored per version from the default template, `saas-architecture.md` §28). There is no page builder, drag-and-drop, SEO or debug field.
+- The Website stores only what it owns: section visibility and text, and which Services are shown and in what order (Service slugs). **Business name, phone, email, address and hours** are read from the organization's record; **every Service's** name, description, price, duration and booking method is read from the Services catalog. A "connected" section holds no text of its own.
   Tests assert that no business detail or Service text appears in the Website's own data.
-- `WebsiteState` holds `published`, a saved `draft` and the `live` snapshot taken at the last publish. Preview shows the draft, "View live website" shows `live`. A page's status is derived:
+- `WebsiteState` holds `published`, a saved `draft` and the `live` snapshot taken at the last publish (Phase 15: a Draft version and a Published version in PostgreSQL). Preview shows the draft, "View live website" opens the published site at `/sites/<slug>`. A page's status is derived:
   Published, Saved · unpublished changes, or Private. Pages that list Services also change when the shown Services change.
 - The Website reads the **canonical** Services catalog. Services added during a demo session (Phase 2's in-memory catalog) belong to the Services module and are not shared with other modules.
 
@@ -547,13 +546,13 @@ The empty state (`?state=empty`) has one primary action and no promotional cards
   The canvas is `inert`: it is a picture, not a working page. Services are shown, hidden and ordered with switches and Move up / Move down buttons, never by dragging.
 - The customer-facing preview (`/website/preview…`) is a separate layout: no sidebar, no workspace header, no search. Its toolbar (Back to editor, address, Desktop / Mobile) is the only addition.
   Footer: "© 2025 Apex Climate Heating & Air. All rights reserved. | Powered by Climvia". Page sizes follow the frame (container queries), so Mobile is a real narrow layout.
-- Booking journeys (`/website/preview/booking/[serviceId]`) follow the Service's booking method: **instant** (date and start time, confirmed straight away), **request appointment** (2-hour arrival window,
+- Booking journeys (`/website/preview/booking/[serviceSlug]` in the signed-in preview, `/sites/<slug>/booking/<serviceSlug>` for a visitor) follow the Service's booking method: **instant** (date and start time, confirmed straight away), **request appointment** (2-hour arrival window,
   pending) and **request quote** (consultation slot, pending). Each creates **one Booking** (source "Website", with the customer's name and contact details as a snapshot) and nothing else.
   Photo-upload intake questions are not offered. The contact form shows a confirmation and stores nothing.
 
 ### Website: domains
 
-Baseline "Domain connected": **apexclimate.climvia.com** (Climvia, primary, cannot be removed) and **www.apexclimateair.com** (custom, connected). Make primary swaps which is primary; the ⋮ menu offers Remove domain;
+Baseline: **apexclimate.climvia.com** (Climvia, primary, cannot be removed) and **www.apexclimateair.com** (custom, *recorded* as Configured; Phase 15 stores it and nothing resolves or verifies it). Make primary swaps which is primary; the ⋮ menu offers Remove domain;
 the Remove custom domain modal restores apexclimate.climvia.com as primary; Connect custom domain accepts any well-formed hostname. There is **no DNS, verification, certificate or registrar step**, and domain changes never
 touch content or the published flag. Publishing needs no custom domain.
 

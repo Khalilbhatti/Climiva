@@ -460,21 +460,17 @@ test.describe("Branding", () => {
     expect(await shellColour()).toBe("rgb(13, 92, 99)");
   });
 
-  test("the saved logo is the mark on the Website and the Marketplace listing, and initials when removed", async ({ page }) => {
+  test("a saved logo stays in this session: the Website and the Marketplace listing show initials until object storage exists", async ({ page }) => {
     await page.goto("/settings/branding");
     await page.getByLabel("Choose a logo file").setInputFiles({ name: "new-crest.png", mimeType: "image/png", buffer: Buffer.from("not-a-real-image") });
     await saveButton(page, "Save branding").click();
-    await go(page, "/website/preview");
-    await expect(page.getByTestId("site-frame").locator("header img")).toHaveCount(1);
-    await go(page, "/marketplace/preview");
-    await expect(page.getByRole("article").locator("img")).toHaveCount(1);
-
-    await go(page, "/settings/branding");
-    await page.getByRole("button", { name: "Remove logo" }).click();
-    await saveButton(page, "Save branding").click();
+    // Uploaded files have nowhere durable to live yet, so a public page never shows one: it shows the business's initials.
     await go(page, "/website/preview");
     await expect(page.getByTestId("site-frame").locator("header img")).toHaveCount(0);
     await expect(page.getByTestId("site-frame").locator("header")).toContainText("AC");
+    await go(page, "/marketplace/preview");
+    await expect(page.getByRole("article").locator("img")).toHaveCount(0);
+    await expect(page.getByRole("article")).toContainText("AC");
   });
 });
 

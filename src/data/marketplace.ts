@@ -1,20 +1,15 @@
 /**
- * Marketplace: how the business appears in the Climvia directory.
+ * Marketplace: how the business appears in the Climvia directory. Types, labels and pure helpers.
  *
- * The listing owns only listing-specific configuration: its description, a cover treatment, which eligible Services
- * are shown and in what order, which contact details are visible, which customer actions are offered, and whether
- * the listing is published or hidden. It owns no copy of anything else. Business name, phone, email, address and
- * hours come from the Business fixture (data/fixtures), the website address from the Website's primary domain, and
- * every Service's name, description, price, duration and booking method from the Services catalog.
+ * The listing is DATA in PostgreSQL, per organization (`marketplace_listings`, `marketplace_listing_services`). It owns only
+ * listing-specific configuration: its description, a cover treatment, which eligible Services are shown and in what order, which contact
+ * details are visible, which customer actions are offered, and whether the listing is published or hidden. It owns no copy of anything
+ * else. Business name, phone, email, address and hours come from the organization, the website address from the business's primary site,
+ * and every Service's name, description, price, duration and booking method from the Services catalog.
  *
- * Exactly five of the six canonical public Services are shown at the baseline. Emergency No-Heat / No-Cool Service
- * is "Not selected": it is not deleted or deactivated, only left off this listing. Maintenance plan coverage
- * ("Cooling maintenance", "Heating maintenance") is not a Service and is never offered here.
- *
- * Sources: design-reference/stitch/ marketplace_*, edit_marketplace_listing_*, set_up_marketplace_listing_first_time.
- * Conflicts are listed in docs/stitch-screen-map.md §11.
- *
- * Fixtures are read-only. Demo edits live in components/marketplace/MarketplaceProvider and reset on reload.
+ * A business that has not set a listing up has none (status "not-set-up"). The approved Apex Climate Heating & Air listing, which shows
+ * five of its six Services and leaves Emergency No-Heat / No-Cool Service off, is seed data (scripts/db/seed-data/website.ts).
+ * Maintenance plan coverage ("Cooling maintenance", "Heating maintenance") is not a Service and is never offered here.
  */
 import { getPublicActiveServices, type Service } from "./services";
 
@@ -65,29 +60,32 @@ export type ListingConfig = {
   actions: Record<ListingAction, boolean>;
 };
 
-export type MarketplaceState = { status: ListingStatus; config: ListingConfig };
-
-/** The one eligible Service the baseline listing leaves off. */
-export const BASELINE_EXCLUDED_SERVICE_ID = "emergency-no-heat-no-cool";
+export type MarketplaceState = {
+  status: ListingStatus;
+  config: ListingConfig;
+  /** The listing's public identity (`/listings/<slug>`), once it has been set up. */
+  slug?: string;
+};
 
 /** Services a listing can show: the public, active ones in the business's catalog. */
 export const getEligibleServices = (services: readonly Service[]): Service[] => getPublicActiveServices(services);
 
+/** What the first-time setup starts from: every eligible Service selected, every detail and action on. */
 export function defaultListingConfig(services: readonly Service[]): ListingConfig {
   const eligible = getEligibleServices(services);
   return {
     description: DEFAULT_DESCRIPTION,
     cover: "teal-horizon",
     order: eligible.map((service) => service.id),
-    selected: eligible.filter((service) => service.id !== BASELINE_EXCLUDED_SERVICE_ID).map((service) => service.id),
+    selected: eligible.map((service) => service.id),
     contact: { phone: true, email: true, address: true, hours: true, website: true },
     actions: { book: true, website: true, contact: true },
   };
 }
 
-/** The approved baseline: a published listing showing five of the six eligible Services. */
-export function initialMarketplaceState(services: readonly Service[]): MarketplaceState {
-  return { status: "published", config: defaultListingConfig(services) };
+/** A business with no listing: not set up, and the defaults the setup form starts from. */
+export function emptyMarketplaceState(services: readonly Service[]): MarketplaceState {
+  return { status: "not-set-up", config: defaultListingConfig(services) };
 }
 
 /** The Services the listing shows, in listing order. Catalog data is read, never copied. */
@@ -118,4 +116,13 @@ export const isServiceSelected = (config: ListingConfig, serviceId: string) => c
 
 export const isAnyContactShown = (config: ListingConfig) => Object.values(config.contact).some(Boolean);
 
-export const sameConfig = (a: ListingConfig, b: ListingConfig) => JSON.stringify(a) === JSON.stringify(b);
+/** A configuration with its selected Services in the listing's order: the order they were ticked in is not part of what is stored. */
+const canonical = (config: ListingConfig): ListingConfig => {
+  const rank = (id: string) => {
+    const index = config.order.indexOf(id);
+    return index === -1 ? config.order.length : index;
+  };
+  return { ...config, selected: [...config.selected].sort((a, b) => rank(a) - rank(b)) };
+};
+
+export const sameConfig = (a: ListingConfig, b: ListingConfig) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));

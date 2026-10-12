@@ -317,25 +317,34 @@ test.describe("the sites table", () => {
     expect(result).toMatch(/sites_organization_id|violates foreign key/i);
   });
 
-  test("a primary domain can belong to only one site, and is stored lower-case", async () => {
+  test("a recorded domain is a claim (two sites may record the same name), only a verified one belongs to a single site, and names are stored lower-case", async () => {
     const client = await admin.connect();
-    try {
-      await client.query("begin");
-      await client.query("update sites set primary_domain = 'shared.example.test' where organization_id = $1 and slug = 'main'", [apex]);
-      const clash = await client.query("update sites set primary_domain = 'shared.example.test' where organization_id = $1 and slug = 'main'", [northstar]).then(
+    const attempt = (sql: string, params: unknown[]) =>
+      client.query(sql, params).then(
         () => "accepted",
         (error: Error) => error.message,
       );
-      expect(clash).toMatch(/sites_primary_domain_unique|duplicate key/i);
+    try {
+      await client.query("begin");
+      const claim = "update sites set custom_domain = 'shared.example.test', custom_domain_status = $2 where organization_id = $1 and slug = 'main'";
+      expect(await attempt(claim, [apex, "pending_verification"])).toBe("accepted");
+      expect(await attempt(claim, [northstar, "pending_verification"])).toBe("accepted");
+      expect(await attempt(claim, [apex, "verified"])).toBe("accepted");
+      expect(await attempt(claim, [northstar, "verified"])).toMatch(/sites_custom_domain_verified_unique|duplicate key/i);
     } finally {
       await client.query("rollback").catch(() => undefined);
       client.release();
     }
-    const mixedCase = await admin.query("update sites set primary_domain = 'Mixed.Example.Test' where organization_id = $1 and slug = 'main'", [apex]).then(
+    const mixedCase = await admin.query("update sites set custom_domain = 'Mixed.Example.Test', custom_domain_status = 'configured' where organization_id = $1 and slug = 'main'", [apex]).then(
       () => "accepted",
       (error: Error) => error.message,
     );
-    expect(mixedCase).toMatch(/sites_primary_domain_lowercase|check constraint/i);
+    expect(mixedCase).toMatch(/sites_custom_domain_shape|check constraint/i);
+    const mainAddress = await admin.query("update sites set primary_domain = 'Other.Example.Test' where organization_id = $1 and slug = 'main'", [apex]).then(
+      () => "accepted",
+      (error: Error) => error.message,
+    );
+    expect(mainAddress).toMatch(/sites_primary_domain_lowercase|sites_primary_is_custom|check constraint/i);
   });
 });
 

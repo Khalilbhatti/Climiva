@@ -26,7 +26,7 @@ export const metadata: Metadata = {
  * session and moving between them keeps what was edited. They are mounted only for someone signed in to a workspace
  * (the Log in, Sign up and Set up pages have none), and with the settings the SERVER read for that person's active
  * workspace this request. Signing in or out and switching workspace are always full page loads, so what is mounted here
- * can never outlive the person or workspace it was built for. Each page still checks for itself (see fixture-gate.tsx).
+ * can never outlive the person or workspace it was built for. Each page still checks for itself (see src/server/workspace.ts).
  */
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const state = await resolveWorkspace();

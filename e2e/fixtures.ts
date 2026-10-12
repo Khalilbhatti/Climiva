@@ -8,7 +8,15 @@ type ConsoleGuard = {
 };
 
 type StorageState = Awaited<ReturnType<APIRequestContext["storageState"]>>;
-type TestTenant = { userId: string; organizationId: string; email: string; password: string };
+type TestTenant = {
+  userId: string;
+  organizationId: string;
+  email: string;
+  password: string;
+  /** The public address of this copy's primary site (`/sites/<platformSlug>`, `<platformSlug>.climvia.com`) and of its Marketplace listing. */
+  platformSlug: string;
+  listingSlug: string;
+};
 type WorkerFixtures = {
   /** This worker's private copy of the Apex workspace, with its owner signed in. */
   workerTenant: TestTenant & { storageState: StorageState };

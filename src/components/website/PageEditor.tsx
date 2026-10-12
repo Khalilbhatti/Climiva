@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowDown, ArrowRight, ArrowUp, Eye, EyeOff, Monitor, RotateCcw, Rocket, Save, Smartphone } from "lucide-react";
 import { useBrandStyle } from "@/components/settings/SettingsProvider";
+import { useServices } from "@/components/services/ServicesProvider";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { cardClasses } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -12,26 +13,27 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Switch } from "@/components/ui/Switch";
 import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/components/ui/Toast";
-import { formatServicePrice, BOOKING_METHOD_LABEL } from "@/data/services";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
+import { BOOKING_METHOD_LABEL, formatServicePrice } from "@/data/services";
 import {
-  PAGE_SCHEMA,
+  findPage,
   getPageStatus,
   getPrimaryDomain,
   getShownServices,
-  getWebsitePage,
-  type ConnectedSource,
-  type PageContent,
-  type PageId,
-  type SectionDef,
+  hasUnpublishedChanges,
+  orderedSections,
+  pagePath,
+  type PageModel,
+  type SectionModel,
   type ServiceDisplay,
-  type SiteContent,
 } from "@/data/website";
 import { cn } from "@/lib/cn";
-import { previewHref } from "./site-links";
+import { SECTION_REGISTRY, connectedOf, fieldLabel, fieldsOf, type ConnectedSource } from "@/lib/site-sections";
+import { accentStyle } from "@/lib/site-theme";
+import { PREVIEW_BASE, previewHref } from "./site-links";
 import { SiteFooter, SiteHeader, SiteRenderer } from "./SiteRenderer";
 import { BrowserFrame, PageStatusBadge } from "./site-ui";
-import { useWebsite } from "./WebsiteProvider";
-import { useServices } from "@/components/services/ServicesProvider";
+import { useSiteView, useWebsite, useWebsiteState } from "./WebsiteProvider";
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -104,35 +106,46 @@ function ServiceDisplayControls({ value, onChange }: { value: ServiceDisplay; on
   );
 }
 
-export function PageEditor({ pageId }: { pageId: PageId }) {
-  const { site, savePage, publish } = useWebsite();
+/** What a section holds while it is being edited: whether it is shown, and its text. Saved to the Draft by Save changes. */
+type Working = Record<string, { visible: boolean; props: Record<string, string> }>;
+
+const workingOf = (page: PageModel): Working => Object.fromEntries(page.sections.map((section) => [section.key, { visible: section.visible, props: { ...section.props } }]));
+
+export function PageEditor({ pageKey }: { pageKey: string }) {
+  const website = useWebsiteState();
+  const { savePage, publish } = useWebsite();
+  const canManage = useCan("website:manage");
   const brandStyle = useBrandStyle();
   const { toast } = useToast();
-  const page = getWebsitePage(pageId);
-  const schema = PAGE_SCHEMA[pageId];
 
-  const saved: PageContent = site.draft.pages[pageId];
-  const savedServices = site.draft.services;
-  const [working, setWorking] = useState<PageContent>(saved);
+  const saved = findPage(website.draft, pageKey);
+  const savedSections = saved ? orderedSections(saved) : [];
+  const savedServices = website.draft.settings.serviceDisplay;
+  const [working, setWorking] = useState<Working>(() => (saved ? workingOf(saved) : {}));
   const [servicesWorking, setServicesWorking] = useState<ServiceDisplay>(savedServices);
-  const [activeId, setActiveId] = useState(schema[0].id);
+  const [activeId, setActiveId] = useState(savedSections[0]?.key ?? "");
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
   const [discarding, setDiscarding] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
   const scroller = useRef<HTMLDivElement>(null);
   const firstScroll = useRef(true);
 
-  const editsServices = pageId === "services";
-  const dirty = !same(working, saved) || (editsServices && !same(servicesWorking, savedServices));
-  const active = schema.find((section) => section.id === activeId) ?? schema[0];
+  const editsServices = saved?.type === "services";
+  const dirty =
+    saved !== undefined && (savedSections.some((section) => !same(working[section.key], { visible: section.visible, props: section.props })) || (editsServices && !same(servicesWorking, savedServices)));
+  const active = savedSections.find((section) => section.key === activeId) ?? savedSections[0];
 
-  const errorOf = (section: SectionDef, key: string) =>
-    (working[section.id]?.values[key] ?? "").trim() === "" ? "This field can't be empty." : undefined;
-  const hasErrors = schema.some((section) => section.fields.some((field) => field.kind !== "align" && errorOf(section, field.key)));
-
-  const canvas: SiteContent = {
-    pages: { ...site.draft.pages, [pageId]: working },
-    services: editsServices ? servicesWorking : savedServices,
+  // The page as it would be if the edits were saved: what the canvas draws.
+  const canvasPage: PageModel | undefined = saved && {
+    ...saved,
+    sections: saved.sections.map((section) => ({ ...section, visible: working[section.key]?.visible ?? section.visible, props: working[section.key]?.props ?? section.props })),
   };
+  const canvasVersion = { ...website.draft, settings: { ...website.draft.settings, serviceDisplay: editsServices ? servicesWorking : savedServices } };
+  const view = useSiteView(canvasVersion, PREVIEW_BASE);
+
+  const errorOf = (section: SectionModel, key: string) => ((working[section.key]?.props[key] ?? "").trim() === "" ? "This field can't be empty." : undefined);
+  const hasErrors = savedSections.some((section) => fieldsOf(section.type, section.variant).some((field) => field.kind !== "align" && errorOf(section, field.key)));
 
   // Bring the selected section into view in the canvas.
   useEffect(() => {
@@ -146,32 +159,53 @@ export function PageEditor({ pageId }: { pageId: PageId }) {
     if (box && target) box.scrollTo({ top: Math.max(0, target.offsetTop - 12), behavior: "auto" });
   }, [activeId]);
 
-  if (!page) return null;
+  if (!saved || !canvasPage || !active) return null;
 
-  function setValue(sectionId: string, key: string, value: string) {
-    setWorking((current) => ({
-      ...current,
-      [sectionId]: { ...current[sectionId], values: { ...current[sectionId].values, [key]: value } },
-    }));
+  function setValue(sectionKey: string, key: string, value: string) {
+    setWorking((current) => ({ ...current, [sectionKey]: { ...current[sectionKey], props: { ...current[sectionKey].props, [key]: value } } }));
+    setServerErrors({});
   }
 
-  function save() {
-    savePage(pageId, working, editsServices ? servicesWorking : undefined);
-    toast(site.published ? `${page!.title} page saved. Publish to make it live.` : `${page!.title} page saved.`);
+  async function save() {
+    if (saving || !saved) return;
+    setSaving(true);
+    const changed = savedSections.filter((section) => !same(working[section.key], { visible: section.visible, props: section.props }));
+    const result = await savePage(pageKey, {
+      sections: Object.fromEntries(changed.map((section) => [section.key, working[section.key]])),
+      serviceDisplay: editsServices && !same(servicesWorking, savedServices) ? servicesWorking : undefined,
+    });
+    setSaving(false);
+    if (!result.ok) {
+      setServerErrors(result.fields ?? {});
+      toast(result.error);
+      return;
+    }
+    setServerErrors({});
+    toast(website.published ? `${saved.title} page saved. Publish to make it live.` : `${saved.title} page saved.`);
   }
 
   function discard() {
-    setWorking(saved);
+    if (!saved) return;
+    setWorking(workingOf(saved));
     setServicesWorking(savedServices);
+    setServerErrors({});
     setDiscarding(false);
     toast("Unsaved changes discarded.");
   }
 
-  const status = getPageStatus(site, pageId);
-  const nothingToPublish = site.published && status === "published" && same(site.draft, site.live);
-  const sectionDirty = (section: SectionDef) =>
-    !same(working[section.id], saved[section.id]) || (editsServices && section.id === "catalog" && !same(servicesWorking, savedServices));
-  const activeContent = working[active.id];
+  async function publishNow() {
+    const result = await publish();
+    toast(result.ok ? "Website published." : result.error);
+  }
+
+  const status = getPageStatus(website, pageKey);
+  const nothingToPublish = website.published && !hasUnpublishedChanges(website);
+  const sectionDirty = (section: SectionModel) =>
+    !same(working[section.key], { visible: section.visible, props: section.props }) || (editsServices && section.type === "service_list" && section.variant === "catalog" && !same(servicesWorking, savedServices));
+  const activeContent = working[active.key] ?? { visible: active.visible, props: active.props };
+  const activeDef = SECTION_REGISTRY[active.type];
+  const activeConnected = connectedOf(active.type, active.variant);
+  const address = getPrimaryDomain(website.site, website.domain);
 
   return (
     <div className="space-y-5">
@@ -191,19 +225,19 @@ export function PageEditor({ pageId }: { pageId: PageId }) {
             </li>
             <li aria-hidden>/</li>
             <li aria-current="page" className="font-medium text-ink">
-              {page.title}
+              {saved.title}
             </li>
           </ol>
         </nav>
         <div className="mt-2 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
           <div>
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight text-ink">Edit {page.title} page</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-ink">Edit {saved.title} page</h1>
               {dirty ? <StatusBadge tone="warning">Unsaved changes</StatusBadge> : <PageStatusBadge status={status} />}
             </div>
             <p className="mt-1 font-mono text-xs text-ink-muted">
-              {getPrimaryDomain(site.domain)}
-              {page.path}
+              {address}
+              {pagePath(saved)}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -240,26 +274,23 @@ export function PageEditor({ pageId }: { pageId: PageId }) {
                 </span>
               </>
             ) : (
-              <ButtonLink href={previewHref(pageId)} variant="secondary">
+              <ButtonLink href={previewHref(saved.slug)} variant="secondary">
                 <Eye aria-hidden className="size-4" />
                 Preview
               </ButtonLink>
             )}
-            <Button onClick={save} disabled={!dirty || hasErrors}>
-              <Save aria-hidden className="size-4" />
-              Save changes
-            </Button>
-            <Button
-              variant={dirty || nothingToPublish ? "secondary" : "primary"}
-              disabled={dirty || nothingToPublish}
-              onClick={() => {
-                publish();
-                toast("Website published.");
-              }}
-            >
-              <Rocket aria-hidden className="size-4" />
-              {site.published ? "Publish changes" : "Publish website"}
-            </Button>
+            {canManage && (
+              <>
+                <Button onClick={save} disabled={!dirty || hasErrors || saving}>
+                  <Save aria-hidden className="size-4" />
+                  Save changes
+                </Button>
+                <Button variant={dirty || nothingToPublish ? "secondary" : "primary"} disabled={dirty || nothingToPublish} onClick={publishNow}>
+                  <Rocket aria-hidden className="size-4" />
+                  {website.published ? "Publish changes" : "Publish website"}
+                </Button>
+              </>
+            )}
           </div>
         </div>
         {dirty && (
@@ -275,27 +306,28 @@ export function PageEditor({ pageId }: { pageId: PageId }) {
             <h2 id="sections-heading" className="text-sm font-semibold text-ink">
               Page sections
             </h2>
-            <span className="rounded-full bg-surface-low px-2 py-0.5 text-xs font-semibold text-ink-muted">{schema.length}</span>
+            <span className="rounded-full bg-surface-low px-2 py-0.5 text-xs font-semibold text-ink-muted">{savedSections.length}</span>
           </div>
           <ul className="space-y-1.5">
-            {schema.map((section) => {
-              const visible = working[section.id]?.visible !== false;
+            {savedSections.map((section) => {
+              const visible = working[section.key]?.visible !== false;
+              const connected = connectedOf(section.type, section.variant);
               return (
-                <li key={section.id}>
+                <li key={section.key}>
                   <button
                     type="button"
-                    onClick={() => setActiveId(section.id)}
-                    aria-current={section.id === active.id ? "true" : undefined}
+                    onClick={() => setActiveId(section.key)}
+                    aria-current={section.key === active.key ? "true" : undefined}
                     className={cn(
                       "flex w-full items-center gap-2 rounded-btn px-3 py-2 text-left transition-colors",
-                      section.id === active.id ? "bg-primary-subtle" : "hover:bg-surface-low",
+                      section.key === active.key ? "bg-primary-subtle" : "hover:bg-surface-low",
                     )}
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-ink">{section.label}</span>
                       <span className="block truncate text-xs text-ink-muted">
-                        {section.connected ? "Connected · " : ""}
-                        {sectionDirty(section) ? "Edited · Unsaved" : section.summary}
+                        {connected ? "Connected · " : ""}
+                        {sectionDirty(section) ? "Edited · Unsaved" : SECTION_REGISTRY[section.type].summary}
                       </span>
                     </span>
                     {visible ? <Eye aria-hidden className="size-4 shrink-0 text-ink-muted" /> : <EyeOff aria-hidden className="size-4 shrink-0 text-ink-faint" />}
@@ -311,12 +343,16 @@ export function PageEditor({ pageId }: { pageId: PageId }) {
         </section>
 
         <section aria-label="Page preview" className="min-w-0">
-          <BrowserFrame address={`https://${getPrimaryDomain(site.domain)}${page.path}`} note={device === "mobile" ? "Mobile" : "Desktop"}>
+          <BrowserFrame address={`https://${address}${pagePath(saved)}`} note={device === "mobile" ? "Mobile" : "Desktop"}>
             <div ref={scroller} className="relative max-h-[40rem] overflow-y-auto bg-surface-low">
-              <div inert style={brandStyle} className={cn("@container mx-auto bg-surface", device === "mobile" ? "max-w-[390px] border-x border-line" : "w-full")}>
-                <SiteHeader />
-                <SiteRenderer page={pageId} content={canvas} activeSection={active.id} embedded />
-                <SiteFooter />
+              <div
+                inert
+                style={{ ...brandStyle, ...accentStyle(website.draft.theme) }}
+                className={cn("@container mx-auto bg-surface", device === "mobile" ? "max-w-[390px] border-x border-line" : "w-full")}
+              >
+                <SiteHeader view={view} />
+                <SiteRenderer page={canvasPage} view={view} activeSection={active.key} embedded />
+                <SiteFooter view={view} />
               </div>
             </div>
           </BrowserFrame>
@@ -328,31 +364,32 @@ export function PageEditor({ pageId }: { pageId: PageId }) {
               <h2 id="settings-heading" className="text-sm font-semibold text-ink">
                 {active.label} settings
               </h2>
-              <p className="mt-0.5 text-xs text-ink-muted">{active.summary}</p>
+              <p className="mt-0.5 text-xs text-ink-muted">{activeDef.summary}</p>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs text-ink-muted">Visible</span>
               <Switch
                 checked={activeContent.visible}
                 label={`Show ${active.label} section`}
-                onChange={(visible) => setWorking((current) => ({ ...current, [active.id]: { ...current[active.id], visible } }))}
+                disabled={!canManage}
+                onChange={(visible) => setWorking((current) => ({ ...current, [active.key]: { ...current[active.key], visible } }))}
               />
             </div>
           </div>
 
           <div className="mt-4 space-y-4">
-            {active.connected && (
+            {activeConnected && (
               <div className="rounded-btn bg-surface-low p-3">
-                <p className="text-xs text-ink-muted">{CONNECTED_COPY[active.connected].text}</p>
-                <Link href={CONNECTED_COPY[active.connected].href} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
-                  {CONNECTED_COPY[active.connected].link}
+                <p className="text-xs text-ink-muted">{CONNECTED_COPY[activeConnected].text}</p>
+                <Link href={CONNECTED_COPY[activeConnected].href} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
+                  {CONNECTED_COPY[activeConnected].link}
                   <ArrowRight aria-hidden className="size-3.5" />
                 </Link>
               </div>
             )}
 
-            {active.connected === "services" && (
-              editsServices ? (
+            {active.type === "service_list" && active.variant !== "booking" &&
+              (editsServices ? (
                 <ServiceDisplayControls value={servicesWorking} onChange={setServicesWorking} />
               ) : (
                 <p className="text-xs text-ink-muted">
@@ -362,15 +399,15 @@ export function PageEditor({ pageId }: { pageId: PageId }) {
                   </Link>
                   .
                 </p>
-              )
-            )}
+              ))}
 
-            {active.fields.map((field) => {
-              const value = activeContent.values[field.key] ?? "";
+            {fieldsOf(active.type, active.variant).map((field) => {
+              const value = activeContent.props[field.key] ?? "";
+              const label = fieldLabel(active.type, active.variant, field);
               if (field.kind === "align") {
                 return (
-                  <fieldset key={`${active.id}-${field.key}`}>
-                    <legend className="mb-1 text-xs font-medium text-ink">{field.label}</legend>
+                  <fieldset key={`${active.key}-${field.key}`}>
+                    <legend className="mb-1 text-xs font-medium text-ink">{label}</legend>
                     <div className="flex rounded-btn bg-surface-low p-1">
                       {(["left", "center"] as const).map((option) => (
                         <label
@@ -379,10 +416,11 @@ export function PageEditor({ pageId }: { pageId: PageId }) {
                         >
                           <input
                             type="radio"
-                            name={`${active.id}-alignment`}
+                            name={`${active.key}-alignment`}
                             className="sr-only"
+                            disabled={!canManage}
                             checked={value === option}
-                            onChange={() => setValue(active.id, field.key, option)}
+                            onChange={() => setValue(active.key, field.key, option)}
                           />
                           {option}
                         </label>
@@ -392,19 +430,26 @@ export function PageEditor({ pageId }: { pageId: PageId }) {
                 );
               }
               const common = {
-                label: field.label,
+                label,
                 value,
+                disabled: !canManage,
                 maxLength: field.max,
-                error: errorOf(active, field.key),
+                error: errorOf(active, field.key) ?? serverErrors[`${active.key}.${field.key}`],
                 hint: `${value.length} / ${field.max}`,
-                onChange: (event: { target: { value: string } }) => setValue(active.id, field.key, event.target.value),
+                onChange: (event: { target: { value: string } }) => setValue(active.key, field.key, event.target.value),
               };
               return field.kind === "textarea" ? (
-                <Textarea key={`${active.id}-${field.key}`} rows={4} {...common} />
+                <Textarea key={`${active.key}-${field.key}`} rows={4} {...common} />
               ) : (
-                <Input key={`${active.id}-${field.key}`} {...common} />
+                <Input key={`${active.key}-${field.key}`} {...common} />
               );
             })}
+            {!canManage && <p className="text-xs text-ink-muted">You can look at this page. Only an owner or admin can change it.</p>}
+            {canManage && fieldsOf(active.type, active.variant).some((field) => field.kind !== "align") && (
+              <p className="text-xs text-ink-muted">
+                Use {"{{business.name}}"} and {"{{business.location}}"} to insert your business name and place, so the text follows them.
+              </p>
+            )}
           </div>
 
           <div className="mt-5 flex items-center justify-between border-t border-line pt-4">
@@ -421,7 +466,7 @@ export function PageEditor({ pageId }: { pageId: PageId }) {
         open={discarding}
         onClose={() => setDiscarding(false)}
         title="Discard unsaved changes?"
-        description={`Your unsaved edits to the ${page.title} page will be lost. Saved content and the published website are not affected.`}
+        description={`Your unsaved edits to the ${saved.title} page will be lost. Saved content and the published website are not affected.`}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDiscarding(false)}>

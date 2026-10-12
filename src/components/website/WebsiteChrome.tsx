@@ -7,6 +7,8 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { TabNav } from "@/components/ui/TabNav";
 import { hasUnpublishedChanges } from "@/data/website";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
+import { publicSiteHref } from "@/lib/site-domain";
 import { previewHref } from "./site-links";
 import { SiteStatusBadge, usePublishing } from "./site-ui";
 import { useWebsite } from "./WebsiteProvider";
@@ -19,10 +21,13 @@ const TABS = [
 ] as const;
 
 function Chrome() {
-  const { site } = useWebsite();
-  const { publishNow } = usePublishing();
-  const empty = useSearchParams().get("state") === "empty";
-  const pending = hasUnpublishedChanges(site);
+  const { website } = useWebsite();
+  const { publishNow, busy } = usePublishing();
+  const canManage = useCan("website:manage");
+  // A business with no website yet, or ?state=empty (the approved first-time screen), sees the empty state: no tabs, nothing to publish.
+  const empty = useSearchParams().get("state") === "empty" || !website;
+  const pending = website ? hasUnpublishedChanges(website) : false;
+  const published = Boolean(website?.published);
 
   return (
     <div className="space-y-6">
@@ -34,16 +39,16 @@ function Chrome() {
               <StatusBadge tone="neutral">Not published</StatusBadge>
             ) : (
               <>
-                <SiteStatusBadge published={site.published} />
-                {site.published && pending && <StatusBadge tone="warning">Unpublished changes</StatusBadge>}
+                <SiteStatusBadge published={published} />
+                {published && pending && <StatusBadge tone="warning">Unpublished changes</StatusBadge>}
               </>
             )}
           </div>
           <p className="mt-1 text-sm text-ink-muted">Manage your public website, service pages, booking experience, and domain.</p>
         </div>
-        {!empty && (
+        {!empty && website && (
           <div className="flex flex-wrap items-center gap-3">
-            <ButtonLink href={previewHref("home")} variant="secondary">
+            <ButtonLink href={previewHref()} variant="secondary">
               <Eye aria-hidden className="size-4" />
               Preview website
             </ButtonLink>
@@ -51,20 +56,22 @@ function Chrome() {
               <FilePenLine aria-hidden className="size-4" />
               Edit website
             </ButtonLink>
-            {!site.published ? (
-              <Button onClick={publishNow}>
-                <Rocket aria-hidden className="size-4" />
-                Publish website
-              </Button>
+            {!published ? (
+              canManage && (
+                <Button onClick={publishNow} disabled={busy}>
+                  <Rocket aria-hidden className="size-4" />
+                  Publish website
+                </Button>
+              )
             ) : (
               <>
-                {pending && (
-                  <Button onClick={publishNow}>
+                {pending && canManage && (
+                  <Button onClick={publishNow} disabled={busy}>
                     <Rocket aria-hidden className="size-4" />
                     Publish changes
                   </Button>
                 )}
-                <ButtonLink href={previewHref("home", true)} variant={pending ? "secondary" : "primary"}>
+                <ButtonLink href={publicSiteHref(website.site.platformSlug)} variant={pending && canManage ? "secondary" : "primary"}>
                   View live website
                   <SquareArrowOutUpRight aria-hidden className="size-4" />
                 </ButtonLink>

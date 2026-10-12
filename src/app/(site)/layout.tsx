@@ -1,17 +1,16 @@
 import type { ReactNode } from "react";
-import { PublicUnavailable } from "@/components/workspace/ModuleUnavailable";
-import { resolveWorkspace } from "@/server/workspace";
 
 export const dynamic = "force-dynamic";
 
 /**
- * The customer-facing Website and Marketplace previews. They are outside the workspace shell and are NOT behind a login
- * redirect (they will be public pages), but until sites are published per business they preview the active workspace
- * for someone signed in to it, and show "isn't available" to everyone else: never another business's content. The
- * providers they read are the root ones, built from the same verified workspace.
+ * The customer-facing pages: the PUBLISHED sites (/sites/<address>), the public Marketplace listings (/listings/<address>), and the
+ * signed-in previews of the saved Draft (/website/preview, /marketplace/preview). None of them has the workspace shell.
+ *
+ * This layout checks nothing, on purpose: the public pages are for anyone, and the previews check the caller themselves, in their own
+ * layout AND in each page (a layout is not re-run when you move between pages beneath it, so it is never the only check). They are
+ * dynamic: a published site is read from the database on every request, and nothing about it is cached or prerendered where a change of
+ * what is published could be missed or one business's page could be served for another.
  */
-export default async function SiteLayout({ children }: { children: ReactNode }) {
-  const state = await resolveWorkspace();
-  if (state.status !== "ready" || !state.context.snapshot.hasSampleData) return <PublicUnavailable />;
+export default function SiteLayout({ children }: { children: ReactNode }) {
   return children;
 }

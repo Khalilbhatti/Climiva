@@ -33,11 +33,22 @@ test.describe("signed out", () => {
     expect(leaks).toEqual([]);
   });
 
-  test("the customer-facing previews do not show anyone's business to a visitor", async ({ page }) => {
+  test("the Draft previews are for people signed in to the business: a visitor is sent to Log in and sees none of it", async ({ apiAs }) => {
+    const api = await apiAs(null);
     for (const path of ["/website/preview", "/website/preview/services", "/website/preview/booking/annual-cooling-tune-up", "/marketplace/preview"]) {
-      await page.goto(path);
-      await expect(page.getByRole("heading", { level: 1, name: "This page isn't available" })).toBeVisible();
-      await expect(page.getByText("Apex")).toHaveCount(0);
+      const response = await api.get(path, { maxRedirects: 0 });
+      expect(response.status(), path).toBe(307);
+      expect(response.headers().location ?? "", path).toContain("/login");
+      expect(await response.text(), path).not.toMatch(/Apex|Sarah Mitchell/);
+    }
+  });
+
+  test("a published website and a published listing are public: they are served to a visitor, and only what they publish", async ({ apiAs }) => {
+    const api = await apiAs(null);
+    for (const path of ["/sites/apexclimate", "/sites/apexclimate/services", "/listings/apex-climate-heating-air"]) {
+      const response = await api.get(path, { maxRedirects: 0 });
+      expect(response.status(), path).toBe(200);
+      expect(await response.text(), path).not.toMatch(/Sarah Mitchell|internal notes/i);
     }
   });
 

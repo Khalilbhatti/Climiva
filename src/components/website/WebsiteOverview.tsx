@@ -1,8 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   CalendarCheck,
@@ -23,18 +23,22 @@ import {
   Info,
 } from "lucide-react";
 import { useBrandStyle, useHoursRows, useSettings } from "@/components/settings/SettingsProvider";
+import { useServices } from "@/components/services/ServicesProvider";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { cardClasses } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { useToast } from "@/components/ui/Toast";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { WEEK_ORDER } from "@/data/settings";
-import { getShownServices, getPrimaryDomain, hasUnpublishedChanges, WEBSITE_PAGES, CLIMVIA_DOMAIN } from "@/data/website";
-import { previewHref } from "./site-links";
+import { CUSTOM_DOMAIN_STATUS_LABEL, findPage, getPrimaryDomain, getShownServices, hasUnpublishedChanges, orderedPages, platformHost, type VersionModel } from "@/data/website";
+import { publicSiteHref } from "@/lib/site-domain";
+import { DEFAULT_THEME, accentStyle } from "@/lib/site-theme";
+import { PREVIEW_BASE, previewHref } from "./site-links";
 import { SiteFooter, SiteHeader, SiteRenderer } from "./SiteRenderer";
 import { BrowserFrame, SiteStatusBadge, usePublishing } from "./site-ui";
-import { useWebsite } from "./WebsiteProvider";
-import { useServices } from "@/components/services/ServicesProvider";
+import { useSiteView, useWebsite } from "./WebsiteProvider";
 
 function Card({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
   return (
@@ -48,50 +52,97 @@ function Card({ title, aside, children }: { title: string; aside?: ReactNode; ch
   );
 }
 
+/** A version with nothing in it: what the hooks are given while the business has no website, so they can run unconditionally. */
+const EMPTY_VERSION: VersionModel = {
+  id: "",
+  number: null,
+  status: "draft",
+  templateKey: null,
+  theme: DEFAULT_THEME,
+  settings: { serviceDisplay: { order: [], hidden: [] } },
+  publishedAt: null,
+  pages: [],
+};
+
 const rowLink = "inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline";
 
-export function WebsiteOverview() {
-  const { site } = useWebsite();
-  const { settings } = useSettings();
-  const brandStyle = useBrandStyle();
-  const business = settings.business;
-  const hours = useHoursRows();
-  const { publishNow, askUnpublish, unpublishModal } = usePublishing();
-  const empty = useSearchParams().get("state") === "empty";
-  const { services: catalog } = useServices();
+function EmptyWebsite({ preview }: { preview: boolean }) {
+  const { createWebsite } = useWebsite();
+  const canManage = useCan("website:manage");
+  const router = useRouter();
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
 
-  if (empty) {
-    return (
-      <div className="space-y-6">
-        <EmptyState
-          icon={LayoutTemplate}
-          title="No website created yet"
-          description="Create a simple public website for your business with Services, contact information, and online booking."
-          action={
+  async function create() {
+    if (busy) return;
+    setBusy(true);
+    const result = await createWebsite();
+    setBusy(false);
+    if (!result.ok) return toast(result.error);
+    router.push("/website");
+    // The Website's other tabs are chosen on the server (they exist once the business has a website): ask for them again.
+    router.refresh();
+  }
+
+  return (
+    <div className="space-y-6">
+      <EmptyState
+        icon={LayoutTemplate}
+        title="No website created yet"
+        description="Create a simple public website for your business with Services, contact information, and online booking."
+        action={
+          preview ? (
             <ButtonLink href="/website" size="lg">
               <Plus aria-hidden className="size-4" />
               Create website
             </ButtonLink>
-          }
-        />
-        <div className="flex items-start gap-3 rounded-card bg-surface-low p-4">
-          <Info aria-hidden className="mt-0.5 size-5 shrink-0 text-primary" />
-          <div>
-            <p className="text-sm font-semibold text-ink">Uses your existing business setup</p>
-            <p className="text-sm text-ink-muted">
-              Your Website uses the business information, Services, hours, and booking settings already configured in Climvia.
-            </p>
-          </div>
+          ) : canManage ? (
+            <Button size="lg" onClick={create} disabled={busy}>
+              <Plus aria-hidden className="size-4" />
+              Create website
+            </Button>
+          ) : undefined
+        }
+      />
+      <div className="flex items-start gap-3 rounded-card bg-surface-low p-4">
+        <Info aria-hidden className="mt-0.5 size-5 shrink-0 text-primary" />
+        <div>
+          <p className="text-sm font-semibold text-ink">Uses your existing business setup</p>
+          <p className="text-sm text-ink-muted">
+            Your Website uses the business information, Services, hours, and booking settings already configured in Climvia.
+          </p>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
-  const content = site.published ? site.live : site.draft;
-  const shown = getShownServices(content.services, catalog);
+export function WebsiteOverview() {
+  const { website } = useWebsite();
+  const { settings } = useSettings();
+  const brandStyle = useBrandStyle();
+  const business = settings.business;
+  const hours = useHoursRows();
+  const { publishNow, askUnpublish, unpublishModal, busy } = usePublishing();
+  const canManage = useCan("website:manage");
+  const preview = useSearchParams().get("state") === "empty";
+  const { services: catalog } = useServices();
+  // The picture of the site: the published snapshot while it is live, otherwise the Draft. (A hook, so it runs before any early return.)
+  const shownVersion = website ? (website.published && website.live ? website.live : website.draft) : null;
+  const view = useSiteView(shownVersion ?? EMPTY_VERSION, PREVIEW_BASE);
+
+  if (!website || !shownVersion || preview) return <EmptyWebsite preview={preview} />;
+
+  const homeKey = orderedPages(shownVersion).find((page) => page.type === "home")?.key;
+  const home = homeKey ? findPage(shownVersion, homeKey) : undefined;
+  const shown = getShownServices(shownVersion.settings.serviceDisplay, catalog);
   const bookable = shown.filter((service) => service.visibility === "public-booking");
-  const primary = getPrimaryDomain(site.domain);
-  const pending = hasUnpublishedChanges(site);
+  const primary = getPrimaryDomain(website.site, website.domain);
+  const platform = platformHost(website.site.platformSlug);
+  const pending = hasUnpublishedChanges(website);
+  const pages = orderedPages(website.draft);
+  const published = website.published;
+  const { domain } = website;
 
   const checklist = [
     { label: "Business information", done: true },
@@ -105,18 +156,12 @@ export function WebsiteOverview() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label="Website status"
-          value={site.published ? "Published" : "Private"}
-          icon={site.published ? CloudUpload : EyeOff}
-          hint={site.published ? `Live at ${primary}` : "Preview link accessible"}
-          hintDot={site.published}
+          value={published ? "Published" : "Private"}
+          icon={published ? CloudUpload : EyeOff}
+          hint={published ? `Live at ${primary}` : "Preview link accessible"}
+          hintDot={published}
         />
-        <KpiCard
-          label="Pages"
-          value={`${WEBSITE_PAGES.length} pages`}
-          icon={Layers}
-          hint="Home, Services, About, Contact, Booking"
-          href="/website/pages"
-        />
+        <KpiCard label="Pages" value={`${pages.length} pages`} icon={Layers} hint={pages.map((page) => page.title).join(", ")} href="/website/pages" />
         <KpiCard
           label="Services shown"
           value={`${shown.length} ${shown.length === 1 ? "Service" : "Services"}`}
@@ -137,13 +182,13 @@ export function WebsiteOverview() {
         <div className="space-y-6 xl:col-span-7">
           <Card
             title="Customer-facing preview"
-            aside={<span className="text-xs text-ink-muted">{site.published ? "Live website" : "Draft · not published"}</span>}
+            aside={<span className="text-xs text-ink-muted">{published ? "Live website" : "Draft · not published"}</span>}
           >
-            <BrowserFrame address={`https://${primary}`} note={site.published ? "Live" : "Private"}>
-              <div inert style={brandStyle} className="@container h-80 overflow-hidden bg-surface">
-                <SiteHeader />
-                <SiteRenderer page="home" content={content} embedded />
-                <SiteFooter />
+            <BrowserFrame address={`https://${primary}`} note={published ? "Live" : "Private"}>
+              <div inert style={{ ...brandStyle, ...accentStyle(shownVersion.theme) }} className="@container h-80 overflow-hidden bg-surface">
+                <SiteHeader view={view} />
+                {home && <SiteRenderer page={home} view={view} embedded />}
+                <SiteFooter view={view} />
               </div>
             </BrowserFrame>
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
@@ -153,9 +198,9 @@ export function WebsiteOverview() {
                   <FilePenLine aria-hidden className="size-3.5" />
                   Edit website
                 </ButtonLink>
-                <ButtonLink href={previewHref("home", site.published)} size="sm">
+                <ButtonLink href={published ? publicSiteHref(website.site.platformSlug) : previewHref()} size="sm">
                   <Eye aria-hidden className="size-3.5" />
-                  {site.published ? "View live website" : "Preview website"}
+                  {published ? "View live website" : "Preview website"}
                 </ButtonLink>
               </div>
             </div>
@@ -206,8 +251,8 @@ export function WebsiteOverview() {
         </div>
 
         <div className="space-y-6 xl:col-span-5">
-          <Card title="Publishing" aside={<SiteStatusBadge published={site.published} />}>
-            {site.published ? (
+          <Card title="Publishing" aside={<SiteStatusBadge published={published} />}>
+            {published ? (
               <>
                 <p className="text-sm text-ink-muted">
                   Your website is live and open to visitors. Customers can view your services and book appointments.
@@ -219,20 +264,22 @@ export function WebsiteOverview() {
                   </p>
                 )}
                 <div className="mt-4 space-y-2">
-                  {pending && (
-                    <Button className="w-full" onClick={publishNow}>
+                  {pending && canManage && (
+                    <Button className="w-full" onClick={publishNow} disabled={busy}>
                       <Rocket aria-hidden className="size-4" />
                       Publish changes
                     </Button>
                   )}
-                  <ButtonLink href={previewHref("home", true)} variant="secondary" className="w-full">
+                  <ButtonLink href={publicSiteHref(website.site.platformSlug)} variant="secondary" className="w-full">
                     View live website
                     <SquareArrowOutUpRight aria-hidden className="size-4" />
                   </ButtonLink>
-                  <Button variant="secondary" className="w-full" onClick={askUnpublish}>
-                    <EyeOff aria-hidden className="size-4" />
-                    Unpublish
-                  </Button>
+                  {canManage && (
+                    <Button variant="secondary" className="w-full" onClick={askUnpublish}>
+                      <EyeOff aria-hidden className="size-4" />
+                      Unpublish
+                    </Button>
+                  )}
                 </div>
                 <p className="mt-3 text-xs text-ink-muted">
                   Unpublishing makes the website private without deleting any pages or content.
@@ -243,14 +290,15 @@ export function WebsiteOverview() {
                 <p className="text-sm text-ink-muted">
                   Your website is ready to preview. Publish it when you are satisfied with the content and booking setup.
                 </p>
-                <Button className="mt-4 w-full" onClick={publishNow}>
-                  <Rocket aria-hidden className="size-4" />
-                  Publish website
-                </Button>
+                {canManage && (
+                  <Button className="mt-4 w-full" onClick={publishNow} disabled={busy}>
+                    <Rocket aria-hidden className="size-4" />
+                    Publish website
+                  </Button>
+                )}
                 <p className="mt-3 rounded-btn bg-surface-low px-3 py-2 text-xs text-ink-muted">
-                  Publishing makes the website accessible to customers at <strong className="text-ink">{CLIMVIA_DOMAIN}</strong>
-                  {site.domain.custom ? <> and {site.domain.custom}</> : null}. Publishing does not change your Bookings, Services,
-                  Customers, Jobs, Invoices, or Payments.
+                  Publishing makes the website accessible to customers at <strong className="text-ink">{platform}</strong>. Publishing does not
+                  change your Bookings, Services, Customers, Jobs, Invoices, or Payments.
                 </p>
               </>
             )}
@@ -261,22 +309,25 @@ export function WebsiteOverview() {
               <li className="rounded-btn bg-surface-low px-4 py-3">
                 <p className="text-micro font-semibold tracking-wider text-ink-muted uppercase">Climvia address</p>
                 <div className="mt-0.5 flex items-center justify-between gap-3">
-                  <p className="font-mono text-sm font-semibold text-ink">{CLIMVIA_DOMAIN}</p>
-                  {site.domain.primary === "climvia" && <StatusBadge tone="positive">Primary</StatusBadge>}
+                  <p className="font-mono text-sm font-semibold text-ink">{platform}</p>
+                  {domain.primary === "climvia" && <StatusBadge tone="positive">Primary</StatusBadge>}
                 </div>
               </li>
-              {site.domain.custom && (
+              {domain.custom && (
                 <li className="rounded-btn bg-surface-low px-4 py-3">
                   <p className="text-micro font-semibold tracking-wider text-ink-muted uppercase">Custom domain</p>
                   <div className="mt-0.5 flex items-center justify-between gap-3">
-                    <p className="font-mono text-sm font-semibold text-ink">{site.domain.custom}</p>
-                    {site.domain.primary === "custom" ? <StatusBadge tone="positive">Primary</StatusBadge> : <StatusBadge tone="primary">Connected</StatusBadge>}
+                    <p className="font-mono text-sm font-semibold text-ink">{domain.custom}</p>
+                    <span className="flex items-center gap-1.5">
+                      {domain.primary === "custom" && <StatusBadge tone="positive">Primary</StatusBadge>}
+                      <StatusBadge tone={domain.customStatus === "configured" ? "primary" : "warning"}>{CUSTOM_DOMAIN_STATUS_LABEL[domain.customStatus ?? "pending_verification"]}</StatusBadge>
+                    </span>
                   </div>
                 </li>
               )}
             </ul>
             <Link href="/website/domain" className={`${rowLink} mt-3`}>
-              {site.domain.custom ? "Manage domain" : "Connect custom domain"}
+              {domain.custom ? "Manage domain" : "Connect custom domain"}
               <ArrowRight aria-hidden className="size-3.5" />
             </Link>
           </Card>
@@ -295,10 +346,10 @@ export function WebsiteOverview() {
               ))}
               <li className="flex items-center justify-between gap-3 rounded-btn bg-surface-low px-3 py-2 text-sm text-ink">
                 <span className="flex items-center gap-2">
-                  {site.domain.custom ? <CircleCheck aria-hidden className="size-4 text-positive" /> : <Circle aria-hidden className="size-4 text-ink-faint" />}
+                  {domain.custom ? <CircleCheck aria-hidden className="size-4 text-positive" /> : <Circle aria-hidden className="size-4 text-ink-faint" />}
                   Custom domain
                 </span>
-                <span className="text-xs font-semibold text-ink-muted">{site.domain.custom ? "Connected" : "Optional"}</span>
+                <span className="text-xs font-semibold text-ink-muted">{domain.custom ? CUSTOM_DOMAIN_STATUS_LABEL[domain.customStatus ?? "pending_verification"] : "Optional"}</span>
               </li>
             </ul>
           </Card>
@@ -312,7 +363,6 @@ export function WebsiteOverview() {
               <ArrowRight aria-hidden className="size-3.5" />
             </Link>
           </Card>
-
         </div>
       </div>
       {unpublishModal}

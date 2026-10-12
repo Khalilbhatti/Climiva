@@ -3,83 +3,78 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowRight, CalendarCheck, ChevronRight, Clock, Headset, ListChecks, Mail, MapPin, Phone } from "lucide-react";
-import { BrandMark } from "@/components/settings/BrandMark";
-import { useBusiness, useHoursRows } from "@/components/settings/SettingsProvider";
 import { buttonClasses } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
-import { formatCityStateZip } from "@/data/fixtures";
-import {
-  BOOKING_METHOD_ACTION,
-  BOOKING_METHOD_LABEL,
-  formatDuration,
-  formatServicePrice,
-  type Service,
-} from "@/data/services";
-import { defaultPageContent, getShownServices, type PageId, type SiteContent } from "@/data/website";
+import type { AppHref } from "@/config/routes";
+import { BOOKING_METHOD_ACTION, BOOKING_METHOD_LABEL, formatDuration, formatServicePrice, type Service } from "@/data/services";
+import { getShownServices, orderedSections, type PageModel, type SectionModel } from "@/data/website";
 import { cn } from "@/lib/cn";
-import { toTelHref } from "@/lib/format";
-import { previewHref } from "./site-links";
-import { useServices } from "@/components/services/ServicesProvider";
+import { formatCityStateZip } from "@/data/fixtures";
+import { getInitials, toTelHref } from "@/lib/format";
+import { bookingHrefIn, fillProps, pageHrefIn, typeHrefIn, type SiteView } from "./site-view";
 
 /**
- * The customer-facing website, drawn from the saved content plus the shared records it is connected to:
- * business details from the Business fixture and every Service from the Services catalog. It is used twice,
- * identically: inside the page editor's canvas (inert, so nothing in it can be clicked) and as the public
- * preview pages. Sizes follow the width of the frame it sits in (container queries), which is what lets the
- * editor's Desktop / Mobile switch show a real narrow layout.
+ * The customer-facing website, drawn from a page's SECTIONS plus the records it is connected to. Each section is a row of data
+ * (a registered type, a variant and plain-text properties, see lib/site-sections); this file holds the one component that draws each
+ * registered type. Nothing here knows a page by name, and nothing is read from a section except the properties its type declares.
+ *
+ * It is used identically for the Draft (the editor's inert canvas, the Overview's picture, the signed-in preview) and for the Published
+ * site a visitor opens: the same renderer, fed by the same shape (`SiteView`) from different sources. Sizes follow the width of the frame
+ * it sits in (container queries), which is what lets the editor's Desktop / Mobile switch show a real narrow layout.
  */
 
 type Props = {
-  page: PageId;
-  content: SiteContent;
-  /** Keep following links on the published version (the preview's "live" view). */
-  live?: boolean;
+  page: PageModel;
+  view: SiteView;
   /** Highlights one section (editor canvas). */
   activeSection?: string;
   /** A picture of the site inside a workspace page, which already has its own page heading: titles are level 2. */
   embedded?: boolean;
 };
 
-const NAV: readonly { page: PageId; label: string }[] = [
-  { page: "services", label: "Services" },
-  { page: "about", label: "About" },
-  { page: "contact", label: "Contact" },
-];
-
-/** Section text, falling back to the standard copy when a value is missing. */
-function useSectionValues(content: SiteContent, page: PageId) {
-  const defaults = defaultPageContent(page);
-  return (section: string) => ({ ...defaults[section]?.values, ...content.pages[page][section]?.values });
+/** A link when there is somewhere to go (the page may be hidden or absent), otherwise just the look of one. */
+function Go({ href, className, children }: { href: AppHref | undefined; className: string; children: ReactNode }) {
+  return href ? (
+    <Link href={href} className={className}>
+      {children}
+    </Link>
+  ) : (
+    <span className={className}>{children}</span>
+  );
 }
 
-export function SiteHeader({ live }: { live?: boolean }) {
-  const business = useBusiness();
+export function SiteHeader({ view }: { view: SiteView }) {
+  const booking = typeHrefIn(view, "booking");
+  const nav = view.pages.filter((page) => page.type !== "home" && page.type !== "booking");
   return (
     <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-line bg-surface px-5 py-4 @xl:px-8">
-      <Link href={previewHref("home", live)} className="flex items-center gap-2.5">
-        <BrandMark className="size-8 rounded-btn text-sm" crest="A" />
-        <span className="text-sm leading-tight font-bold text-ink">{business.name}</span>
+      <Link href={view.base as AppHref} className="flex items-center gap-2.5">
+        <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-btn bg-primary text-sm font-bold text-white">
+          {getInitials(view.business.name)}
+        </span>
+        <span className="text-sm leading-tight font-bold text-ink">{view.business.name}</span>
       </Link>
       <nav aria-label="Website" className="flex items-center gap-x-5 gap-y-2 text-sm font-medium text-ink-muted">
-        {NAV.map((item) => (
-          <Link key={item.page} href={previewHref(item.page, live)} className="hover:text-ink">
-            {item.label}
+        {nav.map((page) => (
+          <Link key={page.key} href={pageHrefIn(view, page.key)} className="hover:text-ink">
+            {page.title}
           </Link>
         ))}
-        <Link href={previewHref("booking", live)} className={buttonClasses({ size: "sm" })}>
-          Book service
-        </Link>
+        {booking && (
+          <Link href={booking} className={buttonClasses({ size: "sm" })}>
+            Book service
+          </Link>
+        )}
       </nav>
     </header>
   );
 }
 
-export function SiteFooter() {
-  const business = useBusiness();
+export function SiteFooter({ view }: { view: SiteView }) {
   return (
     <footer className="border-t border-line bg-surface px-5 py-5 text-center text-xs text-ink-muted @xl:px-8">
-      © 2025 {business.name}. All rights reserved. | Powered by Climvia
+      © 2025 {view.business.name}. All rights reserved. | Powered by Climvia
     </footer>
   );
 }
@@ -125,53 +120,77 @@ function Heading({ title, text, tone, align }: { title: string; text?: string; t
   );
 }
 
-function ServiceCard({ service, live, full }: { service: Service; live?: boolean; full?: boolean }) {
+function ServiceCard({ service, view, full }: { service: Service; view: SiteView; full?: boolean }) {
   // On the Services page the cards follow the page heading directly; elsewhere they sit under a section heading.
   const Name: "h2" | "h3" = full ? "h2" : "h3";
   return (
     <li className="flex flex-col rounded-card border border-line bg-surface p-4 shadow-card">
       <div className="flex items-start justify-between gap-3">
         <Name className="text-sm font-bold text-ink">{service.name}</Name>
-        <span className="shrink-0 rounded-full bg-primary-subtle px-2 py-0.5 text-xs font-semibold text-primary">
-          {formatServicePrice(service.pricing)}
-        </span>
+        <span className="shrink-0 rounded-full bg-primary-subtle px-2 py-0.5 text-xs font-semibold text-primary">{formatServicePrice(service.pricing)}</span>
       </div>
       <p className={cn("mt-2 text-xs text-ink-muted", !full && "line-clamp-3")}>{service.description}</p>
       <p className="mt-3 flex items-center gap-1.5 text-xs text-ink-muted">
         <Clock aria-hidden className="size-3.5" />
         {formatDuration(service.durationMinutes)} · {BOOKING_METHOD_LABEL[service.bookingMethod]}
       </p>
-      <Link
-        href={previewHref(`booking/${service.id}`, live)}
-        className={buttonClasses({ variant: "secondary", size: "sm", className: "mt-4 self-start" })}
-      >
+      <Go href={bookingHrefIn(view, service.id)} className={buttonClasses({ variant: "secondary", size: "sm", className: "mt-4 self-start" })}>
         {BOOKING_METHOD_ACTION[service.bookingMethod]}
         <ChevronRight aria-hidden className="size-3.5" />
-      </Link>
+      </Go>
     </li>
   );
 }
 
-function ServiceGrid({ content, live, full }: { content: SiteContent; live?: boolean; full?: boolean }) {
-  const { services: catalog } = useServices();
-  const shown = getShownServices(content.services, catalog);
+function ServiceGrid({ view, full }: { view: SiteView; full?: boolean }) {
+  const shown = getShownServices(view.display, view.services as Service[]);
   if (shown.length === 0) {
     return <p className="rounded-card bg-surface-low p-4 text-sm text-ink-muted">No services are shown on the website right now.</p>;
   }
   return (
     <ul className="mt-6 grid grid-cols-1 gap-4 @2xl:grid-cols-2 @4xl:grid-cols-3">
       {shown.map((service) => (
-        <ServiceCard key={service.id} service={service} live={live} full={full} />
+        <ServiceCard key={service.id} service={service} view={view} full={full} />
       ))}
     </ul>
   );
 }
 
-function Hours() {
-  const hours = useHoursRows();
+function BookingGrid({ view }: { view: SiteView }) {
+  const shown = getShownServices(view.display, view.services as Service[]);
+  if (shown.length === 0) {
+    return <p className="rounded-card bg-surface-low p-4 text-sm text-ink-muted">No services are available to book online right now.</p>;
+  }
+  return (
+    <ul className="grid grid-cols-1 gap-4 @2xl:grid-cols-2">
+      {shown.map((service) => {
+        const href = bookingHrefIn(view, service.id);
+        return (
+          <li key={service.id}>
+            <Go href={href} className="flex h-full flex-col rounded-card border border-line bg-surface p-4 shadow-card transition-colors hover:border-primary">
+              <span className="flex items-start justify-between gap-3">
+                <span className="text-sm font-bold text-ink">{service.name}</span>
+                <span className="shrink-0 text-xs font-semibold text-primary">{formatServicePrice(service.pricing)}</span>
+              </span>
+              <span className="mt-1 text-xs text-ink-muted">
+                {formatDuration(service.durationMinutes)} · {BOOKING_METHOD_LABEL[service.bookingMethod]}
+              </span>
+              <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-primary">
+                {BOOKING_METHOD_ACTION[service.bookingMethod]}
+                <ChevronRight aria-hidden className="size-3.5" />
+              </span>
+            </Go>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function Hours({ view }: { view: SiteView }) {
   return (
     <ul className="space-y-1.5 text-sm">
-      {hours.map((row) => (
+      {view.hours.map((row) => (
         <li key={row.days} className="flex justify-between gap-6">
           <span className="font-medium text-ink">{row.days}</span>
           <span className="text-ink-muted">{row.hours}</span>
@@ -181,8 +200,8 @@ function Hours() {
   );
 }
 
-function ContactDetails() {
-  const business = useBusiness();
+function ContactDetails({ view }: { view: SiteView }) {
+  const { business } = view;
   return (
     <ul className="space-y-3 text-sm">
       <li className="flex items-start gap-2.5">
@@ -236,32 +255,34 @@ function Trio({ values, icons }: { values: Record<string, string>; icons: boolea
   );
 }
 
-function BookingCta({ values, live, active }: { values: Record<string, string>; live?: boolean; active: boolean }) {
-  return (
-    <Section id="bookingCta" active={active} tone="brand">
-      <div className="flex flex-col items-start justify-between gap-5 @2xl:flex-row @2xl:items-center">
-        <Heading title={values.heading ?? ""} text={values.supportingText} tone="brand" />
-        <Link
-          href={previewHref("booking", live)}
-          className="inline-flex shrink-0 items-center gap-2 rounded-btn bg-white px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary-subtle"
-        >
-          {values.buttonLabel}
-          <ArrowRight aria-hidden className="size-4" />
-        </Link>
-      </div>
-    </Section>
-  );
-}
-
-/** A message form that goes nowhere: the demo only shows the customer's confirmation. */
-function ContactForm() {
-  const business = useBusiness();
+/**
+ * A message form. Nothing is delivered anywhere (there is no mail or text-message provider yet), so on the public site it says so and
+ * points to the business's phone and email instead of claiming a message was sent. Inside the workspace (the signed-in preview) it keeps
+ * the approved confirmation, which is a picture of the finished product.
+ */
+function ContactForm({ view }: { view: SiteView }) {
+  const { business } = view;
   const [sentTo, setSentTo] = useState<string>();
   const [form, setForm] = useState({ name: "", email: "", phone: "", message: "" });
   const [errors, setErrors] = useState<Partial<Record<"name" | "email" | "message", string>>>({});
 
   if (sentTo !== undefined) {
-    return (
+    return view.visitor ? (
+      <div role="status" className="rounded-card border border-line bg-surface-low p-5">
+        <h3 className="text-sm font-bold text-ink">We can&apos;t take messages here yet</h3>
+        <p className="mt-1 text-sm text-ink">
+          Thanks, {sentTo}. Messages sent from this form aren&apos;t delivered yet, so please call {business.name} at{" "}
+          <a href={toTelHref(business.phone)} className="font-semibold text-primary hover:underline">
+            {business.phone}
+          </a>{" "}
+          or email{" "}
+          <a href={`mailto:${business.email}`} className="font-semibold text-primary hover:underline">
+            {business.email}
+          </a>
+          .
+        </p>
+      </div>
+    ) : (
       <div role="status" className="rounded-card border border-positive-line bg-positive-soft p-5">
         <h3 className="text-sm font-bold text-positive">Message sent</h3>
         <p className="mt-1 text-sm text-ink">
@@ -311,230 +332,169 @@ function ContactForm() {
   );
 }
 
-export function SiteRenderer({ page, content, live, activeSection, embedded }: Props) {
-  const business = useBusiness();
-  const { services: catalog } = useServices();
+function Intro({ values, Title }: { values: Record<string, string>; Title: "h1" | "h2" }) {
+  return (
+    <div className={cn("max-w-2xl", values.alignment === "center" && "mx-auto", alignClass(values.alignment))}>
+      <Title className="text-2xl font-bold tracking-tight text-ink @xl:text-3xl">{values.heading}</Title>
+      <p className="mt-2 text-sm text-ink-muted @xl:text-base">{values.supportingText}</p>
+    </div>
+  );
+}
+
+/** One registered section, drawn. An unknown type or variant draws nothing (it never reaches here: the loaders drop them). */
+function SectionView({ section, view, active, embedded }: { section: SectionModel; view: SiteView; active: boolean; embedded?: boolean }) {
+  const values = fillProps(section.props, view.business);
   const Title: "h1" | "h2" = embedded ? "h2" : "h1";
-  const section = useSectionValues(content, page);
-  const sections = content.pages[page];
-  const show = (id: string) => sections[id]?.visible !== false;
-  const on = (id: string) => activeSection === id;
+  const id = section.key;
 
-  if (page === "home") {
-    const hero = section("hero");
-    const why = section("why");
-    return (
-      <>
-        {show("hero") && (
-          <Section id="hero" active={on("hero")} tone="brand" className="@xl:py-14">
-            <div className={cn("max-w-2xl", hero.alignment === "center" && "mx-auto", alignClass(hero.alignment))}>
-              <Title className="text-2xl font-bold tracking-tight @xl:text-4xl">{hero.headline}</Title>
-              <p className="mt-3 text-sm text-white/85 @xl:text-base">{hero.supportingText}</p>
-              <div className={cn("mt-6 flex flex-wrap gap-3", hero.alignment === "center" && "justify-center")}>
-                <Link
-                  href={previewHref("booking", live)}
-                  className="inline-flex items-center rounded-btn bg-white px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary-subtle"
-                >
-                  {hero.primaryCta}
-                </Link>
-                <Link
-                  href={previewHref("services", live)}
-                  className="inline-flex items-center rounded-btn border border-white/50 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10"
-                >
-                  {hero.secondaryCta}
-                </Link>
-              </div>
+  switch (section.type) {
+    case "hero":
+      return (
+        <Section id={id} active={active} tone="brand" className="@xl:py-14">
+          <div className={cn("max-w-2xl", values.alignment === "center" && "mx-auto", alignClass(values.alignment))}>
+            <Title className="text-2xl font-bold tracking-tight @xl:text-4xl">{values.headline}</Title>
+            <p className="mt-3 text-sm text-white/85 @xl:text-base">{values.supportingText}</p>
+            <div className={cn("mt-6 flex flex-wrap gap-3", values.alignment === "center" && "justify-center")}>
+              <Go
+                href={typeHrefIn(view, "booking")}
+                className="inline-flex items-center rounded-btn bg-white px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary-subtle"
+              >
+                {values.primaryCta}
+              </Go>
+              <Go
+                href={typeHrefIn(view, "services")}
+                className="inline-flex items-center rounded-btn border border-white/50 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10"
+              >
+                {values.secondaryCta}
+              </Go>
             </div>
+          </div>
+        </Section>
+      );
+    case "page_intro":
+      return (
+        <Section id={id} active={active} tone="tinted">
+          <Intro values={values} Title={Title} />
+        </Section>
+      );
+    case "service_list":
+      if (section.variant === "booking") {
+        return (
+          <Section id={id} active={active}>
+            <BookingGrid view={view} />
           </Section>
-        )}
-        {show("services") && (
-          <Section id="services" active={on("services")} tone="tinted">
-            <Heading title={section("services").heading ?? ""} text={section("services").supportingText} />
-            <ServiceGrid content={content} live={live} />
+        );
+      }
+      if (section.variant === "catalog") {
+        return (
+          <Section id={id} active={active}>
+            <ServiceGrid view={view} full />
           </Section>
-        )}
-        {show("why") && (
-          <Section id="why" active={on("why")}>
-            <Heading title={why.heading ?? ""} />
-            <Trio values={why} icons />
-          </Section>
-        )}
-        {show("hours") && (
-          <Section id="hours" active={on("hours")} tone="tinted">
-            <InfoCard title="Business hours">
-              <Hours />
-            </InfoCard>
-          </Section>
-        )}
-        {show("contact") && (
-          <Section id="contact" active={on("contact")}>
-            <InfoCard title="Contact us">
-              <ContactDetails />
-            </InfoCard>
-          </Section>
-        )}
-        {show("bookingCta") && <BookingCta values={section("bookingCta")} live={live} active={on("bookingCta")} />}
-      </>
-    );
-  }
-
-  if (page === "services") {
-    const intro = section("intro");
-    return (
-      <>
-        {show("intro") && (
-          <Section id="intro" active={on("intro")} tone="tinted">
-            <div className={cn("max-w-2xl", intro.alignment === "center" && "mx-auto", alignClass(intro.alignment))}>
-              <Title className="text-2xl font-bold tracking-tight text-ink @xl:text-3xl">{intro.heading}</Title>
-              <p className="mt-2 text-sm text-ink-muted @xl:text-base">{intro.supportingText}</p>
-            </div>
-          </Section>
-        )}
-        {show("catalog") && (
-          <Section id="catalog" active={on("catalog")}>
-            <ServiceGrid content={content} live={live} full />
-          </Section>
-        )}
-        {show("bookingCta") && <BookingCta values={section("bookingCta")} live={live} active={on("bookingCta")} />}
-      </>
-    );
-  }
-
-  if (page === "about") {
-    const intro = section("intro");
-    const biz = section("business");
-    const values = section("values");
-    return (
-      <>
-        {show("intro") && (
-          <Section id="intro" active={on("intro")} tone="tinted">
-            <div className={cn("max-w-2xl", intro.alignment === "center" && "mx-auto", alignClass(intro.alignment))}>
-              <Title className="text-2xl font-bold tracking-tight text-ink @xl:text-3xl">{intro.heading}</Title>
-              <p className="mt-2 text-sm text-ink-muted @xl:text-base">{intro.supportingText}</p>
-            </div>
-          </Section>
-        )}
-        {show("business") && (
-          <Section id="business" active={on("business")}>
-            <Heading title={biz.heading ?? ""} text={biz.body} />
-          </Section>
-        )}
-        {show("values") && (
-          <Section id="values" active={on("values")} tone="tinted">
+        );
+      }
+      return (
+        <Section id={id} active={active} tone="tinted">
+          <Heading title={values.heading ?? ""} text={values.supportingText} />
+          <ServiceGrid view={view} />
+        </Section>
+      );
+    case "feature_list":
+      return section.variant === "icons" ? (
+        <Section id={id} active={active}>
+          <Heading title={values.heading ?? ""} />
+          <Trio values={values} icons />
+        </Section>
+      ) : (
+        <Section id={id} active={active} tone="tinted">
+          <Heading title={values.heading ?? ""} text={values.supportingText} />
+          <Trio values={values} icons={false} />
+        </Section>
+      );
+    case "rich_text":
+      return (
+        <Section id={id} active={active}>
+          <Heading title={values.heading ?? ""} text={values.body} />
+        </Section>
+      );
+    case "business_hours":
+      return (
+        <Section id={id} active={active} tone="tinted">
+          <InfoCard title="Business hours" as={section.variant === "page" ? "h2" : "h3"}>
+            <Hours view={view} />
+          </InfoCard>
+        </Section>
+      );
+    case "contact_details":
+      if (section.variant === "callout") {
+        return (
+          <Section id={id} active={active} tone="tinted">
             <Heading title={values.heading ?? ""} text={values.supportingText} />
-            <Trio values={values} icons={false} />
-          </Section>
-        )}
-        {show("details") && (
-          <Section id="details" active={on("details")}>
-            <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-2">
-              <InfoCard title={business.name}>
-                <ContactDetails />
-              </InfoCard>
-              <InfoCard title="Business hours">
-                <Hours />
+            <div className="mt-4 max-w-sm">
+              <InfoCard title="Contact us">
+                <ContactDetails view={view} />
               </InfoCard>
             </div>
           </Section>
-        )}
-        {show("bookingCta") && <BookingCta values={section("bookingCta")} live={live} active={on("bookingCta")} />}
-      </>
-    );
-  }
-
-  if (page === "contact") {
-    const intro = section("intro");
-    const form = section("form");
-    return (
-      <>
-        {show("intro") && (
-          <Section id="intro" active={on("intro")} tone="tinted">
-            <div className={cn("max-w-2xl", intro.alignment === "center" && "mx-auto", alignClass(intro.alignment))}>
-              <Title className="text-2xl font-bold tracking-tight text-ink @xl:text-3xl">{intro.heading}</Title>
-              <p className="mt-2 text-sm text-ink-muted @xl:text-base">{intro.supportingText}</p>
-            </div>
-          </Section>
-        )}
-        {show("details") && (
-          <Section id="details" active={on("details")}>
-            <InfoCard title="Contact details" as="h2">
-              <ContactDetails />
+        );
+      }
+      return (
+        <Section id={id} active={active}>
+          <InfoCard title={section.variant === "page" ? "Contact details" : "Contact us"} as={section.variant === "page" ? "h2" : "h3"}>
+            <ContactDetails view={view} />
+          </InfoCard>
+        </Section>
+      );
+    case "business_details":
+      return (
+        <Section id={id} active={active}>
+          <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-2">
+            <InfoCard title={view.business.name}>
+              <ContactDetails view={view} />
             </InfoCard>
-          </Section>
-        )}
-        {show("hours") && (
-          <Section id="hours" active={on("hours")} tone="tinted">
-            <InfoCard title="Business hours" as="h2">
-              <Hours />
+            <InfoCard title="Business hours">
+              <Hours view={view} />
             </InfoCard>
-          </Section>
-        )}
-        {show("form") && (
-          <Section id="form" active={on("form")} tone="tinted">
-            <Heading title={form.heading ?? ""} text={form.supportingText} />
-            <div className="mt-5 max-w-xl">
-              <ContactForm />
-            </div>
-          </Section>
-        )}
-        {show("bookingCta") && <BookingCta values={section("bookingCta")} live={live} active={on("bookingCta")} />}
-      </>
-    );
+          </div>
+        </Section>
+      );
+    case "contact_form":
+      return (
+        <Section id={id} active={active} tone="tinted">
+          <Heading title={values.heading ?? ""} text={values.supportingText} />
+          <div className="mt-5 max-w-xl">
+            <ContactForm view={view} />
+          </div>
+        </Section>
+      );
+    case "call_to_action":
+      return (
+        <Section id={id} active={active} tone="brand">
+          <div className="flex flex-col items-start justify-between gap-5 @2xl:flex-row @2xl:items-center">
+            <Heading title={values.heading ?? ""} text={values.supportingText} tone="brand" />
+            <Go
+              href={typeHrefIn(view, "booking")}
+              className="inline-flex shrink-0 items-center gap-2 rounded-btn bg-white px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary-subtle"
+            >
+              {values.buttonLabel}
+              <ArrowRight aria-hidden className="size-4" />
+            </Go>
+          </div>
+        </Section>
+      );
+    default:
+      return null;
   }
+}
 
-  const intro = section("intro");
-  const alt = section("alternative");
-  const shown = getShownServices(content.services, catalog);
+/** A page: its visible sections in order, each drawn by the component its type is registered to. */
+export function SiteRenderer({ page, view, activeSection, embedded }: Props) {
   return (
     <>
-      {show("intro") && (
-        <Section id="intro" active={on("intro")} tone="tinted">
-          <div className={cn("max-w-2xl", intro.alignment === "center" && "mx-auto", alignClass(intro.alignment))}>
-            <Title className="text-2xl font-bold tracking-tight text-ink @xl:text-3xl">{intro.heading}</Title>
-            <p className="mt-2 text-sm text-ink-muted @xl:text-base">{intro.supportingText}</p>
-          </div>
-        </Section>
-      )}
-      {show("experience") && (
-        <Section id="experience" active={on("experience")}>
-          {shown.length === 0 ? (
-            <p className="rounded-card bg-surface-low p-4 text-sm text-ink-muted">No services are available to book online right now.</p>
-          ) : (
-            <ul className="grid grid-cols-1 gap-4 @2xl:grid-cols-2">
-              {shown.map((service) => (
-                <li key={service.id}>
-                  <Link
-                    href={previewHref(`booking/${service.id}`, live)}
-                    className="flex h-full flex-col rounded-card border border-line bg-surface p-4 shadow-card transition-colors hover:border-primary"
-                  >
-                    <span className="flex items-start justify-between gap-3">
-                      <span className="text-sm font-bold text-ink">{service.name}</span>
-                      <span className="shrink-0 text-xs font-semibold text-primary">{formatServicePrice(service.pricing)}</span>
-                    </span>
-                    <span className="mt-1 text-xs text-ink-muted">
-                      {formatDuration(service.durationMinutes)} · {BOOKING_METHOD_LABEL[service.bookingMethod]}
-                    </span>
-                    <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-primary">
-                      {BOOKING_METHOD_ACTION[service.bookingMethod]}
-                      <ChevronRight aria-hidden className="size-3.5" />
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-      )}
-      {show("alternative") && (
-        <Section id="alternative" active={on("alternative")} tone="tinted">
-          <Heading title={alt.heading ?? ""} text={alt.supportingText} />
-          <div className="mt-4 max-w-sm">
-            <InfoCard title="Contact us">
-              <ContactDetails />
-            </InfoCard>
-          </div>
-        </Section>
-      )}
+      {orderedSections(page)
+        .filter((section) => section.visible)
+        .map((section) => (
+          <SectionView key={section.key} section={section} view={view} active={activeSection === section.key} embedded={embedded} />
+        ))}
     </>
   );
 }

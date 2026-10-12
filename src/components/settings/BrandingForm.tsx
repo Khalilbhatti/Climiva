@@ -67,6 +67,8 @@ export function BrandingForm() {
     }
     setLogoError(undefined);
     releaseDraftLogo();
+    // An object URL lives only in this browser session: it is not a stored file. Object storage required for durable uploaded logos/assets,
+    // so no public page (the Website, the Marketplace listing) shows one; they show the business's initials.
     setDraft({ ...draft, logo: { fileName: file.name, src: URL.createObjectURL(file) } });
   }
 

@@ -1,15 +1,26 @@
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { WebsiteChrome } from "@/components/website/WebsiteChrome";
-import { fixtureGate } from "@/server/fixture-gate";
+import { WebsiteOverview } from "@/components/website/WebsiteOverview";
+import { getCoreSnapshot } from "@/server/core-data";
+import { requireWorkspaceContext } from "@/server/workspace";
 
-/** The Website hub: shared header, publishing actions and tabs. The page editors sit outside it (they have their own header). */
+/**
+ * The Website hub: shared header, publishing actions and tabs. The page editors sit outside it (they have their own header). A business
+ * that has no website yet sees the first-time screen (create one) in place of every tab.
+ */
 export default async function WebsiteHubLayout({ children }: { children: ReactNode }) {
-  const gate = await fixtureGate("Website");
-  if (gate) return gate;
+  await requireWorkspaceContext();
+  const website = (await getCoreSnapshot())?.website;
   return (
     <>
       <WebsiteChrome />
-      {children}
+      {website ? (
+        children
+      ) : (
+        <Suspense>
+          <WebsiteOverview />
+        </Suspense>
+      )}
     </>
   );
 }

@@ -107,7 +107,7 @@ test.describe("the open menus are accessible", () => {
     await expectAccessible(page);
   });
 
-  test("the empty workspace overview and an unavailable module pass the checks", async ({ openAs }) => {
+  test("the empty workspace overview and the pages of a small business pass the checks", async ({ openAs }) => {
     const { page } = await openAs("taylor");
     await page.goto("/");
     await expect(page.getByText("Your workspace is ready")).toBeVisible();
@@ -118,10 +118,12 @@ test.describe("the open menus are accessible", () => {
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
       await expectAccessible(page);
     }
-    // A module that still runs on sample data says so.
-    await page.goto("/website");
-    await expect(page.getByRole("heading", { level: 2, name: /isn't available/ })).toBeVisible();
-    await expectAccessible(page);
+    // Website and Marketplace are Northstar's own too.
+    for (const path of ["/website", "/marketplace"]) {
+      await page.goto(path);
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await expectAccessible(page);
+    }
   });
 });
 

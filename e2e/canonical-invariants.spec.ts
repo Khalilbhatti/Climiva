@@ -22,14 +22,14 @@ import {
 import { BUSINESS_TIME_ZONE, PROTOTYPE_NOW, PROTOTYPE_TODAY, business, businessHoursByWeekday, currentUser } from "../src/data/fixtures";
 import { COVERAGE, getCurrentPlanForCustomer, getPlanById, getPlanMetrics, getVisitState } from "../src/data/maintenance-plans";
 import { getCampaignMetrics } from "../src/data/marketing";
-import { BASELINE_EXCLUDED_SERVICE_ID, getEligibleServices, getListingServices, initialMarketplaceState } from "../src/data/marketplace";
+import { getEligibleServices, getListingServices } from "../src/data/marketplace";
 import { getBookingById, getJobById } from "../src/data/operations";
 import { getReviewById, getReviewMetrics } from "../src/data/reviews";
 import { getPublicActiveServices } from "../src/data/services";
 import { initialSettings } from "../src/data/settings";
 import { getTeamMemberById } from "../src/data/team";
-import { WEBSITE_PAGES, defaultSiteContent, getShownServices } from "../src/data/website";
-import { APEX_APPROVED, BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, INVOICES, JOBS, MARKETING, OPERATIONS, OVERVIEW_TOTALS, PLANS, PLANS_DATA, PLAN_ADJUSTMENT, REVIEWS, REVIEWS_DATA, REVIEW_ADJUSTMENT, ROLES, SCHEDULE_BLOCKS, SERVICES, STORED_INVOICED, TEAM, TEAM_DATA } from "./apex-data";
+import { getShownServices } from "../src/data/website";
+import { APEX_APPROVED, APEX_CONTENT, APEX_LISTING, BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, INVOICES, JOBS, MARKETING, OPERATIONS, OVERVIEW_TOTALS, PLANS, PLANS_DATA, PLAN_ADJUSTMENT, REVIEWS, REVIEWS_DATA, REVIEW_ADJUSTMENT, ROLES, SCHEDULE_BLOCKS, SERVICES, STORED_INVOICED, TEAM, TEAM_DATA } from "./apex-data";
 import { withPayment } from "./financial-edits";
 
 const SIX_SERVICES = [
@@ -142,17 +142,19 @@ test.describe("the Services", () => {
   });
 
   test("the Website and the Marketplace read that same list", () => {
-    expect(getShownServices(defaultSiteContent(SERVICES).services, SERVICES).map((service) => service.id)).toEqual(getPublicActiveServices(SERVICES).map((service) => service.id));
+    // With nothing hidden the Website shows every public Service, in the catalog's order: the site owns only which are hidden and in what order.
+    expect(getShownServices(APEX_CONTENT.settings.serviceDisplay, SERVICES).map((service) => service.id)).toEqual(getPublicActiveServices(SERVICES).map((service) => service.id));
     expect(getEligibleServices(SERVICES).map((service) => service.id)).toEqual(getPublicActiveServices(SERVICES).map((service) => service.id));
-    expect(WEBSITE_PAGES.map((page) => page.id)).toEqual(["home", "services", "about", "contact", "booking"]);
+    expect(APEX_CONTENT.pages.map((page) => page.key)).toEqual(["home", "services", "about", "contact", "booking"]);
   });
 
   test("the Marketplace opens with five of the six; Emergency No-Heat / No-Cool is the one not selected", () => {
-    const listed = getListingServices(initialMarketplaceState(SERVICES).config, SERVICES);
+    const emergency = "emergency-no-heat-no-cool";
+    const listed = getListingServices(APEX_LISTING.config, SERVICES);
     expect(listed).toHaveLength(5);
-    expect(listed.map((service) => service.id)).not.toContain(BASELINE_EXCLUDED_SERVICE_ID);
-    expect(SERVICES.find((service) => service.id === BASELINE_EXCLUDED_SERVICE_ID)?.name).toBe("Emergency No-Heat / No-Cool Service");
-    expect(initialMarketplaceState(SERVICES).status).toBe("published");
+    expect(listed.map((service) => service.id)).not.toContain(emergency);
+    expect(SERVICES.find((service) => service.id === emergency)?.name).toBe("Emergency No-Heat / No-Cool Service");
+    expect(APEX_LISTING.status).toBe("published");
   });
 });
 

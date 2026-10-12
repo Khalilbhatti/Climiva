@@ -11,10 +11,12 @@ import { NextResponse, type NextRequest } from "next/server";
  *
  * Left alone on purpose: the auth endpoints, the Log in and Sign up pages (a cookie that no longer maps to a session must
  * still be able to reach them, or the person would be bounced between pages forever; the pages themselves send a truly
- * signed-in visitor on), and the customer-facing Website and Marketplace previews, which must stay reachable without a
- * Climvia account.
+ * signed-in visitor on), and the PUBLISHED websites (/sites/<address>) and Marketplace listings (/listings/<address>), which must stay
+ * reachable without a Climvia account. Those pages resolve the business from the public address on the server and show published
+ * content only. The signed-in previews of a Draft (/website/preview, /marketplace/preview) are NOT public: they need a session cookie
+ * here and a verified membership in the page.
  */
-const PUBLIC_PREFIXES = ["/api/auth", "/website/preview", "/marketplace/preview"];
+const PUBLIC_PREFIXES = ["/api/auth", "/sites", "/listings"];
 const AUTH_PAGES = ["/login", "/signup"];
 
 export function proxy(request: NextRequest) {

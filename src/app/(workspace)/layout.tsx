@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  * providers the shell reads are mounted once at the root (src/app/layout.tsx) so those routes can share the session.
  *
  * This is the first check, not the only one: a layout is not re-run when you move between pages beneath it, so each page
- * that shows workspace content asks again, next to its data (see src/server/fixture-gate.tsx and the server actions).
+ * that shows workspace content asks again, next to its data (see src/server/workspace.ts and the server actions).
  */
 export default async function WorkspaceLayout({ children }: { children: ReactNode }) {
   await requireWorkspaceContext();

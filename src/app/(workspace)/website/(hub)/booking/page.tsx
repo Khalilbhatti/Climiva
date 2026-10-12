@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import { BookingSetup } from "@/components/website/BookingSetup";
-import { fixtureGate } from "@/server/fixture-gate";
+import { requireWorkspaceContext } from "@/server/workspace";
 
 export const metadata: Metadata = { title: "Website booking" };
 
 export default async function WebsiteBookingPage() {
-  const gate = await fixtureGate("Website");
-  if (gate) return gate;
+  await requireWorkspaceContext();
   return <BookingSetup />;
 }

@@ -3,21 +3,42 @@
  *
  * The theme belongs to the version (a published version keeps the look it was published with). It is validated structured JSON with
  * a fixed set of keys and, for each, a fixed set of allowed values. There is no free-form style, class name, stylesheet or font file in
- * it, so nothing a customer types can become CSS. A future Theme editor changes these tokens; it does not widen what a theme can hold.
+ * it, so nothing a customer types can become CSS. The Website Builder's Theme editor changes these tokens; it does not widen what a theme can hold.
  *
- *   accent       null (the Climvia teal) or "#RRGGBB"   -> applied today as the site's primary colour
- *   radius       small | medium | large                  -> reserved for the Theme editor (the site uses `medium`)
- *   density      compact | comfortable                   -> reserved for the Theme editor (the site uses `comfortable`)
- *   headingFont  an identifier from FONTS                -> reserved (only the self-hosted Inter exists)
- *   bodyFont     an identifier from FONTS                -> reserved
+ *   accent       null (the Climvia teal) or "#RRGGBB"   -> the site's primary colour
+ *   radius       small | medium | large                  -> how rounded buttons, cards and inputs are
+ *   density      compact | comfortable                   -> how much space sections have
+ *   headingFont  an identifier from THEME_FONTS          -> the family headings use
+ *   bodyFont     an identifier from THEME_FONTS          -> the family everything else uses
  *
- * `schema` is the version of this shape, so a later phase can migrate stored themes instead of guessing.
+ * A font is an IDENTIFIER the application maps to a font stack it already has (the self-hosted Inter, or the visitor's own system fonts):
+ * a theme cannot name a font file or a web address, and nothing is downloaded for it.
+ *
+ * `schema` is the version of this shape, so a later phase can migrate stored themes instead of guessing. Adding an allowed value to a list
+ * above (a new font) is backward compatible and keeps the schema number; changing a key's meaning or adding a key is not.
  */
 export const THEME_SCHEMA = 1;
 
 export const THEME_RADII = ["small", "medium", "large"] as const;
 export const THEME_DENSITIES = ["compact", "comfortable"] as const;
-export const THEME_FONTS = ["inter"] as const;
+export const THEME_FONTS = ["inter", "system-sans", "serif"] as const;
+
+export const THEME_RADIUS_LABEL: Record<(typeof THEME_RADII)[number], string> = { small: "Sharp", medium: "Soft", large: "Round" };
+export const THEME_DENSITY_LABEL: Record<(typeof THEME_DENSITIES)[number], string> = { compact: "Compact", comfortable: "Comfortable" };
+export const THEME_FONT_LABEL: Record<(typeof THEME_FONTS)[number], string> = { inter: "Inter", "system-sans": "System sans-serif", serif: "Classic serif" };
+
+/** The font stack an identifier stands for. Only stacks the application already has: nothing is fetched from anywhere. */
+const FONT_STACK: Record<(typeof THEME_FONTS)[number], string> = {
+  inter: 'var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+  "system-sans": 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  serif: 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif',
+};
+
+const RADIUS_VARS: Record<(typeof THEME_RADII)[number], { btn: string; card: string }> = {
+  small: { btn: "0.25rem", card: "0.375rem" },
+  medium: { btn: "0.5rem", card: "0.75rem" },
+  large: { btn: "0.875rem", card: "1.25rem" },
+};
 
 export type SiteTheme = {
   schema: typeof THEME_SCHEMA;
@@ -63,3 +84,20 @@ export function accentStyle(theme: SiteTheme): Record<string, string> | undefine
     "--color-primary-subtle": `color-mix(in srgb, ${theme.accent} 10%, white)`,
   };
 }
+
+/**
+ * Everything a theme sets on the element that wraps a drawn site, as CSS custom properties built here from validated tokens: the accent
+ * (when there is one), the corner radius of buttons and cards, and the heading and body families. Nothing else writes these.
+ */
+export function themeStyle(theme: SiteTheme): Record<string, string> {
+  return {
+    ...accentStyle(theme),
+    "--radius-btn": RADIUS_VARS[theme.radius].btn,
+    "--radius-card": RADIUS_VARS[theme.radius].card,
+    "--site-font-heading": FONT_STACK[theme.headingFont],
+    "--site-font-body": FONT_STACK[theme.bodyFont],
+  };
+}
+
+/** The attributes that go with `themeStyle` on the wrapper: the stylesheet keys the fonts off one, and sections read the density. */
+export const themeAttributes = (theme: SiteTheme): { "data-site-theme": string; "data-site-density": string } => ({ "data-site-theme": "", "data-site-density": theme.density });

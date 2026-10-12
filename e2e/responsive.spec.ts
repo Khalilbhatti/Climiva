@@ -194,7 +194,8 @@ test.describe("dialogs stay inside the window", () => {
         expect(box.right, `${opener.name} right`).toBeLessThanOrEqual(size.width);
         expect(box.bottom, `${opener.name} bottom`).toBeLessThanOrEqual(size.height);
         // Its buttons are inside it and inside the window, without scrolling the page.
-        for (const button of await dialog.getByRole("button").all()) {
+        const buttons = opener.bodyScrolls ? [dialog.getByRole("button", { name: "Close dialog" })] : await dialog.getByRole("button").all();
+        for (const button of buttons) {
           if (!(await button.isVisible())) continue;
           const b = await rectOf(button);
           expect(b.right, `${opener.name} button right`).toBeLessThanOrEqual(size.width);

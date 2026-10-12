@@ -17,7 +17,8 @@ import type { APIRequestContext, Page } from "playwright/test";
 import { DEFAULT_DESCRIPTION } from "../src/data/marketplace";
 import { DEFAULT_TEMPLATE } from "../src/db/default-template";
 import { loadPublicSite } from "../src/db/public-queries";
-import { publishSite, saveDraftPage, unpublishSite } from "../src/db/site-queries";
+import { publishSite, unpublishSite } from "../src/db/site-queries";
+import { setHeadlineOf } from "./draft-edits";
 import { withTenant } from "../src/db/tenant";
 import { NORTHSTAR_LISTING, NORTHSTAR_CONTENT } from "../scripts/db/seed-data/website";
 import { APEX_CONTENT, APEX_LISTING, SERVICES } from "./apex-data";
@@ -191,12 +192,7 @@ test.describe("the Draft and the Published version", () => {
 
   async function setHeadline(workerTenant: { userId: string; organizationId: string }, db: import("pg").Pool, headline: string) {
     const site = await siteOf(db, workerTenant.organizationId);
-    const hero = (await db.query<{ props: Record<string, string> }>(
-      `select s.props from site_sections s join site_pages p on p.id = s.page_id join site_versions v on v.id = p.site_version_id
-        where v.site_id = $1 and v.status = 'draft' and p.page_key = 'home' and s.section_key = 'hero'`,
-      [site],
-    )).rows[0].props;
-    await withTenant(tenantOf(workerTenant), (tx) => saveDraftPage({ tx, organizationId: workerTenant.organizationId }, site, "home", { sections: { hero: { visible: true, props: { ...hero, headline } } } }));
+    await withTenant(tenantOf(workerTenant), (tx) => setHeadlineOf({ tx, organizationId: workerTenant.organizationId }, site, headline));
   }
 
   test("a saved Draft is never public: only the signed-in owner's preview shows it, and Publish is what a visitor sees", async ({ page, workerTenant, db, apiAs }) => {

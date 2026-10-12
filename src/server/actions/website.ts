@@ -10,8 +10,7 @@ import {
   loadWebsiteState,
   publishSite,
   removeCustomDomain,
-  saveDraftPage,
-  saveServiceDisplay,
+  saveSiteDraft,
   setPrimaryAddress,
   unpublishSite,
 } from "@/db/site-queries";
@@ -23,7 +22,7 @@ import { authorize } from "../authorize";
 import { constraintOf, isIntegrityViolation } from "../db-errors";
 
 /**
- * Website writes: create the website, save a page of the Draft, publish, unpublish, and the domain record. Each action:
+ * Website writes: create the website, save the Draft the Builder edited, publish, unpublish, and the domain record. Each action:
  *   1. resolves the caller and their active organization from the session and a verified membership,
  *   2. requires the "website:manage" capability (owner or admin),
  *   3. only then reads its arguments, and parses and validates them again (the screen's checks are a convenience, these are the
@@ -79,26 +78,31 @@ export async function createWebsiteAction(): Promise<ActionResult<Answer>> {
 
 /* ───────────────────────── editing the Draft ───────────────────────── */
 
-/** Save one page of the Draft: its sections' text and visibility, and (on the Services page) which Services the site shows. */
-export async function savePageAction(input: unknown): Promise<ActionResult<Answer>> {
+/**
+ * Save the whole Draft the Website Builder edited: its theme, settings, and every page with its sections, in order, together with the
+ * revision of the Draft the Builder opened. The server validates all of it again (every section against its registered type and variant,
+ * plain text only), refuses it whole if the stored Draft has moved on since that revision, and otherwise stores it in one transaction.
+ * Nothing in the request names an organization, a site or a database id: pages and sections are matched by their keys inside the verified
+ * business's own primary Site.
+ */
+export async function saveDraftAction(input: unknown): Promise<ActionResult<Answer>> {
   return mutate(async ({ tx, organizationId, siteId }) => {
-    if (!isRecord(input) || typeof input.page !== "string" || !isRecord(input.sections)) return refuse("The page was not understood.");
-    const sections: Record<string, { visible: boolean; props: unknown }> = {};
-    for (const [key, value] of Object.entries(input.sections)) {
-      if (!isRecord(value)) return refuse("The page was not understood.");
-      sections[key] = { visible: value.visible as boolean, props: value.props };
-    }
-    await saveDraftPage({ tx, organizationId }, siteId, input.page, { sections });
-    if (input.serviceDisplay !== undefined) await saveServiceDisplay({ tx, organizationId }, siteId, input.serviceDisplay);
+    if (!isRecord(input)) return refuse("The website was not understood.");
+    await saveSiteDraft({ tx, organizationId }, siteId, { expectedRevision: input.expectedRevision, content: input.content });
   });
 }
 
 /* ───────────────────────── publishing ───────────────────────── */
 
-/** Publish the Draft: a new immutable Published version, and the site points at it. Nothing to publish is not an error. */
-export async function publishWebsiteAction(): Promise<ActionResult<Answer>> {
+/**
+ * Publish the Draft: a new immutable Published version, and the site points at it. Nothing to publish is not an error. The Builder sends the
+ * revision of the Draft it is showing, and a Draft that has moved on is refused, so it never publishes a state the person did not look at.
+ */
+export async function publishWebsiteAction(input?: unknown): Promise<ActionResult<Answer>> {
   return mutate(async ({ tx, organizationId, siteId, userId }) => {
-    const published = await publishSite({ tx, organizationId }, siteId, userId);
+    if (input !== undefined && (!isRecord(input) || typeof input.expectedRevision !== "number")) return refuse("The website was not understood.");
+    const expectedRevision = isRecord(input) ? (input.expectedRevision as number) : undefined;
+    const published = await publishSite({ tx, organizationId }, siteId, userId, { expectedRevision });
     return { versionNumber: published.number };
   });
 }

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ShellMain } from "./ShellMain";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
@@ -18,9 +19,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <TopBar />
       <div className="flex">
         <Sidebar />
-        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 p-5 focus:outline-none lg:p-8">
-          <div className="mx-auto max-w-content space-y-8">{children}</div>
-        </main>
+        <ShellMain>{children}</ShellMain>
       </div>
     </div>
   );

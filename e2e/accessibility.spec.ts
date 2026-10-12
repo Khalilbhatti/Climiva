@@ -93,7 +93,7 @@ test.describe("the colour tokens meet WCAG AA", () => {
 /* ───────────────────────── focus ───────────────────────── */
 
 test.describe("keyboard focus is always visible", () => {
-  const PAGES = ["/", "/bookings", "/customers/sarah-mitchell", "/jobs/JB-204", "/settings", "/reviews", "/website/pages/home", "/help", "/website/preview/booking/ac-repair-diagnostics"];
+  const PAGES = ["/", "/bookings", "/customers/sarah-mitchell", "/jobs/JB-204", "/settings", "/reviews", "/website/builder", "/help", "/website/preview/booking/ac-repair-diagnostics"];
   for (const url of PAGES) {
     test(`${url}: every stop on the first thirty Tab presses shows a focus indicator`, async ({ page }) => {
       await page.goto(url);

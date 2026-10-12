@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Check, ChevronsUpDown, LogOut, Plus, Settings, Store, UserRound } from "lucide-react";
 import { useSettings } from "@/components/settings/SettingsProvider";
 import { Avatar } from "@/components/ui/Avatar";
+import { useDiscardConfirm } from "@/components/workspace/unsaved-work";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { cn } from "@/lib/cn";
 import { hardNavigate } from "@/lib/hard-navigate";
@@ -25,13 +26,19 @@ function WorkspaceSwitcher() {
   const { open, setOpen, root, button, panelId } = usePopover();
   const [pending, setPending] = useState<string>();
   const [problem, setProblem] = useState<string>();
+  const discard = useDiscardConfirm("switch to another business");
 
-  async function choose(id: string) {
+  function choose(id: string) {
     if (pending) return;
     if (id === organization.id) {
       setOpen(false);
       return;
     }
+    // A screen with unsaved edits asks first: nothing is lost, and nothing of this business is left in front of the next one.
+    discard.run(() => void switchTo(id));
+  }
+
+  async function switchTo(id: string) {
     setPending(id);
     setProblem(undefined);
     let result: Awaited<ReturnType<typeof switchOrganizationAction>>;
@@ -100,6 +107,7 @@ function WorkspaceSwitcher() {
           </div>
         </div>
       )}
+      {discard.modal}
     </div>
   );
 }
@@ -111,8 +119,13 @@ function UserMenu() {
   const { open, setOpen, root, button, panelId } = usePopover();
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string>();
+  const discard = useDiscardConfirm("log out");
 
-  async function logOut() {
+  function logOut() {
+    if (!pending) discard.run(() => void signOut());
+  }
+
+  async function signOut() {
     if (pending) return;
     setPending(true);
     setProblem(undefined);
@@ -171,6 +184,7 @@ function UserMenu() {
           </div>
         </div>
       )}
+      {discard.modal}
     </div>
   );
 }

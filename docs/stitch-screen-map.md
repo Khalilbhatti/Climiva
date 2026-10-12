@@ -61,7 +61,7 @@ Team, Quotes & Invoices and Payments (Phase 4), Maintenance Plans and Website (P
 | Financials | Quotes & Invoices | `/quotes-invoices` (+ `/quotes/[quoteId]`, `/invoices/[invoiceId]`) | **Built (Phase 4)** |
 | | Payments | `/payments` (+ `/payments/[paymentId]`) | **Built (Phase 4)** |
 | | Maintenance Plans | `/maintenance-plans` (+ `/maintenance-plans/[planId]`) | **Built (Phase 5)** |
-| Growth | Website | `/website`, `/website/pages`, `/website/pages/[pageId]` (5 editors), `/website/booking`, `/website/domain`; the signed-in Draft preview outside the shell at `/website/preview` (+ `/services`, `/about`, `/contact`, `/booking`, `/booking/[serviceSlug]`) and, since Phase 15, the same pages published for anyone at `/sites/[siteSlug]` (+ the same page addresses) | **Built (Phase 5); stored and published in Phase 15** |
+| Growth | Website | `/website`, `/website/pages`, `/website/builder` (the Website Builder, Phase 16; the Phase 5 page editors at `/website/pages/[pageId]` are superseded and the address redirects to it), `/website/booking`, `/website/domain`; the signed-in Draft preview outside the shell at `/website/preview` (+ `/services`, `/about`, `/contact`, `/booking`, `/booking/[serviceSlug]`) and, since Phase 15, the same pages published for anyone at `/sites/[siteSlug]` (+ the same page addresses) | **Built (Phase 5); stored and published in Phase 15** |
 | | Marketplace | `/marketplace`, `/marketplace/edit` (+ `?setup=1`); signed-in listing preview outside the shell at `/marketplace/preview`; the published listing at `/listings/[listingSlug]` (Phase 15) | **Built (Phase 6); stored and published in Phase 15** |
 | | Reviews | `/reviews` (+ `/reviews/[reviewId]`) | **Built (Phase 6)** |
 | | Marketing | `/marketing` (+ `/marketing/new`, `/marketing/[campaignId]`, `/marketing/[campaignId]/edit`) | **Built (Phase 6)** |
@@ -120,7 +120,7 @@ State-sequence boards (reference for transitions, not routes): `payments_interac
 
 ### Website
 **`website_published`** · `website_private_staging` · `website_empty_state` · `website_pages_content_overview_1` / `_2` (pair) · domains: `website_domain_management_1` / `_2` (pair), `website_domain_connected`, `website_domain_primary_lifecycle`, `website_domain_overflow_menu_open`, `website_remove_custom_domain_flow`, `website_remove_custom_domain_modal_1` / `_2` (pair), `website_custom_domain_removed_restored_climvia`.
-Page editors (each has default / unsaved / saved-unpublished / customer-preview states): Home (`website_editor_home_page_1` / `_2` pair, `website_editor_interactive_states_flow`), Services (**`website_editor_services_page_refined`**; Dup: `website_editor_services_page`), About, Booking, Contact (+ `…_contact_form_success`), `website_editor_services_page_discard_modal`.
+Page editors (**superseded in Phase 16 by the Website Builder**; the Stitch editor screens remain the visual reference for the canvas and the inspector; each had default / unsaved / saved-unpublished / customer-preview states): Home (`website_editor_home_page_1` / `_2` pair, `website_editor_interactive_states_flow`), Services (**`website_editor_services_page_refined`**; Dup: `website_editor_services_page`), About, Booking, Contact (+ `…_contact_form_success`), `website_editor_services_page_discard_modal`.
 Customer-facing public journeys (outside the operator shell): `website_booking_instant_booking_journey`, `website_booking_request_appointment_journey`, all `*_customer_preview` frames.
 
 ### Marketplace
@@ -542,8 +542,8 @@ The empty state (`?state=empty`) has one primary action and no promotional cards
 
 ### Website: editors, preview and booking
 
-- Editors (`/website/pages/[pageId]`): section list, canvas, settings panel; Desktop / Mobile; Save changes, Publish changes, Discard edits (with a confirmation). Unsaved changes block Preview and Publish.
-  The canvas is `inert`: it is a picture, not a working page. Services are shown, hidden and ordered with switches and Move up / Move down buttons, never by dragging.
+- **The Website Builder** (`/website/builder`, Phase 16; replaces the page editors, `/website/pages/[pageId]` redirects to it): inside the workspace shell, a bar (Back to Website, status, Discard, Save changes, Preview, View published site, Publish; Undo / Redo, Desktop / Tablet / Mobile, panel toggles), left the Pages and Sections panels (Add page, Add section, an actions menu per row, a drag handle per section), centre the canvas, right the inspector (a Page, a Section or the Site theme). States designed in the Climvia system: nothing selected, a section, a page, the theme, unsaved changes, saved and unpublished, an invalid field, the Add a section dialog, the delete-page and discard confirmations, a change of style that names what it would drop, a tab that is behind (an alert with Reload latest version), and a member's read-only view. Unsaved changes turn Preview and Publish off.
+  The canvas is `inert`: it is a picture, not a working page. Services are shown, hidden and ordered with switches and Move up / Move down buttons in the section's inspector; sections are reordered by dragging the handle or by Move up / Move down.
 - The customer-facing preview (`/website/preview…`) is a separate layout: no sidebar, no workspace header, no search. Its toolbar (Back to editor, address, Desktop / Mobile) is the only addition.
   Footer: "© 2025 Apex Climate Heating & Air. All rights reserved. | Powered by Climvia". Page sizes follow the frame (container queries), so Mobile is a real narrow layout.
 - Booking journeys (`/website/preview/booking/[serviceSlug]` in the signed-in preview, `/sites/<slug>/booking/<serviceSlug>` for a visitor) follow the Service's booking method: **instant** (date and start time, confirmed straight away), **request appointment** (2-hour arrival window,
@@ -570,13 +570,13 @@ touch content or the published flag. Publishing needs no custom domain.
 | Stitch contact numbers on Website screens ((512) 555-0194) and hours (8:00 AM) differ from the Business record. | The Business fixture wins everywhere: (555) 392-8100, service@apexclimate.com, 4820 East Riverside Dr, Suite 110, Mon to Fri 7:30 AM to 6:00 PM. |
 | Stitch pages list booking at `/book`; the booking preview shows `/booking`. | `/booking`. |
 | Journey screens use 2025 dates, "Jordan Miller" / "Elena Rostova", other addresses and a "REQ-89421-ATX" reference. | Slots follow the prototype calendar (today is Oct 25, 2024); the form starts empty; the reference is the new Booking's number. |
-| Stitch Website shows "Licensed & Insured", "SSL Active · Auto-renews", "4.9 Star Verified", site brand/style, SEO and analytics. | Not built: no invented credentials, certificate or verification state, ratings, brand/style editor, SEO or analytics. |
+| Stitch Website shows "Licensed & Insured", "SSL Active · Auto-renews", "4.9 Star Verified", site brand/style, SEO and analytics. | Not built: no invented credentials, certificate or verification state, ratings, SEO or analytics (the Builder's Theme inspector edits a few real tokens, not a brand system). |
 | Stitch Comfort Care visit 1 names a Booking and Job that conflict with other records. | Recorded as fulfilled (May 22, 2024) with no links. |
 | The "Pages & content" Stitch screens say "Updated recently". | No timestamps are shown; there is no clock. |
 
 ### Deliberately not built
 
-Edit plan, pause / end / renew actions, plan invoices or any billing, plan history beyond what is derived, a Brand / Site style editor, page version history, adding or removing pages, SEO or meta fields,
+Edit plan, pause / end / renew actions, plan invoices or any billing, plan history beyond what is derived, page version history, SEO or meta fields (a Theme inspector and adding, removing and reordering pages and sections came with the Website Builder in Phase 16),
 analytics or traffic, DNS or domain-verification states, and a real contact-form or email delivery. Marketplace, Reviews, Marketing, Analytics, Settings forms and Help remain placeholders.
 
 ### Unresolved dependencies for later modules
@@ -632,7 +632,7 @@ Routes: `/marketplace`, `/marketplace/edit` (also first-time setup with `?setup=
   itself; nothing overlays the directory preview.
 - **Unsaved changes:** a banner and badge, Discard (with a confirmation), and an in-app guard: while there are unsaved edits, following any
   link out of the page asks "Discard unsaved changes?" first. (Closing or reloading the tab is the browser's own and is not intercepted.)
-  Preview listing is disabled until the edits are saved, as in the Website editor.
+  Preview listing is disabled until the edits are saved, as in the Website Builder.
 - **Directory preview** (`/marketplace/preview`) is its own layout: a Climvia Marketplace header, the listing and a footer, with a slim
   toolbar (Back to Marketplace, Desktop / Mobile). A hidden listing shows "This listing isn't available". Its buttons lead to the Website's
   real Booking, contact and per-Service booking pages. It is not the Website's component: the two previews share only primitives.
@@ -855,7 +855,7 @@ and links back to it; none can edit it, and Settings cannot edit them.
 - **Branding:** the logo is a reference to one file: the baseline's `apex-climate-crest-revised.svg`, drawn as a built-in mark (the app has no such image), or a
   file chosen in the session (SVG, PNG or JPG up to 4 MB, shown from a local object URL, nothing uploaded); **Remove logo** falls back to the initials ("AC").
   The optional **accent** is a six-digit hex (swatches or typed) that must keep white button text readable (contrast 4.5:1). A saved accent re-points
-  `--color-primary` only on customer-facing frames (the Website preview, its editor canvas and overview picture, the Marketplace listing); the Climvia shell and
+  `--color-primary` only on customer-facing frames (the Website preview, the Builder's canvas and the overview picture, the Marketplace listing); the Climvia shell and
   the Marketplace's own Climvia header never change (asserted by computed style). No AI, theme builder or asset library.
 - **Workspace preferences:** time zone (the seven US zones, default America/Chicago), currency (USD, read-only), date style (MMM D, YYYY · MM/DD/YYYY · DD/MM/YYYY ·
   YYYY-MM-DD, with the Oct 30, 2024 sample) and time style (12-hour or 24-hour). **The time zone names the zone the workspace's business-local times are in:
@@ -934,10 +934,10 @@ The comparison with the approved designs is in [final-visual-audit.md](final-vis
 - **The top-bar search** was a field that returned nothing on every page. It now finds Customers (name, phone in any format, email, street), Jobs and Bookings (id with or without `#`, customer,
   Service, street) and Schedule entries (technician, day, blocked time) from the loaded records, so it follows the session. It is a combobox: arrow keys, Enter, Escape, and ⌘K / Ctrl+K to focus.
   Two characters minimum, four results per group. It is a pure function over data the modules already hold (`lib/global-search.ts`); there is no index and no new record.
-- **Disabled Preview buttons** (Website page editor with unsaved changes; Marketplace editor with unsaved changes or a hidden listing) now say why to assistive technology.
+- **Disabled Preview buttons** (Website Builder with unsaved changes; Marketplace editor with unsaved changes or a hidden listing) now say why to assistive technology.
 - **Secondary text colour** `ink-muted` `#64748b` → `#5a687d`, because the original was under AA on the tinted surfaces (4.1–4.3 : 1). Nothing else in the palette changed.
 - **Heading structure.** Every page has exactly one visible `h1` and no skipped level, including page-level "not found / not available" states, the public Marketplace listing (its business name is the
-  `h1`), the public Website pages (Service cards and contact cards are `h2` where they follow the page title directly) and the Website editor's embedded page picture (inert, so it adds none).
+  `h1`), the public Website pages (Service cards and contact cards are `h2` where they follow the page title directly) and the Website Builder's canvas (inert, so it adds none).
   A root `not-found.tsx` puts the workspace shell around an address that matches no route.
 - **Wording.** Back links read "Back to Marketing / Reviews / Roles"; the unsaved-session sentence on detail pages reads "…in this session are cleared when the page reloads."; the review-request
   toast ends "Nothing is sent."; no user-visible string names a phase, the design export, fixtures, a prototype or an implementation.

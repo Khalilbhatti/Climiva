@@ -9,9 +9,29 @@ export type DialogCase = {
   title: string;
   /** The button that opens it, when it has one: focus must return here on close. */
   opener?: (page: Page) => ReturnType<Page["getByRole"]>;
+  /** A dialog that is a long list inside a scrolling body: the window holds the dialog and its close button, not every entry of the list. */
+  bodyScrolls?: boolean;
 };
 
 export const DIALOGS: DialogCase[] = [
+  {
+    name: "Add a section",
+    url: "/website/builder",
+    title: "Add a section",
+    bodyScrolls: true,
+    opener: (page) => page.getByRole("button", { name: "Add section" }).first(),
+    open: (page) => page.getByRole("button", { name: "Add section" }).first().click(),
+  },
+  {
+    name: "Delete a page",
+    url: "/website/builder",
+    title: "Delete the About page?",
+    opener: (page) => page.getByRole("button", { name: "Actions for About page" }),
+    open: async (page) => {
+      await page.getByRole("button", { name: "Actions for About page" }).click();
+      await page.getByRole("menuitem", { name: "Delete page" }).click();
+    },
+  },
   { name: "Create booking", url: "/bookings?new=1", open: async () => {}, title: "Create booking" },
   { name: "Record payment", url: "/payments?record=1", open: async () => {}, title: "Record payment" },
   { name: "Create maintenance plan", url: "/maintenance-plans?new=1", open: async () => {}, title: "Create maintenance plan" },

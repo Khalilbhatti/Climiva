@@ -341,10 +341,14 @@ function Intro({ values, Title }: { values: Record<string, string>; Title: "h1" 
   );
 }
 
-/** One registered section, drawn. An unknown type or variant draws nothing (it never reaches here: the loaders drop them). */
-function SectionView({ section, view, active, embedded }: { section: SectionModel; view: SiteView; active: boolean; embedded?: boolean }) {
+/**
+ * One registered section, drawn. An unknown type or variant draws nothing (it never reaches here: the loaders drop them). `primary` marks
+ * the section that carries the page's one level-1 heading (the first hero or page heading on the page); any other title is level 2, so a
+ * page that has two of them still has one h1.
+ */
+export function SiteSection({ section, view, active = false, embedded, primary = true }: { section: SectionModel; view: SiteView; active?: boolean; embedded?: boolean; primary?: boolean }) {
   const values = fillProps(section.props, view.business);
-  const Title: "h1" | "h2" = embedded ? "h2" : "h1";
+  const Title: "h1" | "h2" = embedded || !primary ? "h2" : "h1";
   const id = section.key;
 
   switch (section.type) {
@@ -486,14 +490,20 @@ function SectionView({ section, view, active, embedded }: { section: SectionMode
   }
 }
 
+/** The key of the section that carries a page's level-1 heading: the first visible hero or page heading. */
+export function titleSectionKey(page: PageModel): string | undefined {
+  return orderedSections(page).find((section) => section.visible && (section.type === "hero" || section.type === "page_intro"))?.key;
+}
+
 /** A page: its visible sections in order, each drawn by the component its type is registered to. */
 export function SiteRenderer({ page, view, activeSection, embedded }: Props) {
+  const titleKey = titleSectionKey(page);
   return (
     <>
       {orderedSections(page)
         .filter((section) => section.visible)
         .map((section) => (
-          <SectionView key={section.key} section={section} view={view} active={activeSection === section.key} embedded={embedded} />
+          <SiteSection key={section.key} section={section} view={view} active={activeSection === section.key} embedded={embedded} primary={section.key === titleKey} />
         ))}
     </>
   );

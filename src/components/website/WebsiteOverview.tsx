@@ -34,7 +34,7 @@ import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { WEEK_ORDER } from "@/data/settings";
 import { CUSTOM_DOMAIN_STATUS_LABEL, findPage, getPrimaryDomain, getShownServices, hasUnpublishedChanges, orderedPages, platformHost, type VersionModel } from "@/data/website";
 import { publicSiteHref } from "@/lib/site-domain";
-import { DEFAULT_THEME, accentStyle } from "@/lib/site-theme";
+import { DEFAULT_THEME, themeAttributes, themeStyle } from "@/lib/site-theme";
 import { PREVIEW_BASE, previewHref } from "./site-links";
 import { SiteFooter, SiteHeader, SiteRenderer } from "./SiteRenderer";
 import { BrowserFrame, SiteStatusBadge, usePublishing } from "./site-ui";
@@ -56,6 +56,7 @@ function Card({ title, aside, children }: { title: string; aside?: ReactNode; ch
 const EMPTY_VERSION: VersionModel = {
   id: "",
   number: null,
+  revision: 1,
   status: "draft",
   templateKey: null,
   theme: DEFAULT_THEME,
@@ -185,7 +186,7 @@ export function WebsiteOverview() {
             aside={<span className="text-xs text-ink-muted">{published ? "Live website" : "Draft · not published"}</span>}
           >
             <BrowserFrame address={`https://${primary}`} note={published ? "Live" : "Private"}>
-              <div inert style={{ ...brandStyle, ...accentStyle(shownVersion.theme) }} className="@container h-80 overflow-hidden bg-surface">
+              <div inert {...themeAttributes(shownVersion.theme)} style={{ ...brandStyle, ...themeStyle(shownVersion.theme) }} className="@container h-80 overflow-hidden bg-surface">
                 <SiteHeader view={view} />
                 {home && <SiteRenderer page={home} view={view} embedded />}
                 <SiteFooter view={view} />
@@ -194,7 +195,7 @@ export function WebsiteOverview() {
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-ink-muted">Rendered from your saved pages and your Services catalog.</p>
               <div className="flex gap-2">
-                <ButtonLink href="/website/pages" variant="secondary" size="sm">
+                <ButtonLink href="/website/builder" variant="secondary" size="sm">
                   <FilePenLine aria-hidden className="size-3.5" />
                   Edit website
                 </ButtonLink>

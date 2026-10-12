@@ -24,15 +24,16 @@ import {
   publishSite,
   removeCustomDomain,
   replaceDraftWithTemplate,
-  saveDraftPage,
-  saveServiceDisplay,
   setPrimaryAddress,
   unpublishSite,
   type SiteContext,
 } from "../src/db/site-queries";
 import { withTenant } from "../src/db/tenant";
 import { Refusal } from "../src/lib/refusal";
+import { setServiceDisplay } from "../src/lib/site-builder";
 import { APEX_CONTENT, NORTHSTAR_CONTENT } from "./apex-data";
+import type { SiteContent } from "../src/lib/site-template";
+import { editDraft, editSection, readDraft, saveContent, setHeadlineOf } from "./draft-edits";
 import { test } from "./fixtures";
 import { versionOf } from "./website-edits";
 
@@ -116,8 +117,7 @@ async function heroProps(site: string): Promise<Record<string, string>> {
 }
 
 async function setHeadline(tenant: Tenant, site: string, headline: string) {
-  const props = await heroProps(site);
-  await must(tenant, (ctx) => saveDraftPage(ctx, site, "home", { sections: { hero: { visible: true, props: { ...props, headline } } } }));
+  await must(tenant, (ctx) => setHeadlineOf(ctx, site, headline));
 }
 
 const liveHero = async (site: string) => {
@@ -175,7 +175,7 @@ test.describe("publishing", () => {
     const [firstContent, secondContent] = [await contentOf(first.id), await contentOf(second.id)];
 
     await setHeadline(workerTenant, site, "Only a draft");
-    await must(workerTenant, (ctx) => saveServiceDisplay(ctx, site, { order: [], hidden: ["furnace-safety-inspection"] }));
+    await must(workerTenant, (ctx) => editDraft(ctx, site, (content) => setServiceDisplay(content, { order: [], hidden: ["furnace-safety-inspection"] })));
     expect(await contentOf(first.id)).toEqual(firstContent);
     expect(await contentOf(second.id)).toEqual(secondContent);
     expect(await publishedHeadline(workerTenant.platformSlug)).toBe("Version two headline");
@@ -275,7 +275,7 @@ test.describe("publishing", () => {
     const props = await heroProps(site);
     await setHeadline(workerTenant, site, "Before the save");
     const [save, publish] = await Promise.all([
-      operate(workerTenant, (ctx) => saveDraftPage(ctx, site, "home", { sections: { hero: { visible: true, props: { ...props, headline: "After the save", primaryCta: "Call now" } } } })),
+      operate(workerTenant, (ctx) => editDraft(ctx, site, (content) => editSection(content, "home", "hero", { props: { headline: "After the save", primaryCta: "Call now" } }))),
       operate(workerTenant, (ctx) => publishSite(ctx, site, workerTenant.userId)),
     ]);
     expect("value" in save && "value" in publish).toBe(true);
@@ -304,7 +304,7 @@ test.describe("saving a page of the Draft", () => {
   test("a save stores the text and visibility, validated against the section's type; the Published version is untouched", async ({ workerTenant }) => {
     const site = await siteId(workerTenant);
     const props = await heroProps(site);
-    await must(workerTenant, (ctx) => saveDraftPage(ctx, site, "home", { sections: { hero: { visible: false, props: { ...props, headline: "Saved headline" } } } }));
+    await must(workerTenant, (ctx) => editDraft(ctx, site, (content) => editSection(content, "home", "hero", { visible: false, props: { ...props, headline: "Saved headline" } })));
     const row = await admin.query<{ is_visible: boolean; props: Record<string, string> }>(
       "select s.is_visible, s.props from site_sections s join site_pages p on p.id = s.page_id where p.site_version_id = $1 and p.page_key = 'home' and s.section_key = 'hero'",
       [(await draftOf(site)).id],
@@ -313,36 +313,44 @@ test.describe("saving a page of the Draft", () => {
     expect(await publishedHeadline(workerTenant.platformSlug)).toBe("Heating & cooling service when you need it.");
   });
 
-  test("a save with markup, an unknown field, a missing field, an unknown section or an unknown page is refused whole", async ({ workerTenant }) => {
+  test("a save with markup, an unknown field, a missing field, an unknown section type or a broken page is refused whole", async ({ workerTenant }) => {
     const site = await siteId(workerTenant);
-    const props = await heroProps(site);
     const draft = await contentOf((await draftOf(site)).id);
-    const attempts: Record<string, unknown>[] = [
-      { hero: { visible: true, props: { ...props, headline: "<img src=x onerror=alert(1)>" } } },
-      { hero: { visible: true, props: { ...props, headline: "javascript:alert(1)" } } },
-      { hero: { visible: true, props: { ...props, onClick: "x" } } },
-      { hero: { visible: true, props: { ...props, headline: "" } } },
-      { hero: { visible: "yes", props } },
-      { nope: { visible: true, props } },
+    const hero = (content: SiteContent, patch: { visible?: boolean; props?: Record<string, string> }) => editSection(content, "home", "hero", patch);
+    const attempts: Record<string, (content: SiteContent) => unknown> = {
+      markup: (content) => hero(content, { props: { headline: "<img src=x onerror=alert(1)>" } }),
+      "script address": (content) => hero(content, { props: { headline: "javascript:alert(1)" } }),
+      "unknown field": (content) => hero(content, { props: { onClick: "x" } }),
+      "empty required text": (content) => hero(content, { props: { headline: "" } }),
+      "visibility that is not a boolean": (content) => hero(content, { visible: "yes" as never }),
+      "unknown section type": (content) => ({
+        ...content,
+        pages: content.pages.map((page) => (page.key !== "home" ? page : { ...page, sections: [...page.sections, { key: "nope", label: "Nope", type: "carousel", variant: "default", visible: true, props: {} }] })),
+      }),
       // One good section and one bad one: nothing is stored.
-      { hero: { visible: true, props: { ...props, headline: "Good" } }, bookingCta: { visible: true, props: { heading: "<b>x</b>", supportingText: "x", buttonLabel: "x" } } },
-    ];
-    for (const sections of attempts) {
-      const result = await operate(workerTenant, (ctx) => saveDraftPage(ctx, site, "home", { sections: sections as never }));
-      expect(result, JSON.stringify(sections).slice(0, 80)).toHaveProperty("refused");
-      expect(await contentOf((await draftOf(site)).id)).toEqual(draft);
+      "one good section and one bad": (content) =>
+        editSection(hero(content, { props: { headline: "Good" } }), "home", "bookingCta", { props: { heading: "<b>x</b>" } }),
+      "no pages": (content) => ({ ...content, pages: [] }),
+    };
+    for (const [name, make] of Object.entries(attempts)) {
+      const result = await operate(workerTenant, async (ctx) => saveContent(ctx, site, make((await readDraft(ctx, site)).content)));
+      expect(result, name).toHaveProperty("refused");
+      expect(await contentOf((await draftOf(site)).id), name).toEqual(draft);
     }
-    expect(await operate(workerTenant, (ctx) => saveDraftPage(ctx, site, "no-such-page", { sections: {} }))).toHaveProperty("refused");
   });
 
   test("the list of Services the site shows is stored as references and validated; the Services themselves are not touched", async ({ workerTenant }) => {
     const site = await siteId(workerTenant);
     const services = JSON.stringify((await admin.query("select slug, name, price_amount, is_active, visibility from services where organization_id = $1 order by slug", [workerTenant.organizationId])).rows);
-    await must(workerTenant, (ctx) => saveServiceDisplay(ctx, site, { order: ["furnace-safety-inspection"], hidden: ["annual-cooling-tune-up"] }));
+    await must(workerTenant, (ctx) => editDraft(ctx, site, (content) => setServiceDisplay(content, { order: ["furnace-safety-inspection"], hidden: ["annual-cooling-tune-up"] })));
     const settings = (await admin.query<{ settings: unknown }>("select settings from site_versions where id = $1", [(await draftOf(site)).id])).rows[0].settings;
     expect(settings).toEqual({ serviceDisplay: { order: ["furnace-safety-inspection"], hidden: ["annual-cooling-tune-up"] } });
     for (const bad of [null, "x", [], { order: "x", hidden: [] }, { order: ["Not A Slug"], hidden: [] }, { order: [], hidden: [5] }]) {
-      expect(await operate(workerTenant, (ctx) => saveServiceDisplay(ctx, site, bad))).toHaveProperty("refused");
+      const result = await operate(workerTenant, async (ctx) => {
+        const { content } = await readDraft(ctx, site);
+        return saveContent(ctx, site, { ...content, settings: { serviceDisplay: bad } });
+      });
+      expect(result, JSON.stringify(bad)).toHaveProperty("refused");
     }
     expect(JSON.stringify((await admin.query("select slug, name, price_amount, is_active, visibility from services where organization_id = $1 order by slug", [workerTenant.organizationId])).rows)).toBe(services);
   });

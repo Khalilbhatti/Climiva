@@ -179,7 +179,7 @@ test.describe("the sidebar is exactly the approved navigation", () => {
       ["/customers/sarah-mitchell/properties", "/customers"],
       ["/team/roles/owner", "/team"],
       ["/quotes-invoices/invoices/INV-1044", "/quotes-invoices"],
-      ["/website/pages/home", "/website"],
+      ["/website/builder?page=home", "/website"],
       ["/settings/profile", "/settings"],
       ["/analytics?tab=plans", "/analytics"],
     ] as const) {

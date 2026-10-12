@@ -26,6 +26,7 @@
  * the default template is valid.
  */
 import { PAGE_TYPES, type PageType, type VersionSettings } from "@/data/website";
+import { PAGE_RULES, REQUIRED_SECTION, isReservedSlug } from "./site-builder-rules";
 import { SECTION_LABEL_MAX, isSectionType, validateProps, type Props, type SectionType } from "./site-sections";
 import { validateTheme, type SiteTheme } from "./site-theme";
 
@@ -110,6 +111,7 @@ export function validateContent(input: unknown): ContentResult {
       const slug = typeof raw.slug === "string" ? raw.slug : undefined;
       if (slug === undefined || (slug !== "" && (!SLUG.test(slug) || slug.length > 80))) problems.push({ page: key, field: "slug", message: "A page address is lower-case words joined by hyphens." });
       else if ((type === "home") !== (slug === "")) problems.push({ page: key, field: "slug", message: "Only the home page has the site's root address." });
+      else if (isReservedSlug(slug)) problems.push({ page: key, field: "slug", message: "That address is kept by Climvia. Choose another." });
       else if (slugs.has(slug)) problems.push({ page: key, field: "slug", message: "Two pages have the same address." });
       if (slug !== undefined) slugs.add(slug);
       if (raw.visible !== undefined && typeof raw.visible !== "boolean") problems.push({ page: key, field: "visible", message: "A page is visible or hidden." });
@@ -146,7 +148,11 @@ export function validateContent(input: unknown): ContentResult {
         }
       }
       if (typeof type === "string" && (PAGE_TYPES as readonly string[]).includes(type) && slug !== undefined) {
-        pages.push({ key, title, slug, type: type as PageType, visible: raw.visible !== false, sections });
+        const kind = type as PageType;
+        if (raw.visible === false && !PAGE_RULES[kind].hideable) problems.push({ page: key, field: "visible", message: PAGE_RULES[kind].reason ?? "That page can't be hidden." });
+        const required = REQUIRED_SECTION[kind];
+        if (required && !sections.some((section) => section.type === required.type && section.visible)) problems.push({ page: key, message: required.message });
+        pages.push({ key, title, slug, type: kind, visible: raw.visible !== false, sections });
       }
     }
     const homes = pages.filter((page) => page.type === "home");

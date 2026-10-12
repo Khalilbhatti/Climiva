@@ -108,6 +108,8 @@ test.describe("unusual addresses never break a page", () => {
     "/analytics?range=custom",
     "/marketplace/edit?setup=bogus",
     "/website/preview/booking/ac-repair-diagnostics?date=garbage",
+    "/website/builder?page=home&section=nothing",
+    "/website/builder?mode=bogus",
     "/website/pages/home?section=nothing",
     "/customers?search=%00%00",
     "/team?tab=bogus",

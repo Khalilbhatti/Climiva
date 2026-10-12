@@ -21,7 +21,7 @@ export type AppHref =
   | `/quotes-invoices/invoices/${string}`
   | `/payments/${string}`
   | `/maintenance-plans/${string}`
-  | `/website/pages/${string}`
+  | `/website/builder?page=${string}`
   | `/website/preview/${string}`
   | `/sites/${string}`
   | `/listings/${string}`

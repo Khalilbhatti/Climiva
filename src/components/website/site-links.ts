@@ -12,5 +12,5 @@ export function previewHref(path = ""): AppHref {
   return (path === "" ? PREVIEW_BASE : `${PREVIEW_BASE}/${path}`) as AppHref;
 }
 
-/** The page-editor route for a page, by its key. */
-export const editorHref = (pageKey: string): AppHref => `/website/pages/${pageKey}`;
+/** The Website Builder, opened on a page by its key. */
+export const editorHref = (pageKey: string): AppHref => `/website/builder?page=${encodeURIComponent(pageKey)}`;

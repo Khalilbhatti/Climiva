@@ -1,23 +1,12 @@
-import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
-import { PageEditor } from "@/components/website/PageEditor";
-import { getCoreSnapshot } from "@/server/core-data";
+import { redirect } from "next/navigation";
 import { requireWorkspaceContext } from "@/server/workspace";
 
-// The route's [pageId] is the page's stable key ("home", "services", "about" ...), looked up in the ACTIVE business's own Draft.
-export async function generateMetadata({ params }: PageProps<"/website/pages/[pageId]">): Promise<Metadata> {
+/**
+ * The page editor that used to live here is now the Website Builder. This address stays so a saved link or bookmark still lands on the
+ * same page, in the Builder. The [pageId] is the page's stable key; whether it exists in this business's Draft is the Builder's to say.
+ */
+export default async function WebsitePageEditorRedirect({ params }: PageProps<"/website/pages/[pageId]">) {
   await requireWorkspaceContext();
   const { pageId } = await params;
-  const page = (await getCoreSnapshot())?.website?.draft.pages.find((candidate) => candidate.key === pageId);
-  return { title: page ? `Edit ${page.title} page` : "Page not found" };
-}
-
-export default async function WebsitePageEditorPage({ params }: PageProps<"/website/pages/[pageId]">) {
-  await requireWorkspaceContext();
-  const { pageId } = await params;
-  const website = (await getCoreSnapshot())?.website;
-  if (!website) redirect("/website");
-  const page = website.draft.pages.find((candidate) => candidate.key === pageId);
-  if (!page) notFound();
-  return <PageEditor pageKey={page.key} />;
+  redirect(`/website/builder?page=${encodeURIComponent(pageId)}`);
 }

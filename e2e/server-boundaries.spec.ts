@@ -17,6 +17,7 @@ import {
   NORTHSTAR_TEAM,
 } from "../scripts/db/seed-data/northstar";
 import { NORTHSTAR_MARKETING } from "../scripts/db/seed-data/northstar";
+import { RESERVED_PAGE_SLUGS, STALE_DRAFT } from "../src/lib/site-builder-rules";
 import { BOOKINGS, CUSTOMERS, FINANCIALS, JOBS, MARKETING, PLANS, PROPERTIES, REVIEWS, SARAH_REPLY, SERVICES, TEAM } from "./apex-data";
 
 const ROOT = process.cwd();
@@ -275,7 +276,7 @@ test.describe("every Server Action authorizes its caller", () => {
     expect(website).not.toMatch(/requireMember\(/);
     const websiteActions = [...website.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)];
     expect(websiteActions.map(([, name]) => name).sort()).toEqual(
-      ["connectDomainAction", "createWebsiteAction", "publishWebsiteAction", "removeDomainAction", "savePageAction", "setPrimaryAddressAction", "unpublishWebsiteAction"].sort(),
+      ["connectDomainAction", "createWebsiteAction", "publishWebsiteAction", "removeDomainAction", "saveDraftAction", "setPrimaryAddressAction", "unpublishWebsiteAction"].sort(),
     );
     for (const [, name, body] of websiteActions) expect(/>\s\{\s+return mutate\(/.test(body), `${name} must start by handing everything to mutate()`).toBe(true);
     expect(website).not.toMatch(/organizationId:\s*(input|payload|body)|siteId:\s*(input|payload|body)/);
@@ -390,7 +391,7 @@ test.describe("every module reads the database for the verified workspace", () =
       "services/[serviceId]/layout.tsx",
       "team/[memberId]/layout.tsx",
       "team/roles/[roleId]/page.tsx",
-      "website/pages/[pageId]/page.tsx",
+      "website/builder/page.tsx",
     ]) {
       expect(read(join(workspaceDir, file)), file).toMatch(/notFound\(\)/);
     }
@@ -555,7 +556,8 @@ test.describe("the documentation covers the architecture", () => {
       /Settings migration/,
       /Transitional fixtures/,
       /Organization → many Sites/,
-      /future Website Builder/,
+      /Website Builder/,
+      /visual Website Builder/,
       /AWS topology/,
       /SaaS billing vs\. business-customer payments/,
       /Future domain routing/,
@@ -588,11 +590,45 @@ test.describe("the documentation covers the architecture", () => {
       /Authorization and tenant isolation/,
       /Domain record/,
       /Assets and uploaded files/,
-      /Builder boundary/,
+      /Phase 16 changed/,
     ];
     for (const topic of required) expect(headings.some((heading) => topic.test(heading)), String(topic)).toBe(true);
     for (const expected of ["Object storage required for durable uploaded logos/assets", "SELECT … FOR UPDATE", "SECURITY DEFINER", "snapshot-versioned", "Docker verification is required before AWS deployment"]) {
       expect(text, expected).toContain(expected);
+    }
+  });
+
+  test("section 29 documents the Website Builder, topic by topic, with the reserved addresses and the stale-tab sentence", () => {
+    const text = doc();
+    const start = text.indexOf("## 29. The visual Website Builder");
+    expect(start).toBeGreaterThan(0);
+    const section = text.slice(start);
+    const headings = section.split(/\r?\n/).filter((line) => /^###? /.test(line));
+    for (const topic of [
+      /The rule: one model/,
+      /Route and layout/,
+      /State: one working copy/,
+      /Save \/ Discard lifecycle/,
+      /saveSiteDraft/,
+      /Optimistic concurrency/,
+      /registry drives the inspector/,
+      /canvas is the one renderer/,
+      /Sections: add, copy, remove, hide, reorder/,
+      /Pages/,
+      /Theme editing/,
+      /Undo and Redo/,
+      /Who can use it/,
+      /Multi-Site seam/,
+      /Phase 17 template seam/,
+      /Accessibility/,
+      /Tests/,
+      /Limitations/,
+    ]) expect(headings.some((heading) => topic.test(heading)), String(topic)).toBe(true);
+    // Every address a page may not take is written down, and so is what a person is told when their tab is behind.
+    for (const slug of RESERVED_PAGE_SLUGS) expect(section, `reserved address ${slug}`).toContain(`\`${slug}\``);
+    expect(section).toContain(STALE_DRAFT);
+    for (const expected of ["Docker verification is required before AWS deployment", "no shortcut that publishes", "site_versions.revision", "@dnd-kit/core"]) {
+      expect(section, expected).toContain(expected);
     }
   });
 

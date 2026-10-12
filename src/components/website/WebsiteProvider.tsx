@@ -3,15 +3,16 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { useHoursRows, useBusiness } from "@/components/settings/SettingsProvider";
 import { useServices } from "@/components/services/ServicesProvider";
-import { getPrimaryDomain, orderedPages, platformHost, type PageModel, type ServiceDisplay, type VersionModel, type WebsiteState } from "@/data/website";
+import { getPrimaryDomain, orderedPages, platformHost, type PageModel, type VersionModel, type WebsiteState } from "@/data/website";
 import type { ActionResult } from "@/lib/action-result";
+import type { SiteContent } from "@/lib/site-template";
 import { send } from "@/lib/send-action";
 import {
   connectDomainAction,
   createWebsiteAction,
   publishWebsiteAction,
   removeDomainAction,
-  savePageAction,
+  saveDraftAction,
   setPrimaryAddressAction,
   unpublishWebsiteAction,
 } from "@/server/actions/website";
@@ -19,18 +20,14 @@ import type { SiteView } from "./site-view";
 
 type Done = Promise<ActionResult<{ website: WebsiteState | null; versionNumber?: number }>>;
 
-/** What a page save sends: each section's visibility and text, and (the Services page) which Services the site shows. */
-export type PageSave = {
-  sections: Record<string, { visible: boolean; props: Record<string, string> }>;
-  serviceDisplay?: ServiceDisplay;
-};
-
 type WebsiteContextValue = {
   /** The business's primary website as stored (its Draft and Published snapshot), or null before one has been created. */
   website: WebsiteState | null;
   createWebsite: () => Done;
-  savePage: (pageKey: string, save: PageSave) => Done;
-  publish: () => Done;
+  /** Save the whole Draft the Builder edited, against the revision it opened. */
+  saveDraft: (content: SiteContent, expectedRevision: number) => Done;
+  /** Publish the Draft. With a revision, only if the stored Draft is still that one (the Builder always sends it). */
+  publish: (expectedRevision?: number) => Done;
   unpublish: () => Done;
   connectDomain: (domain: string) => Done;
   setPrimaryAddress: (primary: "climvia" | "custom") => Done;
@@ -58,8 +55,8 @@ export function WebsiteProvider({ initial, children }: { initial: WebsiteState |
     () => ({
       website,
       createWebsite: async () => adopt(await send(() => createWebsiteAction())),
-      savePage: async (pageKey, save) => adopt(await send(() => savePageAction({ page: pageKey, ...save }))),
-      publish: async () => adopt(await send(() => publishWebsiteAction())),
+      saveDraft: async (content, expectedRevision) => adopt(await send(() => saveDraftAction({ expectedRevision, content }))),
+      publish: async (expectedRevision) => adopt(await send(() => (expectedRevision === undefined ? publishWebsiteAction() : publishWebsiteAction({ expectedRevision })))),
       unpublish: async () => adopt(await send(() => unpublishWebsiteAction())),
       connectDomain: async (domain) => adopt(await send(() => connectDomainAction({ domain }))),
       setPrimaryAddress: async (primary) => adopt(await send(() => setPrimaryAddressAction({ primary }))),

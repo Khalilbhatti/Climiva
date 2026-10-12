@@ -147,6 +147,12 @@ export const siteVersions = pgTable(
     settings: jsonb("settings").notNull().default(sql`'{}'::jsonb`),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     publishedByUserId: text("published_by_user_id").references(() => authUser.id, { onDelete: "set null" }),
+    /**
+     * Counts every change to a Draft: its theme, settings, pages and sections (maintained inside the database, migration 0015, so no write path can
+     * forget it). The Website Builder sends the revision it opened with when it saves or publishes, and a request made against an older
+     * one is refused: a tab that is behind can never overwrite what another tab saved. A Published version never changes, so neither does it.
+     */
+    revision: integer("revision").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -162,6 +168,7 @@ export const siteVersions = pgTable(
     check("site_versions_number_shape", sql`(${table.status} = 'draft') = (${table.versionNumber} is null) and (${table.versionNumber} is null or ${table.versionNumber} >= 1)`),
     check("site_versions_published_shape", sql`(${table.status} = 'published') = (${table.publishedAt} is not null)`),
     check("site_versions_theme_shape", sql`jsonb_typeof(${table.theme}) = 'object' and coalesce((${table.theme} ->> 'schema')::int = 1, false)`),
+    check("site_versions_revision", sql`${table.revision} >= 1`),
     check("site_versions_settings_shape", sql`jsonb_typeof(${table.settings}) = 'object' and octet_length(${table.settings}::text) <= 20000`),
   ],
 ).enableRLS();

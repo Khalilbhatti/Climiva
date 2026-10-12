@@ -5,14 +5,10 @@ import { SERVICES } from "./apex-data";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
 const main = (page: Page) => page.getByRole("main");
-/** The toast region (the unsaved-changes notice is role="status" too, but it is a paragraph, not this live region). */
-const toast = (page: Page) => page.locator('div[role="status"]');
+/** The toast region (the Builder's drag-and-drop announcer is a status region too, but it is not a polite one). */
+const toast = (page: Page) => page.locator('div[role="status"][aria-live="polite"]');
 const websiteTabs = (page: Page) => page.getByRole("navigation", { name: "Website sections" });
 const card = (page: Page, name: string) => page.getByRole("region", { name });
-
-async function editHeadline(page: Page, text: string) {
-  await page.getByLabel("Headline", { exact: true }).fill(text);
-}
 
 test.describe("Website overview", () => {
   test("Published: header, tabs, status tiles, publishing, address and checklist", async ({ page, workerTenant }) => {
@@ -91,7 +87,7 @@ test.describe("Pages & content", () => {
       const row = pages.filter({ hasText: title }).first();
       await expect(row).toContainText(path);
       await expect(row).toContainText("Published");
-      await expect(row.getByRole("link", { name: `Edit ${title} page` })).toHaveAttribute("href", `/website/pages/${title.toLowerCase()}`);
+      await expect(row.getByRole("link", { name: `Edit ${title} page` })).toHaveAttribute("href", `/website/builder?page=${title.toLowerCase()}`);
     }
     await expect(page.getByRole("button", { name: /add page|new page/i })).toHaveCount(0);
   });
@@ -108,28 +104,34 @@ test.describe("Pages & content", () => {
   });
 });
 
-test.describe("Page editors", () => {
-  for (const [id, title, sections] of [
-    ["home", "Home", ["Hero", "Services", "Why choose us", "Business hours", "Contact", "Booking CTA"]],
-    ["services", "Services", ["Page intro", "Service catalog", "Booking CTA"]],
-    ["about", "About", ["Page intro", "Our business", "What matters to us", "Business details", "Booking CTA"]],
-    ["contact", "Contact", ["Page intro", "Contact details", "Business hours", "Contact form", "Booking CTA"]],
-    ["booking", "Booking", ["Page intro", "Booking experience", "Contact alternative"]],
-  ] as const) {
-    test(`${title} editor opens with its fixed sections and no page-builder, SEO or debug controls`, async ({ page }) => {
+test.describe("Page copy", () => {
+  test("About never invents a founding date, awards or licensing", async ({ page }) => {
+    await page.goto("/website/preview/about");
+    const body = page.locator("body");
+    for (const invented of [/founded/i, /since (19|20)\d\d/i, /award/i, /licensed/i, /insured/i, /certified/i, /years of experience/i]) await expect(body).not.toContainText(invented);
+    await expect(body).toContainText("About Apex Climate Heating & Air");
+  });
+
+  test("the pages are edited in the Website Builder, in the workspace shell: each page opens with its own sections, and the old editor address leads there", async ({ page }) => {
+    for (const [id, title, sections] of [
+      ["home", "Home", ["Hero", "Services", "Why choose us", "Business hours", "Contact", "Booking CTA"]],
+      ["services", "Services", ["Page intro", "Service catalog", "Booking CTA"]],
+      ["about", "About", ["Page intro", "Our business", "What matters to us", "Business details", "Booking CTA"]],
+      ["contact", "Contact", ["Page intro", "Contact details", "Business hours", "Contact form", "Booking CTA"]],
+      ["booking", "Booking", ["Page intro", "Booking experience", "Contact alternative"]],
+    ] as const) {
       await page.goto(`/website/pages/${id}`);
-      await expect(page.getByRole("heading", { level: 1, name: `Edit ${title} page` })).toBeVisible();
+      await expect(page).toHaveURL(`/website/builder?page=${id}`);
+      await expect(page.getByRole("heading", { level: 1, name: "Website Builder" })).toBeVisible();
       await expect(primaryNav(page).getByRole("link", { name: /^Website/ })).toHaveAttribute("aria-current", "page");
-      const list = page.getByRole("region", { name: "Page sections" });
-      for (const section of sections) await expect(list.getByRole("button", { name: new RegExp(`^${section}`) })).toBeVisible();
-      await expect(list.getByRole("button")).toHaveCount(sections.length);
-      await expect(main(page).getByText("Published").first()).toBeVisible();
-      for (const banned of [/seo/i, /meta/i, /debug/i, /drag/i, /add section/i, /site style/i]) await expect(main(page)).not.toContainText(banned);
-      // Breadcrumb back to Pages & content.
-      await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Pages & content" }).click();
-      await expect(page).toHaveURL("/website/pages");
-    });
-  }
+      await expect(page.getByTestId(`builder-page-${id}`)).toContainText(title);
+      const list = page.getByRole("region", { name: "Sections" });
+      for (const section of sections) await expect(list.getByRole("listitem").filter({ hasText: new RegExp(`^${section}`) }).first()).toBeVisible();
+      await expect(list.getByRole("listitem")).toHaveCount(sections.length);
+      // The editor is the Builder only: no SEO, meta or debug controls, and no free-form page building.
+      for (const banned of [/\bseo\b/i, /\bmeta\b/i, /debug/i, /custom (html|css|code)/i]) await expect(main(page)).not.toContainText(banned);
+    }
+  });
 
   test("an unknown page shows a not-found state in the shell", async ({ page, consoleGuard }) => {
     consoleGuard.allow(/status of 404/);
@@ -137,142 +139,23 @@ test.describe("Page editors", () => {
     await expect(primaryNav(page)).toBeVisible();
     await expect(page.getByRole("heading", { name: "We couldn't find that page" })).toBeVisible();
   });
-
-  test("editing shows Unsaved changes, blocks Preview and Publish, and updates the canvas live", async ({ page }) => {
-    await page.goto("/website/pages/home");
-    const save = page.getByRole("button", { name: "Save changes" });
-    await expect(save).toBeDisabled();
-    await editHeadline(page, "Cool homes, fair prices");
-    await expect(page.getByText("Unsaved changes").first()).toBeVisible();
-    await expect(save).toBeEnabled();
-    await expect(page.getByRole("button", { name: "Preview" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Publish changes" })).toBeDisabled();
-    await expect(page.getByRole("region", { name: "Page preview" })).toContainText("Cool homes, fair prices");
-    await expect(page.getByRole("button", { name: /^Hero/ })).toContainText("Edited · Unsaved");
-  });
-
-  test("Save changes keeps the edit as Saved · unpublished changes; Publish makes it live", async ({ page, workerTenant }) => {
-    await page.goto("/website/pages/home");
-    await editHeadline(page, "Cool homes, fair prices");
-    await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(toast(page)).toContainText("Home page saved. Publish to make it live.");
-    await expect(page.getByText("Saved · unpublished changes")).toBeVisible();
-    await expect(page.getByRole("link", { name: "Preview" })).toBeVisible();
-
-    // Stored: the saved edit survives a reload.
-    await page.reload();
-    await expect(page.getByLabel("Headline", { exact: true })).toHaveValue("Cool homes, fair prices");
-    await expect(page.getByText("Saved · unpublished changes")).toBeVisible();
-
-    // The Website header and the list now say the same thing.
-    await backToWorkspaceViaTabs(page);
-    await expect(main(page)).toContainText("Unpublished changes");
-    const home = page.getByRole("region", { name: "Website pages" }).getByRole("listitem").filter({ hasText: "Home" }).first();
-    await expect(home).toContainText("Saved · unpublished changes");
-    await expect(page.getByRole("region", { name: "Website pages" }).getByRole("listitem").filter({ hasText: "About" })).toContainText("Published");
-
-    // Live visitors still see the old headline until publishing: the live website is the published site, its own page.
-    await page.getByRole("link", { name: "View live website" }).click();
-    await expect(page).toHaveURL(`/sites/${workerTenant.platformSlug}`);
-    await expect(page.locator("body")).not.toContainText("Cool homes, fair prices");
-    await expect(page.getByRole("heading", { level: 1, name: "Heating & cooling service when you need it." })).toBeVisible();
-    await page.goBack();
-
-    await page.getByRole("button", { name: "Publish changes" }).first().click();
-    await expect(toast(page)).toContainText("Website published.");
-    await expect(main(page)).not.toContainText("Unpublished changes");
-    await page.getByRole("link", { name: "View live website" }).first().click();
-    await expect(page.getByRole("heading", { level: 1, name: "Cool homes, fair prices" })).toBeVisible();
-  });
-
-  test("Discard edits asks first, and restores the saved content", async ({ page }) => {
-    await page.goto("/website/pages/home");
-    await editHeadline(page, "Something else");
-    await page.getByRole("button", { name: "Discard edits" }).click();
-    const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
-    await expect(dialog).toContainText("Your unsaved edits to the Home page will be lost.");
-    await dialog.getByRole("button", { name: "Keep editing" }).click();
-    await expect(page.getByLabel("Headline", { exact: true })).toHaveValue("Something else");
-    await page.getByRole("button", { name: "Discard edits" }).click();
-    await page.getByRole("dialog", { name: "Discard unsaved changes?" }).getByRole("button", { name: "Discard changes" }).click();
-    await expect(page.getByLabel("Headline", { exact: true })).toHaveValue("Heating & cooling service when you need it.");
-    await expect(page.getByText("All changes saved")).toBeVisible();
-  });
-
-  test("a required field cannot be saved empty; hiding a section changes the canvas", async ({ page }) => {
-    await page.goto("/website/pages/home");
-    await editHeadline(page, "");
-    await expect(page.getByText("This field can't be empty.")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Save changes" })).toBeDisabled();
-    await editHeadline(page, "Back again");
-
-    const canvas = page.getByRole("region", { name: "Page preview" });
-    await expect(canvas).toContainText("Our HVAC Services");
-    await page.getByRole("button", { name: /^Services/ }).click();
-    await page.getByRole("switch", { name: "Show Services section" }).click();
-    await expect(canvas).not.toContainText("Our HVAC Services");
-    await expect(page.getByRole("button", { name: /^Services/ })).toContainText("Hidden");
-  });
-
-  test("the Mobile switch narrows the canvas and is a real toggle", async ({ page }) => {
-    await page.goto("/website/pages/about");
-    const mobile = page.getByRole("button", { name: "Mobile" });
-    const desktop = page.getByRole("button", { name: "Desktop" });
-    await expect(desktop).toHaveAttribute("aria-pressed", "true");
-    const wide = (await page.getByRole("region", { name: "Page preview" }).locator(".\\@container").boundingBox())!.width;
-    await mobile.click();
-    await expect(mobile).toHaveAttribute("aria-pressed", "true");
-    const narrow = (await page.getByRole("region", { name: "Page preview" }).locator(".\\@container").boundingBox())!.width;
-    expect(narrow).toBeLessThanOrEqual(390);
-    expect(narrow).toBeLessThan(wide);
-  });
-
-  test("the canvas is a picture of the page: nothing in it can be clicked or focused", async ({ page }) => {
-    await page.goto("/website/pages/home");
-    const canvas = page.getByRole("region", { name: "Page preview" });
-    await expect(canvas.locator("[inert]")).toHaveCount(1);
-
-    // A click lands on the picture, not on the link inside it.
-    await canvas.getByRole("link", { name: "View services" }).click({ force: true });
-    await expect(page).toHaveURL("/website/pages/home");
-
-    // Tabbing through the whole page never lands inside the canvas.
-    await page.getByRole("heading", { name: "Page sections" }).click();
-    for (let step = 0; step < 40; step += 1) {
-      await page.keyboard.press("Tab");
-      expect(await page.evaluate(() => document.activeElement?.closest("[inert]") !== null && document.activeElement?.closest("[inert]") !== undefined)).toBe(false);
-    }
-  });
-
-  test("About never invents a founding date, awards or licensing", async ({ page }) => {
-    await page.goto("/website/preview/about");
-    const body = page.locator("body");
-    for (const invented of [/founded/i, /since (19|20)\d\d/i, /award/i, /licensed/i, /insured/i, /certified/i, /years of experience/i]) await expect(body).not.toContainText(invented);
-    await expect(body).toContainText("About Apex Climate Heating & Air");
-  });
 });
 
-/** Back to the Pages & content tab from an editor, by the breadcrumb, then up to the hub header. */
-async function backToWorkspaceViaTabs(page: Page) {
-  await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Website" }).click();
-  await expect(page).toHaveURL("/website");
-  await websiteTabs(page).getByRole("link", { name: "Pages & content" }).click();
-}
-
 test.describe("Services on the website", () => {
-  test("the Services editor shows, hides and orders services without touching the catalog", async ({ page }) => {
-    await page.goto("/website/pages/services");
-    await page.getByRole("button", { name: /^Service catalog/ }).click();
+  test("the Builder shows, hides and orders services without touching the catalog, and Pages & content says which pages now differ from the published site", async ({ page }) => {
+    await page.goto("/website/builder?page=services");
+    await page.getByTestId("builder-section-catalog").getByTestId("section-select").click();
     for (const service of SERVICES) await expect(page.getByRole("switch", { name: `Show ${service.name} on the website` })).toBeChecked();
 
     await page.getByRole("switch", { name: "Show Furnace Safety Inspection & Tune-Up on the website" }).click();
     await page.getByRole("button", { name: "Move Annual Cooling Tune-Up & Maintenance up" }).click();
-    const canvas = page.getByRole("region", { name: "Page preview" });
+    const canvas = page.getByTestId("builder-canvas");
     await expect(canvas).not.toContainText("Furnace Safety Inspection & Tune-Up");
     await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(toast(page)).toContainText("Draft saved.");
 
     // Every page that lists services is now saved-but-unpublished; the others are not.
-    await backToWorkspaceViaTabs(page);
+    await page.goto("/website/pages");
     const rows = page.getByRole("region", { name: "Website pages" }).getByRole("listitem");
     for (const title of ["Home", "Services", "Booking"]) await expect(rows.filter({ hasText: title }).first()).toContainText("Saved · unpublished changes");
     for (const title of ["About", "Contact"]) await expect(rows.filter({ hasText: title }).first()).toContainText("Published");
@@ -284,6 +167,7 @@ test.describe("Services on the website", () => {
     await expect(page.getByRole("heading", { level: 2, name: "Furnace Safety Inspection & Tune-Up" })).toHaveCount(0);
 
     await page.getByRole("link", { name: "Back to editor" }).click();
+    await expect(page).toHaveURL("/website/builder?page=services");
     await primaryNav(page).getByRole("link", { name: /^Services/ }).click();
     await expect(page.getByRole("table").locator("tbody tr")).toHaveCount(6);
     await expect(main(page)).toContainText("Furnace Safety Inspection & Tune-Up");
@@ -301,7 +185,7 @@ test.describe("Customer-facing preview", () => {
     await expect(page.getByText(business.name).first()).toBeVisible();
     await expect(page.getByText("© 2025 Apex Climate Heating & Air. All rights reserved. | Powered by Climvia")).toBeVisible();
     await expect(page.getByRole("button", { name: "Desktop" })).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByRole("link", { name: "Back to editor" })).toHaveAttribute("href", "/website/pages/home");
+    await expect(page.getByRole("link", { name: "Back to editor" })).toHaveAttribute("href", "/website/builder?page=home");
   });
 
   test("lists the six canonical services with their catalog price, duration and booking method", async ({ page }) => {
@@ -347,11 +231,12 @@ test.describe("Customer-facing preview", () => {
   });
 
   test("Preview and the live site are different versions, and live follows publishing", async ({ page, workerTenant }) => {
-    await page.goto("/website/pages/home");
-    await editHeadline(page, "Cool homes, fair prices");
+    await page.goto("/website/builder?page=home");
+    await page.getByTestId("builder-section-hero").getByTestId("section-select").click();
+    await page.getByLabel("Headline", { exact: true }).fill("Cool homes, fair prices");
     await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(toast(page)).toContainText("Home page saved.");
-    await page.getByRole("link", { name: "Preview" }).click();
+    await expect(toast(page)).toContainText("Draft saved.");
+    await page.goto("/website/preview");
     await expect(page.getByRole("heading", { level: 1, name: "Cool homes, fair prices" })).toBeVisible();
     await expect(page.getByText("Preview", { exact: true }).first()).toBeVisible();
 
@@ -569,9 +454,13 @@ test.describe("Publishing", () => {
     await page.getByRole("dialog", { name: "Unpublish website?" }).getByRole("button", { name: "Unpublish" }).click();
     await expect(toast(page)).toContainText("Website unpublished.");
     await page.getByRole("link", { name: "Edit website" }).first().click();
-    await page.getByRole("link", { name: "Preview" }).first().click();
+    await expect(page).toHaveURL("/website/builder?page=home");
+    await expect(page.getByTestId("builder-status")).toHaveText("Draft saved");
+    await expect(page.getByRole("link", { name: "View published site" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Preview" })).toHaveAttribute("href", "/website/preview");
+    await page.goto("/website/preview");
     await page.getByRole("link", { name: "Back to editor" }).click();
-    await expect(page).toHaveURL("/website/pages/home");
+    await expect(page).toHaveURL("/website/builder?page=home");
   });
 });
 

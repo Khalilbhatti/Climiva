@@ -52,7 +52,7 @@ function Chrome() {
               <Eye aria-hidden className="size-4" />
               Preview website
             </ButtonLink>
-            <ButtonLink href="/website/pages" variant="secondary">
+            <ButtonLink href="/website/builder" variant="secondary">
               <FilePenLine aria-hidden className="size-4" />
               Edit website
             </ButtonLink>

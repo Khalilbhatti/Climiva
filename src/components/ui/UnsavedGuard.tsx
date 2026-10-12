@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
+import { setWorkDirty } from "@/components/workspace/unsaved-work";
 import { Button } from "./Button";
 import { Modal } from "./Modal";
 
@@ -11,7 +12,8 @@ import { Modal } from "./Modal";
  * link) asks first, and `leave(href)` does the same for a button that navigates. `confirmDiscard(action)` asks the
  * same question for a Discard button that stays on the page, and runs `action` once confirmed. The returned `guard`
  * is the dialog: render it once. `description` replaces the standard wording when a screen has its own.
- * Reloading or closing the tab is the browser's own and is not intercepted.
+ * Reloading or closing the tab is the browser's own and is not intercepted. While `dirty`, the screen is also reported to
+ * `components/workspace/unsaved-work`, which the buttons that leave the workspace without a link (switching business, logging out) ask.
  */
 export function useUnsavedGuard(
   dirty: boolean,
@@ -19,8 +21,14 @@ export function useUnsavedGuard(
   description?: string,
 ): { guard: ReactNode; leave: (href: string) => void; confirmDiscard: (action: () => void) => void } {
   const router = useRouter();
+  const id = useId();
   // Either a link to follow once confirmed, or an in-page action to run.
   const [pending, setPending] = useState<{ href: string } | { action: () => void } | null>(null);
+
+  useEffect(() => {
+    setWorkDirty(id, dirty);
+    return () => setWorkDirty(id, false);
+  }, [id, dirty]);
 
   useEffect(() => {
     if (!dirty) return;

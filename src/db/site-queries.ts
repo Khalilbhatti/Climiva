@@ -11,7 +11,7 @@
  *   createSite                  a Site (an organization may have many); the first is its primary site
  *   createDraftFromTemplate     the Site's one Draft, from an application template: theme, settings, pages, sections
  *   replaceDraftWithTemplate    the same, over an existing Draft, only when the caller says the Draft may be replaced
- *   saveDraftPage / saveServiceDisplay   edit the Draft; a Published version is never touched
+ *   saveSiteDraft               save the whole Draft the Builder edited (theme, settings, pages, sections) in one transaction, against a revision
  *   publishSite                 validate the whole Draft, then copy it into a NEW immutable Published version and point the site at it
  *   unpublishSite               the site is private again; its versions are kept
  *   connect/remove a custom domain, choose the primary address
@@ -28,8 +28,10 @@ import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { hasUnpublishedChanges, type CustomDomainStatus, type DomainState, type PageModel, type PageType, type SectionModel, type VersionModel, type VersionSettings, type WebsiteState } from "@/data/website";
 import { refuse } from "@/lib/refusal";
 import { normalizeDomain, DOMAIN_PROBLEM } from "@/lib/site-domain";
-import { isSectionType, readProps, validateProps, type Props, type SectionType } from "@/lib/site-sections";
-import { validateContent, validateTemplateDefinition, type SiteContent } from "@/lib/site-template";
+import { problemFields } from "@/lib/site-builder-fields";
+import { PAGE_RULES, STALE_DRAFT } from "@/lib/site-builder-rules";
+import { isSectionType, readProps } from "@/lib/site-sections";
+import { validateContent, validateTemplateDefinition, type ContentPage, type SiteContent } from "@/lib/site-template";
 import { readTheme } from "@/lib/site-theme";
 import type { Tx } from "./index";
 import { siteTemplates, sitePages, siteSections, sites, siteVersions, type SitePageRow, type SiteRow, type SiteSectionRow, type SiteVersionRow } from "./schema";
@@ -91,6 +93,7 @@ function versionModel(version: SiteVersionRow, templateKey: string | null, pages
   return {
     id: version.id,
     number: version.versionNumber,
+    revision: version.revision,
     status: version.status as VersionModel["status"],
     templateKey,
     theme: readTheme(version.theme),
@@ -312,71 +315,197 @@ export async function replaceDraftWithTemplate(ctx: SiteContext, siteId: string,
 
 /* ───────────────────────── editing the Draft ───────────────────────── */
 
-export type SectionEdit = { visible: boolean; props: unknown };
-export type PageEdit = { sections: Record<string, SectionEdit> };
-
-/**
- * Save one page of the Draft: for each section the edit names, its visibility and its text. Every section's text is validated against
- * its type and variant (lib/site-sections) before anything is written, and a section the page does not have is refused. Sections the
- * edit does not name are left as they are. Nothing but the Draft can be reached: a Published page is not selectable here.
- */
-export async function saveDraftPage(ctx: SiteContext, siteId: string, pageKey: string, edit: PageEdit): Promise<void> {
-  const { tx, organizationId } = ctx;
-  await lockSite(tx, organizationId, siteId);
-  const draft = await findDraft(tx, organizationId, siteId);
-  if (!draft) return refuse("This website has no draft yet.");
-  const pageRows = await tx
-    .select()
-    .from(sitePages)
-    .where(and(eq(sitePages.organizationId, organizationId), eq(sitePages.siteVersionId, draft.id), eq(sitePages.pageKey, pageKey)))
-    .limit(1);
-  const page = pageRows[0];
-  if (!page) return refuse("That page no longer exists. Reload the page and try again.");
-  const existing = await tx.select().from(siteSections).where(and(eq(siteSections.organizationId, organizationId), eq(siteSections.pageId, page.id)));
-
-  const changes: { row: SiteSectionRow; props: Props; visible: boolean }[] = [];
-  const problems: Record<string, string> = {};
-  for (const [key, change] of Object.entries(edit.sections)) {
-    const row = existing.find((candidate) => candidate.sectionKey === key);
-    if (!row) return refuse("That section no longer exists. Reload the page and try again.");
-    if (typeof change.visible !== "boolean") return refuse("The section's visibility was not understood.");
-    const checked = validateProps(row.type, row.variant, change.props);
-    if (!checked.ok) {
-      if (Object.keys(checked.fields).length === 0) return refuse(checked.error);
-      for (const [field, message] of Object.entries(checked.fields)) problems[`${key}.${field}`] = message;
-      continue;
-    }
-    changes.push({ row, props: checked.props, visible: change.visible });
-  }
-  if (Object.keys(problems).length > 0) return refuse("Check the highlighted fields.", problems);
-
-  for (const { row, props, visible } of changes) {
-    // validateProps accepted the type, so it is a registered one.
-    if (visible === row.isVisible && JSON.stringify(props) === JSON.stringify(readProps(row.type as SectionType, row.variant, row.props))) continue;
-    await tx
-      .update(siteSections)
-      .set({ props, isVisible: visible })
-      .where(and(eq(siteSections.organizationId, organizationId), eq(siteSections.id, row.id)));
-  }
+/** Two JSON values are the same when their keys and values are, whatever order the database or the caller wrote the keys in. */
+function canonical(value: unknown): string {
+  const sorted = (input: unknown): unknown =>
+    Array.isArray(input)
+      ? input.map(sorted)
+      : typeof input === "object" && input !== null
+        ? Object.fromEntries(Object.entries(input as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([key, item]) => [key, sorted(item)]))
+        : input;
+  return JSON.stringify(sorted(value));
 }
 
-const SERVICE_REF = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export type DraftSave = { revision: number; changed: boolean };
 
-/** Which Services the Draft shows and in what order: references by Service slug, resolved against the business's own Services when drawn. */
-export async function saveServiceDisplay(ctx: SiteContext, siteId: string, display: unknown): Promise<void> {
+/**
+ * Save the whole Draft the Website Builder edited: its theme, its settings and every page with its sections, in order. One transaction,
+ * and the Site is locked first, so two saves (or a save and a publish) queue up and never interleave.
+ *
+ *   - `expectedRevision` is the revision the editor opened the Draft at. If the stored Draft has moved on (another tab saved), nothing is
+ *     written and the answer is STALE_DRAFT: a copy that is behind never overwrites a newer one.
+ *   - The content is validated as a whole (`validateContent`: every section against its registered type and variant, plain text only,
+ *     addresses unique and not reserved, the home page present and visible, the booking page keeping its list of Services) before anything
+ *     is written, and the structural rules that depend on what is stored are checked here: the home page and the booking page cannot be
+ *     deleted, and no page changes kind.
+ *   - Rows are matched by KEY (a page by its `page_key`, a section by its key within its page), never by an id from the request, so the
+ *     request cannot name another site's or another business's row. Rows the content no longer has are deleted, new ones are inserted
+ *     with new ids, changed ones are updated (only the columns that changed), unchanged ones are left alone. Only the Draft's rows are
+ *     reachable: a Published version's rows are not selectable here and PostgreSQL refuses to write them anyway.
+ *
+ * Returns the new revision. Saving what is already stored writes nothing and does not move the revision.
+ */
+export async function saveSiteDraft(ctx: SiteContext, siteId: string, input: { expectedRevision: unknown; content: unknown }): Promise<DraftSave> {
   const { tx, organizationId } = ctx;
-  if (typeof display !== "object" || display === null || Array.isArray(display)) return refuse("The list of Services was not understood.");
-  const { order, hidden } = display as Record<string, unknown>;
-  const list = (value: unknown): string[] | undefined =>
-    Array.isArray(value) && value.length <= 200 && value.every((item) => typeof item === "string" && SERVICE_REF.test(item) && item.length <= 80) ? [...new Set(value as string[])] : undefined;
-  const cleanOrder = list(order);
-  const cleanHidden = list(hidden);
-  if (!cleanOrder || !cleanHidden) return refuse("The list of Services was not understood.");
   await lockSite(tx, organizationId, siteId);
-  const draft = await findDraft(tx, organizationId, siteId);
-  if (!draft) return refuse("This website has no draft yet.");
-  const settings = { ...(typeof draft.settings === "object" && draft.settings !== null ? (draft.settings as Record<string, unknown>) : {}), serviceDisplay: { order: cleanOrder, hidden: cleanHidden } };
-  await tx.update(siteVersions).set({ settings }).where(and(eq(siteVersions.organizationId, organizationId), eq(siteVersions.id, draft.id)));
+  const draftRow = await findDraft(tx, organizationId, siteId);
+  if (!draftRow) return refuse("This website has no draft yet.");
+  if (typeof input.expectedRevision !== "number" || !Number.isInteger(input.expectedRevision) || input.expectedRevision < 1) return refuse("The website was not understood.");
+  if (draftRow.revision !== input.expectedRevision) return refuse(STALE_DRAFT);
+
+  const checked = validateContent(input.content);
+  if (!checked.ok) return refuse(`The website can't be saved yet. ${checked.problems[0]?.message ?? ""}`.trim(), problemFields(checked.problems));
+  const content = checked.content;
+
+  const stored = await loadRawDraft(tx, organizationId, draftRow);
+  const storedByKey = new Map(stored.pages.map((row) => [row.pageKey, row]));
+  const keptKeys = new Set(content.pages.map((page) => page.key));
+
+  // What cannot change, whatever the request says.
+  for (const row of stored.pages) {
+    const rule = PAGE_RULES[row.pageType as PageType];
+    if (!keptKeys.has(row.pageKey) && !(rule?.removable ?? false)) return refuse(rule?.reason ?? "That page can't be deleted.");
+  }
+  for (const page of content.pages) {
+    const row = storedByKey.get(page.key);
+    if (row && row.pageType !== page.type) return refuse("The kind of a page can't change.");
+  }
+
+  let changed = false;
+  const where = {
+    page: (id: string) => and(eq(sitePages.organizationId, organizationId), eq(sitePages.id, id)),
+    section: (id: string) => and(eq(siteSections.organizationId, organizationId), eq(siteSections.id, id)),
+  };
+
+  // 1. Pages the content no longer has go, with their sections.
+  const goneIds = stored.pages.filter((row) => !keptKeys.has(row.pageKey)).map((row) => row.id);
+  if (goneIds.length > 0) {
+    await tx.delete(siteSections).where(and(eq(siteSections.organizationId, organizationId), inArray(siteSections.pageId, goneIds)));
+    await tx.delete(sitePages).where(and(eq(sitePages.organizationId, organizationId), inArray(sitePages.id, goneIds)));
+    changed = true;
+  }
+
+  // 2. Sections a kept page no longer has (or has with another type: a section's type is its identity, so it is replaced) go.
+  const sectionsOf = (pageId: string) => stored.sections.filter((row) => row.pageId === pageId);
+  for (const page of content.pages) {
+    const row = storedByKey.get(page.key);
+    if (!row) continue;
+    const gone = sectionsOf(row.id).filter((section) => {
+      const next = page.sections.find((candidate) => candidate.key === section.sectionKey);
+      return !next || next.type !== section.type;
+    });
+    if (gone.length > 0) {
+      await tx.delete(siteSections).where(and(eq(siteSections.organizationId, organizationId), inArray(siteSections.id, gone.map((section) => section.id))));
+      changed = true;
+    }
+  }
+
+  // 3. A page's address is unique within the Draft, and two kept pages may swap addresses: park the ones that change under a temporary one first.
+  const slugChanged = content.pages.filter((page) => {
+    const row = storedByKey.get(page.key);
+    return row !== undefined && row.slug !== page.slug;
+  });
+  for (const page of slugChanged) {
+    await tx.update(sitePages).set({ slug: `tmp-${randomUUID()}` }).where(where.page(storedByKey.get(page.key)!.id));
+    changed = true;
+  }
+
+  // 4. Kept pages: the columns that changed.
+  const order = new Map(content.pages.map((page, index) => [page.key, index]));
+  for (const page of content.pages) {
+    const row = storedByKey.get(page.key);
+    if (!row) continue;
+    const patch: Partial<typeof sitePages.$inferInsert> = {};
+    if (row.title !== page.title) patch.title = page.title;
+    if (row.slug !== page.slug) patch.slug = page.slug;
+    if (row.isVisible !== page.visible) patch.isVisible = page.visible;
+    if (row.sortOrder !== order.get(page.key)) patch.sortOrder = order.get(page.key)!;
+    if (Object.keys(patch).length > 0) {
+      await tx.update(sitePages).set(patch).where(where.page(row.id));
+      changed = true;
+    }
+  }
+
+  // 5. New pages, with their sections.
+  const insertSections = async (pageId: string, page: ContentPage, only?: Set<string>) => {
+    const rows = page.sections
+      .map((section, index) => ({ section, index }))
+      .filter(({ section }) => !only || only.has(section.key))
+      .map(({ section, index }) => ({
+        id: randomUUID(),
+        organizationId,
+        siteId,
+        siteVersionId: draftRow.id,
+        pageId,
+        sectionKey: section.key,
+        label: section.label,
+        type: section.type,
+        variant: section.variant,
+        props: section.props,
+        sortOrder: index,
+        isVisible: section.visible,
+      }));
+    if (rows.length > 0) {
+      await tx.insert(siteSections).values(rows);
+      changed = true;
+    }
+  };
+  for (const page of content.pages) {
+    if (storedByKey.has(page.key)) continue;
+    const id = randomUUID();
+    await tx.insert(sitePages).values({
+      id,
+      organizationId,
+      siteId,
+      siteVersionId: draftRow.id,
+      pageKey: page.key,
+      title: page.title,
+      slug: page.slug,
+      pageType: page.type,
+      sortOrder: order.get(page.key)!,
+      isVisible: page.visible,
+    });
+    changed = true;
+    await insertSections(id, page);
+  }
+
+  // 6. Kept pages' sections: changed ones are updated, new (and replaced) ones are inserted.
+  for (const page of content.pages) {
+    const row = storedByKey.get(page.key);
+    if (!row) continue;
+    const existing = new Map(sectionsOf(row.id).map((section) => [section.sectionKey, section]));
+    const fresh = new Set<string>();
+    for (const [index, section] of page.sections.entries()) {
+      const before = existing.get(section.key);
+      if (!before || before.type !== section.type) {
+        fresh.add(section.key);
+        continue;
+      }
+      const patch: Partial<typeof siteSections.$inferInsert> = {};
+      if (before.label !== section.label) patch.label = section.label;
+      if (before.variant !== section.variant) patch.variant = section.variant;
+      if (canonical(before.props) !== canonical(section.props)) patch.props = section.props;
+      if (before.sortOrder !== index) patch.sortOrder = index;
+      if (before.isVisible !== section.visible) patch.isVisible = section.visible;
+      if (Object.keys(patch).length > 0) {
+        await tx.update(siteSections).set(patch).where(where.section(before.id));
+        changed = true;
+      }
+    }
+    await insertSections(row.id, page, fresh);
+  }
+
+  // 7. The theme and the site-wide settings live on the version.
+  if (canonical(draftRow.theme) !== canonical(content.theme) || canonical(draftRow.settings) !== canonical(content.settings)) {
+    await tx
+      .update(siteVersions)
+      .set({ theme: content.theme, settings: content.settings })
+      .where(and(eq(siteVersions.organizationId, organizationId), eq(siteVersions.id, draftRow.id)));
+    changed = true;
+  }
+
+  const [{ revision }] = await tx.select({ revision: siteVersions.revision }).from(siteVersions).where(and(eq(siteVersions.organizationId, organizationId), eq(siteVersions.id, draftRow.id)));
+  return { revision, changed };
 }
 
 /* ───────────────────────── publishing ───────────────────────── */
@@ -426,11 +555,13 @@ export type Published = { versionId: string; number: number; changed: boolean };
  * the database). If the site is already published with exactly the Draft's content there is nothing to publish: the current version is
  * returned and no copy is made. Editing the Draft afterwards never touches a Published version.
  */
-export async function publishSite(ctx: SiteContext, siteId: string, userId: string): Promise<Published> {
+export async function publishSite(ctx: SiteContext, siteId: string, userId: string, options: { expectedRevision?: number } = {}): Promise<Published> {
   const { tx, organizationId } = ctx;
   const site = await lockSite(tx, organizationId, siteId);
   const draftRow = await findDraft(tx, organizationId, siteId);
   if (!draftRow) return refuse("This website has no draft to publish.");
+  // The Builder publishes the Draft it is showing: if the stored one has moved on, it is not the one the person looked at.
+  if (options.expectedRevision !== undefined && draftRow.revision !== options.expectedRevision) return refuse(STALE_DRAFT);
   const draft = await loadRawDraft(tx, organizationId, draftRow);
 
   const problems = publishProblems(rawContent(draft));

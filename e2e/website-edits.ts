@@ -11,6 +11,7 @@ export function versionOf(content: SiteContent, status: "draft" | "published" = 
     id: `version-${status}-${number ?? 0}`,
     number,
     status,
+    revision: 1,
     templateKey: "climvia-starter",
     theme: content.theme,
     settings: content.settings,

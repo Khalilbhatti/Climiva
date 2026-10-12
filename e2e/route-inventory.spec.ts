@@ -125,6 +125,7 @@ test.describe("an unknown record is handled inside the shell", () => {
     "/payments/PAY-000",
     "/maintenance-plans/not-a-plan",
     "/website/pages/not-a-page",
+    "/website/builder?page=not-a-page",
     "/reviews/not-a-review",
     "/marketing/not-a-campaign",
     "/marketing/not-a-campaign/edit",

@@ -3,12 +3,13 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowLeft, Monitor, Smartphone } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useBrandStyle } from "@/components/settings/SettingsProvider";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { getPrimaryDomain, orderedPages } from "@/data/website";
-import { cn } from "@/lib/cn";
-import { accentStyle } from "@/lib/site-theme";
+import { themeAttributes, themeStyle } from "@/lib/site-theme";
+import { PreviewModeSwitch } from "../PreviewModeSwitch";
+import { DEFAULT_PREVIEW_MODE, previewMode, type PreviewModeId } from "../preview-modes";
 import { editorHref, PREVIEW_BASE } from "../site-links";
 import { SiteFooter, SiteHeader } from "../SiteRenderer";
 import { useSiteView, useWebsiteState } from "../WebsiteProvider";
@@ -22,7 +23,7 @@ export function PreviewShell({ children }: { children: ReactNode }) {
   const website = useWebsiteState();
   const brandStyle = useBrandStyle();
   const pathname = usePathname();
-  const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
+  const [device, setDevice] = useState<PreviewModeId>(DEFAULT_PREVIEW_MODE);
   const view = useSiteView(website.draft, PREVIEW_BASE);
 
   const sitePath = pathname.replace(/^\/website\/preview/, "") || "/";
@@ -46,36 +47,17 @@ export function PreviewShell({ children }: { children: ReactNode }) {
             </span>
             <StatusBadge tone="primary">Preview</StatusBadge>
           </span>
-          <div role="group" aria-label="Preview size" className="flex rounded-btn bg-surface-low p-1">
-            {(
-              [
-                { id: "desktop", label: "Desktop", icon: Monitor },
-                { id: "mobile", label: "Mobile", icon: Smartphone },
-              ] as const
-            ).map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                aria-pressed={device === option.id}
-                onClick={() => setDevice(option.id)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-semibold transition-colors",
-                  device === option.id ? "bg-surface text-primary shadow-card" : "text-ink-muted hover:text-ink",
-                )}
-              >
-                <option.icon aria-hidden className="size-3.5" />
-                {option.label}
-              </button>
-            ))}
-          </div>
+          <PreviewModeSwitch value={device} onChange={setDevice} />
         </div>
       </div>
 
       <div className="px-4 py-6">
         <div
           data-testid="site-frame"
-          style={{ ...brandStyle, ...accentStyle(website.draft.theme) }}
-          className={cn("@container mx-auto overflow-hidden rounded-card border border-line bg-surface shadow-card", device === "mobile" ? "max-w-[390px]" : "max-w-5xl")}
+          {...themeAttributes(website.draft.theme)}
+          data-mode={device}
+          style={{ ...brandStyle, ...themeStyle(website.draft.theme), maxWidth: previewMode(device).width }}
+          className="@container mx-auto overflow-hidden rounded-card border border-line bg-surface shadow-card"
         >
           <SiteHeader view={view} />
           {children}

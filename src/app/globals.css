@@ -115,3 +115,18 @@
     }
   }
 }
+
+/*
+ * A drawn website (the published site, the Draft preview, the Builder's canvas) carries its theme on its wrapper: `data-site-theme` and the
+ * custom properties lib/site-theme builds from the validated tokens. Headings use the theme's heading family and everything else its body
+ * family; compact density tightens the space between sections. Nothing else reads these.
+ */
+[data-site-theme] {
+  font-family: var(--site-font-body, var(--font-sans));
+}
+[data-site-theme] :is(h1, h2, h3) {
+  font-family: var(--site-font-heading, var(--font-sans));
+}
+[data-site-density="compact"] [data-section] {
+  padding-block: 1.25rem;
+}

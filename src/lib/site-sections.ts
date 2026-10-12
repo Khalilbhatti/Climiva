@@ -288,3 +288,189 @@ export function readProps(type: SectionType, variant: string, input: unknown): P
 }
 
 export const SECTION_LABEL_MAX = 60;
+
+/* ───────────────────────── builder metadata ───────────────────────── */
+
+/**
+ * What the Website Builder needs to know about a registered section that the renderer does not: the group it is offered under in the
+ * Section library, a human name and a one-line description for each variant, and the plain text a NEW section starts with. It lives beside
+ * the registry (not in the database and not in the components) so the library, the inspector, the server and the tests all read one
+ * description, and so a section type added here is offered by the Builder without any other change.
+ */
+export const SECTION_CATEGORIES = [
+  { id: "hero", label: "Hero" },
+  { id: "content", label: "Content" },
+  { id: "services", label: "Services" },
+  { id: "booking", label: "Booking" },
+  { id: "contact", label: "Contact" },
+  { id: "action", label: "Calls to action" },
+] as const;
+export type SectionCategory = (typeof SECTION_CATEGORIES)[number]["id"];
+
+type VariantMeta = { label: string; description: string; category: SectionCategory; defaults: Props };
+
+const FEATURE_DEFAULTS = {
+  item1Title: "First point",
+  item1Text: "Say what makes this point matter to your customers.",
+  item2Title: "Second point",
+  item2Text: "Add a second reason to choose your business.",
+  item3Title: "Third point",
+  item3Text: "Finish with a third short, clear point.",
+};
+
+const VARIANT_META: Readonly<Record<SectionType, Readonly<Record<string, VariantMeta>>>> = {
+  hero: {
+    default: {
+      label: "Hero",
+      description: "A large opening banner with a headline, a short introduction and two buttons.",
+      category: "hero",
+      defaults: {
+        headline: "A clear headline for your business",
+        supportingText: "Tell visitors what {{business.name}} does and how to get started.",
+        primaryCta: "Book service",
+        secondaryCta: "View services",
+        alignment: "left",
+      },
+    },
+  },
+  page_intro: {
+    default: {
+      label: "Page heading",
+      description: "The page's title with a short introduction.",
+      category: "content",
+      defaults: { heading: "Page heading", supportingText: "A short introduction to this page.", alignment: "left" },
+    },
+  },
+  service_list: {
+    cards: {
+      label: "Service cards",
+      description: "Your Services as cards under a heading. Prices and booking come from your Service catalog.",
+      category: "services",
+      defaults: { heading: "Our services", supportingText: "Choose a service to see its details and booking options." },
+    },
+    catalog: {
+      label: "Service catalog",
+      description: "Every Service you show, in full, for a Services page.",
+      category: "services",
+      defaults: {},
+    },
+    booking: {
+      label: "Booking options",
+      description: "Your Services as booking choices, so customers can pick one to book.",
+      category: "booking",
+      defaults: {},
+    },
+  },
+  feature_list: {
+    icons: {
+      label: "Three points with icons",
+      description: "A heading and three short reasons, each with an icon.",
+      category: "content",
+      defaults: { heading: "Why choose {{business.name}}", ...FEATURE_DEFAULTS },
+    },
+    plain: {
+      label: "Three points",
+      description: "A heading, an introduction and three short standards, without icons.",
+      category: "content",
+      defaults: { heading: "What you can expect", supportingText: "A few words on how {{business.name}} works.", ...FEATURE_DEFAULTS },
+    },
+  },
+  rich_text: {
+    default: {
+      label: "Text block",
+      description: "A heading with a short paragraph.",
+      category: "content",
+      defaults: { heading: "About this section", body: "Write a few plain sentences here." },
+    },
+  },
+  business_hours: {
+    card: { label: "Hours card", description: "Your business hours, read from Settings.", category: "contact", defaults: {} },
+    page: { label: "Hours card (page level)", description: "Your business hours with a page-level heading, for a page about hours.", category: "contact", defaults: {} },
+  },
+  contact_details: {
+    card: { label: "Contact card", description: "Your phone, email and address, read from Settings.", category: "contact", defaults: {} },
+    page: { label: "Contact card (page level)", description: "Your contact details with a page-level heading.", category: "contact", defaults: {} },
+    callout: {
+      label: "Contact callout",
+      description: "A heading and a sentence beside your contact details.",
+      category: "contact",
+      defaults: { heading: "Get in touch", supportingText: "Reach {{business.name}} by phone or email." },
+    },
+  },
+  business_details: {
+    default: { label: "Business details", description: "Your contact details and business hours side by side, read from Settings.", category: "contact", defaults: {} },
+  },
+  contact_form: {
+    default: {
+      label: "Contact form",
+      description: "A message form. Messages are not delivered yet: the public site points visitors to your phone and email.",
+      category: "contact",
+      defaults: { heading: "Send us a message", supportingText: "Tell us what you need and how to reach you." },
+    },
+  },
+  call_to_action: {
+    default: {
+      label: "Call to action",
+      description: "A closing banner that leads visitors to book.",
+      category: "action",
+      defaults: { heading: "Ready to get started?", supportingText: "Pick a service and choose a time that suits you.", buttonLabel: "Book service" },
+    },
+  },
+};
+
+export type LibraryEntry = { type: SectionType; variant: string; label: string; description: string; category: SectionCategory };
+
+/** Every section a person may add: each registered type and variant, with its name, description and group. */
+export const SECTION_LIBRARY: readonly LibraryEntry[] = SECTION_TYPES.flatMap((type) =>
+  SECTION_REGISTRY[type].variants.map((variant) => {
+    const meta = VARIANT_META[type][variant.id];
+    return { type, variant: variant.id, label: meta.label, description: meta.description, category: meta.category };
+  }),
+);
+
+/** The name of a variant for a person ("Service cards"); the identifier when it is not known. */
+export const variantLabel = (type: SectionType, variant: string): string => VARIANT_META[type][variant]?.label ?? variant;
+
+export const variantDescription = (type: SectionType, variant: string): string => VARIANT_META[type][variant]?.description ?? "";
+
+/** The plain text a new section of this type and variant starts with: every field it declares, valid. A copy, never shared. */
+export function defaultPropsFor(type: SectionType, variant: string): Props {
+  const defaults = VARIANT_META[type][variant]?.defaults ?? {};
+  const props: Props = {};
+  for (const field of fieldsOf(type, variant)) if (defaults[field.key] !== undefined) props[field.key] = defaults[field.key];
+  return props;
+}
+
+/** What a new section is called in the navigator. */
+export const defaultLabelFor = (type: SectionType, variant: string): string => variantLabel(type, variant).slice(0, SECTION_LABEL_MAX);
+
+export type VariantSwitch = {
+  props: Props;
+  /** The names of fields that held text the new style has no place for: the text is removed, so the person is told first. */
+  dropped: string[];
+  /** The names of fields the new style has that the old one did not: they start with the new style's default text. */
+  added: string[];
+};
+
+/**
+ * The text a section has after its style changes. A field both styles have keeps what was written; a field only the new style has starts
+ * with that style's default; a field only the old style had is dropped, and reported when it held something so it is never lost silently.
+ */
+export function switchVariantProps(type: SectionType, from: string, to: string, props: Props): VariantSwitch {
+  const next: Props = {};
+  const added: string[] = [];
+  const defaults = defaultPropsFor(type, to);
+  const newFields = fieldsOf(type, to);
+  for (const field of newFields) {
+    const kept = props[field.key];
+    if (kept !== undefined && (field.kind === "align" || kept.trim() !== "")) next[field.key] = kept;
+    else {
+      next[field.key] = defaults[field.key] ?? "";
+      added.push(fieldLabel(type, to, field));
+    }
+  }
+  const dropped = fieldsOf(type, from)
+    .filter((field) => field.kind !== "align" && !newFields.some((candidate) => candidate.key === field.key) && (props[field.key] ?? "").trim() !== "")
+    .map((field) => fieldLabel(type, from, field));
+  return { props: next, dropped, added };
+}

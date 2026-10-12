@@ -31,8 +31,8 @@ test.describe("Phase 5 guardrail: the public Service catalog stays exactly the s
     await expect(page.locator("main, body").first()).not.toContainText("Cooling maintenance");
     await expect(page.locator("body")).not.toContainText("Heating maintenance");
 
-    await page.goto("/website/pages/services");
-    await page.getByRole("button", { name: /^Service catalog/ }).click();
+    await page.goto("/website/builder?page=services");
+    await page.getByTestId("builder-section-catalog").getByTestId("section-select").click();
     await expect(page.getByRole("switch", { name: /^Show .* on the website$/ })).toHaveCount(6);
     for (const label of PLAN_COVERAGE) await expect(main(page)).not.toContainText(label);
   });

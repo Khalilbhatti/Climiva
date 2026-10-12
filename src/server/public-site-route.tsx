@@ -8,7 +8,7 @@ import { PublicBooking } from "@/components/website/public/PublicBooking";
 import { SiteFooter, SiteHeader, SiteRenderer } from "@/components/website/SiteRenderer";
 import { pageHrefIn } from "@/components/website/site-view";
 import { businessClock } from "@/lib/business-time";
-import { accentStyle } from "@/lib/site-theme";
+import { themeAttributes, themeStyle } from "@/lib/site-theme";
 import { getPublicSite, publicViewOf } from "./public-site";
 
 /**
@@ -52,7 +52,7 @@ export async function PublicSiteRoute({ siteSlug, segments }: { siteSlug: string
     );
 
   return (
-    <div data-testid="site-frame" style={accentStyle(site.version.theme)} className="@container min-h-dvh bg-surface">
+    <div data-testid="site-frame" {...themeAttributes(site.version.theme)} style={themeStyle(site.version.theme)} className="@container min-h-dvh bg-surface">
       <SiteHeader view={view} />
       <main>{content}</main>
       <SiteFooter view={view} />

@@ -64,6 +64,8 @@ export type VersionModel = {
   id: string;
   /** Null for the Draft; a Published version has the number it was given when it was published (1, 2, 3 ...). */
   number: number | null;
+  /** Counts every change to a Draft (a Published version never changes). A Builder that saves or publishes sends the one it opened with. */
+  revision: number;
   status: VersionStatus;
   templateKey: string | null;
   theme: SiteTheme;

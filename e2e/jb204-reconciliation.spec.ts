@@ -5,9 +5,9 @@
  * module below simply reads the same record.
  */
 import type { Page } from "playwright/test";
-import { overviewMetrics, PROTOTYPE_NOW } from "../src/data/fixtures";
+import { PROTOTYPE_NOW } from "../src/data/fixtures";
 import { getBookingById, getJobById } from "../src/data/operations";
-import { BOOKINGS, JOBS, OPERATIONS } from "./apex-data";
+import { BOOKINGS, JOBS, OPERATIONS, OVERVIEW_TOTALS } from "./apex-data";
 import { expect, test } from "./fixtures";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
@@ -27,7 +27,7 @@ test.describe("JB-204 is Completed in the one operational fixture", () => {
   });
 
   test("the global Completed Jobs aggregate stays 18: fixtures are a sample of it, not the number", () => {
-    expect(overviewMetrics.completedJobs).toBe(18);
+    expect(OVERVIEW_TOTALS.completedJobs).toBe(18);
     expect(JOBS.filter((item) => item.status === "completed").length).toBe(7);
     expect(BOOKINGS.filter((item) => item.status === "completed").length).toBe(6);
   });
@@ -103,7 +103,7 @@ test.describe("every module shows JB-204 as completed work", () => {
   });
 });
 
-test.describe("the Completed Jobs aggregate does not move", () => {
+test.describe("the Completed Jobs aggregate is the approved 18 plus what has happened since", () => {
   test("Overview, the sidebar badge and Analytics all say 18", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("region", { name: "Key metrics" })).toContainText("18");
@@ -112,7 +112,7 @@ test.describe("the Completed Jobs aggregate does not move", () => {
     await expect(page.getByRole("region", { name: "Key metrics" })).toContainText("18");
   });
 
-  test("completing another job in the session leaves the aggregate at 18, and the list counts follow the records", async ({ page }) => {
+  test("completing another job moves the aggregate by exactly one (18 → 19), and the list counts follow the records", async ({ page }) => {
     await page.goto("/jobs/JB-201");
     await page.getByRole("button", { name: "Start job" }).click();
     await page.getByRole("button", { name: "Complete job" }).click();
@@ -121,7 +121,7 @@ test.describe("the Completed Jobs aggregate does not move", () => {
     await dialog.getByRole("button", { name: "Complete job" }).click();
 
     await primaryNav(page).getByRole("link", { name: "Overview" }).click();
-    await expect(page.getByRole("region", { name: "Key metrics" })).toContainText("18");
+    await expect(page.getByRole("region", { name: "Key metrics" })).toContainText(/Completed Jobs\s*19/);
     await primaryNav(page).getByRole("link", { name: /^Jobs/ }).click();
     await expect(tab(page, "Completed")).toContainText("8");
   });

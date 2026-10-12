@@ -119,7 +119,7 @@ test.describe("the open menus are accessible", () => {
       await expectAccessible(page);
     }
     // A module that still runs on sample data says so.
-    await page.goto("/marketing");
+    await page.goto("/website");
     await expect(page.getByRole("heading", { level: 2, name: /isn't available/ })).toBeVisible();
     await expectAccessible(page);
   });

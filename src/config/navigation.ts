@@ -19,15 +19,14 @@ import {
   Users,
   Wrench,
 } from "lucide-react";
-import { overviewMetrics } from "@/data/fixtures";
 
 export type NavItem = {
   label: string;
   /** Real application route. Typed routes make a missing page a compile error. */
   href: Route;
   icon: LucideIcon;
-  /** Optional count pill, sourced from fixtures. */
-  badge?: number;
+  /** Optional count pill: which of this month's reporting totals it shows (read from the business's own records). */
+  badge?: "bookings" | "completedJobs";
 };
 
 export type NavGroup = {
@@ -57,7 +56,7 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Bookings",
         href: "/bookings",
         icon: CalendarDays,
-        badge: overviewMetrics.bookings,
+        badge: "bookings",
       },
       {
         label: "Schedule",
@@ -68,7 +67,7 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Jobs",
         href: "/jobs",
         icon: ClipboardList,
-        badge: overviewMetrics.completedJobs,
+        badge: "completedJobs",
       },
       {
         label: "Customers",

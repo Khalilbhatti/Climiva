@@ -1,4 +1,5 @@
-import { business, currentUser, overviewMetrics } from "../src/data/fixtures";
+import { business, currentUser } from "../src/data/fixtures";
+import { OVERVIEW_TOTALS } from "./apex-data";
 import { NAV_GROUPS, NAV_UTILITY } from "../src/config/navigation";
 import { expect, test } from "./fixtures";
 
@@ -53,8 +54,8 @@ test.describe("Workspace Overview", () => {
     await expect(page.getByText(`Operational activity, scheduled appointments, and pending records for ${business.name}.`)).toBeVisible();
 
     const metrics = page.getByRole("region", { name: "Key metrics" });
-    await expect(metrics).toContainText(String(overviewMetrics.bookings));
-    await expect(metrics).toContainText(String(overviewMetrics.completedJobs));
+    await expect(metrics).toContainText(String(OVERVIEW_TOTALS.bookings));
+    await expect(metrics).toContainText(String(OVERVIEW_TOTALS.completedJobs));
     await expect(metrics).toContainText("$6,240");
     await expect(metrics).toContainText("$2,130");
     await expect(metrics).toContainText("7 recorded non-voided payments");

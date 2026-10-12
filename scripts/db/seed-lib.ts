@@ -25,7 +25,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { business, businessHoursByWeekday, currentUser, BUSINESS_TIME_ZONE } from "../../src/data/fixtures";
+import { business, businessHoursByWeekday, currentUser, BUSINESS_TIME_ZONE, PROTOTYPE_TODAY } from "../../src/data/fixtures";
 import type { WeeklyHours } from "../../src/data/settings";
 import type { Database } from "../../src/db";
 import {
@@ -42,20 +42,25 @@ import { EMPTY_TEAM, type TeamData } from "../../src/data/team";
 import { clearCoreData, insertCustomerBook, insertServices, persistTeamData } from "../../src/db/core-queries";
 import { clearFinancials, insertFinancials, loadFinRefs } from "../../src/db/fin-queries";
 import { clearMaintenance, insertMaintenance, type SeedPlans } from "../../src/db/maint-queries";
+import { clearMarketing, insertMarketing, type SeedMarketing } from "../../src/db/marketing-queries";
 import { clearOperations, insertOperations, loadRefs, type SeedNumbers } from "../../src/db/ops-queries";
 import { clearReviews, insertReviews } from "../../src/db/review-queries";
 import { createAuth, type Auth } from "../../src/lib/auth";
 import { adminDb, adminUrl, appUrl, requireEnv } from "./lib";
+import { clearReporting, reconcileReporting } from "./reporting-seed";
 import { CUSTOMERS, EQUIPMENT, PROPERTIES } from "./seed-data/customers";
 import { FINANCIALS } from "./seed-data/financials";
 import { MAINTENANCE } from "./seed-data/maintenance";
+import { MARKETING } from "./seed-data/marketing";
 import { OPERATIONS } from "./seed-data/operations";
 import { REVIEWS_DATA } from "./seed-data/reviews";
+import { APEX_APPROVED, NORTHSTAR_APPROVED, type ApprovedReporting } from "./seed-data/reporting";
 import {
   NORTHSTAR_CUSTOMERS,
   NORTHSTAR_EQUIPMENT,
   NORTHSTAR_FINANCIALS,
   NORTHSTAR_MAINTENANCE,
+  NORTHSTAR_MARKETING,
   NORTHSTAR_OPERATIONS,
   NORTHSTAR_PROPERTIES,
   NORTHSTAR_REVIEWS,
@@ -149,6 +154,15 @@ export type CoreDataset = {
   maintenance: SeedPlans;
   /** Reviews with their replies, and review requests. They point at the customers above and at jobs by their public references. */
   reviews: ReviewsData;
+  /** Marketing campaigns with the recipient snapshots and delivery results of the sent ones. They point at the customers above. */
+  marketing: SeedMarketing;
+  /**
+   * The approved reporting figures the business's reports open on. They are written as imported adjustments (approved figure minus
+   * what the detailed records above contribute), after everything above exists. None for a business that reports its rows alone.
+   */
+  reporting?: ApprovedReporting;
+  /** The business's today when the reporting adjustments are worked out (the sample business keeps the product's fixed day). */
+  today?: string;
   /** Team members (by slug) who have a Climvia login in the seed, by seed user key. */
   logins: Readonly<Record<string, keyof typeof SEED_USERS>>;
 };
@@ -165,6 +179,9 @@ export const APEX_CORE: CoreDataset = {
   financials: FINANCIALS,
   maintenance: MAINTENANCE,
   reviews: REVIEWS_DATA,
+  marketing: MARKETING,
+  reporting: APEX_APPROVED,
+  today: PROTOTYPE_TODAY,
   logins: { "alex-morgan": "alex" },
 };
 
@@ -176,6 +193,8 @@ export const NORTHSTAR_CORE: CoreDataset = {
   financials: NORTHSTAR_FINANCIALS,
   maintenance: NORTHSTAR_MAINTENANCE,
   reviews: NORTHSTAR_REVIEWS,
+  marketing: NORTHSTAR_MARKETING,
+  reporting: NORTHSTAR_APPROVED,
   logins: { "taylor-brooks": "taylor" },
 };
 
@@ -259,8 +278,9 @@ type AdminTx = Parameters<Parameters<AdminDb["transaction"]>[0]>[0];
 /**
  * Write a business's core records inside a transaction. `userIds` links team members (by slug) to logins. The operations are
  * written next (they point at the customers, Services and team members just written, and their times are read in `timeZone`) and
- * the financials next (they point at the jobs and bookings as well), then the maintenance plans (a visit can point at a booking) and
- * the reviews (a review names a job).
+ * the financials next (they point at the jobs and bookings as well), then the maintenance plans (a visit can point at a booking), the
+ * reviews (a review names a job) and the Marketing campaigns (a recipient can be a customer). The reporting adjustments come last:
+ * each is the approved figure minus what the records written above contribute to it, so everything it reconciles must exist.
  */
 export async function writeCoreData(
   tx: AdminTx,
@@ -279,6 +299,8 @@ export async function writeCoreData(
   const refs = await loadRefs(db, organizationId);
   await insertMaintenance(db, organizationId, core.maintenance, refs, { stableIds: true });
   await insertReviews(db, organizationId, timeZone, core.reviews, refs, { stableIds: true });
+  await insertMarketing(db, organizationId, timeZone, core.marketing, refs, { stableIds: true });
+  if (core.reporting) await reconcileReporting(db, organizationId, timeZone, core.reporting, core.today);
 }
 
 /** Give a business its core records unless it already has them. Returns true when it wrote them. */
@@ -388,7 +410,11 @@ export async function coreFingerprint(db: AdminDb, organizationId: string): Prom
       (select count(*) || ':' || coalesce(max(updated_at)::text, '') from maintenance_plans where organization_id = ${organizationId}),
       (select count(*) || ':' || coalesce(max(updated_at)::text, '') || ':' || coalesce(string_agg(status, '' order by ref), '') from maintenance_plan_visits where organization_id = ${organizationId}),
       (select count(*) || ':' || coalesce(max(updated_at)::text, '') from review_replies where organization_id = ${organizationId}),
-      (select count(*) from review_requests where organization_id = ${organizationId})
+      (select count(*) from review_requests where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') || ':' || coalesce(string_agg(status || coalesce(recipient_count, -1), '' order by slug), '') from marketing_campaigns where organization_id = ${organizationId}),
+      (select count(*) from marketing_campaign_recipients where organization_id = ${organizationId}),
+      (select count(*) from marketing_campaign_selected_customers where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(sum(coalesce(integer_value, money_cents)), 0) from analytics_imported_baselines where organization_id = ${organizationId})
     ) as fingerprint`);
   return result.rows[0].fingerprint;
 }
@@ -432,7 +458,9 @@ export async function resetTestTenant(db: AdminDb, tenant: { userId: string; org
   const seeded = seededFingerprints.get(tenant.organizationId);
   if (seeded === undefined || seeded !== (await coreFingerprint(db, tenant.organizationId))) {
     await db.transaction(async (tx) => {
-      // Documents, plans and reviews point at jobs and bookings, and those at customers, Services and team members, so they go first.
+      // Documents, plans, reviews and campaigns point at jobs, bookings and customers, and those at Services and team members, so they go first.
+      await clearReporting(tx as never, tenant.organizationId);
+      await clearMarketing(tx as never, tenant.organizationId);
       await clearReviews(tx as never, tenant.organizationId);
       await clearMaintenance(tx as never, tenant.organizationId);
       await clearFinancials(tx as never, tenant.organizationId);

@@ -9,11 +9,13 @@
  * equipment and show their names. Windowing the book (and the operations) by date and page is the next scaling step; see
  * docs/saas-architecture.md.
  */
+import type { MonthTotals } from "@/lib/analytics-rules";
 import type { CustomerBook } from "./customers";
 import type { FinancialData } from "./financials";
-import type { PlansData } from "./maintenance-plans";
+import type { PlanAdjustment, PlansData } from "./maintenance-plans";
+import type { MarketingData } from "./marketing";
 import type { OperationsData } from "./operations";
-import type { ReviewsData } from "./reviews";
+import type { ReviewAdjustment, ReviewsData } from "./reviews";
 import type { Service } from "./services";
 import type { TeamData } from "./team";
 
@@ -35,4 +37,11 @@ export type CoreSnapshot = {
   maintenance: PlansData;
   /** The business's Reviews (each with its one reply) and the review requests it recorded. */
   reviews: ReviewsData;
+  /** The business's Marketing campaigns. Their recipients are not here: a page asks the server for one campaign's snapshot at a time. */
+  marketing: MarketingData;
+  /**
+   * What the browser needs of the reporting layer for the active business: the imported adjustments to its Plans and Reviews totals
+   * (none for a business without reporting history), and the headline totals of its current month for the Overview and the sidebar.
+   */
+  reporting: { adjustments: { plans: PlanAdjustment; reviews: ReviewAdjustment }; month: MonthTotals };
 };

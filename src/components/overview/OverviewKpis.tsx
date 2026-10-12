@@ -1,52 +1,27 @@
-"use client";
-
 import { Banknote, CalendarDays, CircleCheck, ReceiptText } from "lucide-react";
-import { useFinancials } from "@/components/financials/FinancialProvider";
 import { KpiCard } from "@/components/ui/KpiCard";
-import { getPaymentsReceivedTotal, getRecordedPaymentsCount, getTotalInvoiced } from "@/data/financials";
-import { overviewMetrics } from "@/data/fixtures";
+import type { MonthTotals } from "@/lib/analytics-rules";
 import { formatUSD } from "@/lib/format";
+import { fromCents } from "@/lib/money";
 
 /**
- * The four Overview totals. Bookings and Completed Jobs are the approved aggregates. The two money totals
- * are derived from the financial records, so recording a payment (or creating an invoice) on any page is
- * reflected here for the rest of the session; at the canonical baseline they equal the approved
- * $6,240 invoiced, $2,130 received and 7 recorded payments.
+ * The four Overview totals: this month's Bookings, Completed Jobs, Total Invoiced and Payments Received. They are the headline
+ * figures of the same report the Analytics page shows for the current month, worked out on the server from the business's own
+ * records (plus the sample business's imported history), so recording a payment or creating a booking on any page is reflected
+ * here the next time the Overview is opened, and the two screens can never disagree.
  */
-export function OverviewKpis() {
-  const { data } = useFinancials();
-
+export function OverviewKpis({ month }: { month: MonthTotals }) {
   return (
     <section aria-label="Key metrics" className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-      <KpiCard
-        label="Bookings"
-        value={overviewMetrics.bookings}
-        icon={CalendarDays}
-        hint="Total active & scheduled bookings"
-        hintDot
-        href="/bookings"
-      />
-      <KpiCard
-        label="Completed Jobs"
-        value={overviewMetrics.completedJobs}
-        icon={CircleCheck}
-        hint="Completed field jobs"
-        hintDot
-        href="/jobs"
-      />
-      <KpiCard
-        label="Total Invoiced"
-        value={formatUSD(getTotalInvoiced(data))}
-        icon={ReceiptText}
-        hint="Across approved customer invoices"
-        href="/quotes-invoices"
-      />
+      <KpiCard label="Bookings" value={month.bookings} icon={CalendarDays} hint="Total active & scheduled bookings" hintDot href="/bookings" />
+      <KpiCard label="Completed Jobs" value={month.completedJobs} icon={CircleCheck} hint="Completed field jobs" hintDot href="/jobs" />
+      <KpiCard label="Total Invoiced" value={formatUSD(fromCents(month.invoicedCents))} icon={ReceiptText} hint="Across approved customer invoices" href="/quotes-invoices" />
       <KpiCard
         label="Payments Received"
-        value={formatUSD(getPaymentsReceivedTotal(data))}
+        value={formatUSD(fromCents(month.paymentsReceivedCents))}
         icon={Banknote}
         tone="positive"
-        hint={`${getRecordedPaymentsCount(data)} recorded non-voided payments`}
+        hint={`${month.recordedPayments} recorded non-voided payments`}
         href="/payments"
       />
     </section>

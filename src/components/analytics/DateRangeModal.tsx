@@ -5,14 +5,14 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { OptionCard, OptionGroup } from "@/components/ui/OptionCard";
-import { RANGE_PRESETS, type RangeId } from "@/data/analytics";
-import { formatRange, validateCustomRange, type DateRange } from "@/lib/analytics-state";
+import { RANGE_PRESETS, presetRange, type DateRange, type RangeId } from "@/lib/analytics-rules";
+import { formatRange, validateCustomRange } from "@/lib/analytics-state";
 
 /**
- * Choose the period the reports cover: a preset, or two dates. The dates are plain calendar dates, so the choice means
- * the same thing whatever the browser's timezone, and "this month" is the prototype's month, never the real one.
+ * Choose the period the reports cover: a preset, or two dates. The dates are plain calendar dates, so the choice means the same
+ * thing whatever the browser's timezone, and "this month" is the business's own month (`today` comes from the server).
  */
-export function DateRangeModal({ current, onApply, onClose }: { current: DateRange; onApply: (range: DateRange) => void; onClose: () => void }) {
+export function DateRangeModal({ current, today, onApply, onClose }: { current: DateRange; today: string; onApply: (range: DateRange) => void; onClose: () => void }) {
   const [choice, setChoice] = useState<RangeId>(current.id);
   const [from, setFrom] = useState(current.from);
   const [to, setTo] = useState(current.to);
@@ -23,7 +23,7 @@ export function DateRangeModal({ current, onApply, onClose }: { current: DateRan
   function apply() {
     if (customError) return setShowError(true);
     const preset = RANGE_PRESETS.find((item) => item.id === choice);
-    onApply(preset ? { id: preset.id, from: preset.from, to: preset.to } : { id: "custom", from, to });
+    onApply(preset ? presetRange(preset.id, today) : { id: "custom", from, to });
   }
 
   return (
@@ -48,7 +48,7 @@ export function DateRangeModal({ current, onApply, onClose }: { current: DateRan
             type="radio"
             name="analytics-range"
             title={preset.label}
-            description={formatRange(preset.from, preset.to)}
+            description={formatRange(presetRange(preset.id, today).from, presetRange(preset.id, today).to)}
             checked={choice === preset.id}
             onChange={() => setChoice(preset.id)}
           />

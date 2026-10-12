@@ -71,6 +71,20 @@
       "when": 1791575327249,
       "tag": "0009_maintenance_reviews_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791809060596,
+      "tag": "0010_marketing_analytics",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791809062468,
+      "tag": "0011_marketing_analytics_rls",
+      "breakpoints": true
     }
   ]
 }

@@ -20,8 +20,9 @@
  * schedule_included_maintenance_visit_flow_*. Every conflict is listed in docs/stitch-screen-map.md §10. In short:
  *  - Sarah Mitchell's Comfort Care is locked ($189/year, 2 visits/year, May 14, 2024 to May 14, 2025, Active).
  *  - The workspace totals (14 active, 5 visits due, 3 renewals, 1 paused, 1 ended) are the sample business's reporting
- *    aggregates: its stored plans are a representative sample (marked `imported`), and getPlanMetrics adds the plans created
- *    since. Any other business's totals are counted from its own plans.
+ *    aggregates: its stored plans are a representative sample (marked `imported`), and getPlanMetrics counts every stored plan
+ *    plus an imported adjustment that reconciles the two (analytics_imported_baselines). Any other business's totals are
+ *    counted from its own plans alone.
  *  - Plans that conflict with other modules (a commercial plan, Elena Rodriguez's address, plans that name Bookings which do not
  *    exist) are left out rather than resolved by invention.
  */
@@ -95,25 +96,21 @@ export type MaintenancePlan = {
   /** Why a plan is paused or ended. */
   statusNote?: string;
   note?: string;
-  /** Carried in with the sample business's history: already inside its reported workspace totals. */
+  /** Carried in with the sample business's history (informational: its totals are reconciled by an imported adjustment). */
   imported?: boolean;
 };
 
 export type PlansData = { plans: readonly MaintenancePlan[] };
 
-/** The workspace-level totals Stitch shows for the sample business. Its stored plans are a representative sample of them. */
-export const PLAN_BASELINE = {
-  active: 14,
-  visitsDue: 5,
-  renewals: 3,
-  paused: 1,
-  ended: 1,
-} as const;
+/**
+ * What the imported reporting history adds to the totals a business's plans give: the sample business's approved workspace figures
+ * (14 active, 5 visits due, 3 renewals, 1 paused, 1 ended) minus what its stored plans contribute, signed. Read from
+ * analytics_imported_baselines for the active business only; none for any other business, which counts from its own plans.
+ */
+export type PlanAdjustment = { readonly active: number; readonly visitsDue: number; readonly renewals: number; readonly paused: number; readonly ended: number };
 
 /** What a business that has no reporting history starts from: nothing. */
-export const NO_PLAN_BASELINE: PlanBaseline = { active: 0, visitsDue: 0, renewals: 0, paused: 0, ended: 0 };
-
-export type PlanBaseline = { readonly active: number; readonly visitsDue: number; readonly renewals: number; readonly paused: number; readonly ended: number };
+export const NO_PLAN_ADJUSTMENT: PlanAdjustment = { active: 0, visitsDue: 0, renewals: 0, paused: 0, ended: 0 };
 
 /** A plan comes up for renewal when its end date falls within this many days. */
 export const RENEWAL_WINDOW_DAYS = 60;
@@ -225,22 +222,33 @@ export type PlanMetrics = {
   all: number;
 };
 
+/** What the stored plans themselves contribute to the totals: every plan, counted the way the approved figures are. */
+export function getPlanContribution(data: PlansData, ops: OperationsData, today: string): PlanAdjustment {
+  const active = data.plans.filter((plan) => plan.status === "active");
+  return {
+    active: active.length,
+    visitsDue: active.filter((plan) => getNextVisit(plan, ops)).length,
+    renewals: data.plans.filter((plan) => isRenewingSoon(plan, today)).length,
+    paused: data.plans.filter((plan) => plan.status === "paused").length,
+    ended: data.plans.filter((plan) => plan.status === "ended").length,
+  };
+}
+
 /**
- * The totals on the Maintenance Plans screens: the reporting `baseline` (the sample business's approved workspace figures; none
- * for any other business), plus the plans not carried in with that history, counted the way the approved ones are (active plans,
- * plans renewing soon, a due next visit). Stored plans marked `imported` are already inside the baseline and are never counted
- * twice; nothing is ever subtracted from it.
+ * The totals on the Maintenance Plans screens: what every stored plan contributes (active plans, plans renewing soon, a due next
+ * visit, paused and ended plans) plus the imported `adjustment` (the sample business's approved workspace figures minus what its
+ * stored plans contribute; none for any other business). The adjustment never changes, so a plan created since moves a total by
+ * exactly its own share, and no plan is counted twice.
  */
-export function getPlanMetrics(data: PlansData, ops: OperationsData, today: string, baseline: PlanBaseline = NO_PLAN_BASELINE): PlanMetrics {
-  const created = data.plans.filter((plan) => !plan.imported);
-  const active = created.filter((plan) => plan.status === "active");
+export function getPlanMetrics(data: PlansData, ops: OperationsData, today: string, adjustment: PlanAdjustment = NO_PLAN_ADJUSTMENT): PlanMetrics {
+  const own = getPlanContribution(data, ops, today);
   const metrics = {
-    active: baseline.active + active.length,
-    visitsDue: baseline.visitsDue + active.filter((plan) => getNextVisit(plan, ops)).length,
-    renewals: baseline.renewals + created.filter((plan) => isRenewingSoon(plan, today)).length,
-    paused: baseline.paused + created.filter((plan) => plan.status === "paused").length,
-    ended: baseline.ended + created.filter((plan) => plan.status === "ended").length,
+    active: adjustment.active + own.active,
+    visitsDue: adjustment.visitsDue + own.visitsDue,
+    renewals: adjustment.renewals + own.renewals,
+    paused: adjustment.paused + own.paused,
+    ended: adjustment.ended + own.ended,
   };
   const pausedOrEnded = metrics.paused + metrics.ended;
-  return { ...metrics, pausedOrEnded, all: metrics.active + pausedOrEnded + created.filter((plan) => plan.status === "pending").length };
+  return { ...metrics, pausedOrEnded, all: metrics.active + pausedOrEnded + data.plans.filter((plan) => plan.status === "pending").length };
 }

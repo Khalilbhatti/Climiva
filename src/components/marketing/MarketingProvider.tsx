@@ -1,54 +1,60 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
-import { MARKETING_DATA, type Campaign, type MarketingData } from "@/data/marketing";
-import * as state from "@/lib/marketing-state";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import type { CampaignInput, CampaignStatus, MarketingData, SendTiming } from "@/data/marketing";
+import type { ActionResult } from "@/lib/action-result";
+import { send } from "@/lib/send-action";
+import { cancelScheduleAction, duplicateCampaignAction, saveDraftAction, scheduleCampaignAction, sendCampaignAction } from "@/server/actions/marketing";
+
+/** What every change resolves with: the campaigns as stored and the reference of the one just changed, or why it was refused. */
+type Done = Promise<ActionResult<{ marketing: MarketingData; reference: string }>>;
+
+/** Which campaign a change is about, and the status the screen saw it in. A new campaign has no target. */
+export type CampaignTarget = { id: string; status: Exclude<CampaignStatus, "sent"> } | undefined;
 
 type MarketingContextValue = {
-  /** The working campaigns: the baseline sample plus any changes made in this session. */
+  /** The business's campaigns, as stored. Their recipients are not here: a page asks the server for one campaign's at a time. */
   data: MarketingData;
-  createDraft: (input: state.CampaignInput) => Campaign;
-  updateCampaign: (id: string, input: state.CampaignInput) => void;
-  saveAsDraft: (id: string, input: state.CampaignInput) => void;
-  scheduleCampaign: (id: string, scheduledFor: string) => void;
-  sendCampaign: (id: string) => void;
-  cancelSchedule: (id: string) => void;
-  duplicateCampaign: (id: string) => Campaign | undefined;
+  /** Saves a campaign as a Draft: a new one, or an existing one (saving a Scheduled campaign as a draft cancels its send). */
+  saveDraft: (target: CampaignTarget, campaign: CampaignInput) => Done;
+  /** Schedules a campaign for the business's local date and time. */
+  scheduleCampaign: (target: CampaignTarget, campaign: CampaignInput, timing: Extract<SendTiming, { mode: "later" }>) => Done;
+  /** Records a campaign as sent now. Nothing is delivered. */
+  sendCampaign: (target: CampaignTarget, campaign: CampaignInput) => Done;
+  /** Cancels a scheduled send: the campaign is a Draft again. */
+  cancelSchedule: (id: string) => Done;
+  /** A new Draft from any campaign. */
+  duplicateCampaign: (id: string) => Done;
 };
 
 const MarketingContext = createContext<MarketingContextValue | null>(null);
 
-/** In memory only; a reload restores the baseline. Nothing is delivered to anyone. */
-export function MarketingProvider({ initial = MARKETING_DATA, children }: { initial?: MarketingData; children: ReactNode }) {
-  const [data, setData] = useState<MarketingData>(initial);
-  const latest = useRef(data);
+const targetFields = (target: CampaignTarget) => (target ? { id: target.id, expectedStatus: target.status } : {});
 
-  const commit = useCallback((next: MarketingData) => {
-    latest.current = next;
-    setData(next);
+/**
+ * The business's Marketing campaigns for the whole workspace. `initial` is what the server read from PostgreSQL for this page
+ * load, for the ACTIVE organization only. Every change goes to the server, which authorizes it (owner or admin), validates it,
+ * stores it in one transaction (taking the recipient snapshot when a campaign is scheduled or sent) and answers with the campaigns
+ * as stored; only then does the working copy change, so the screen is never ahead of the database. Nothing is delivered to anyone.
+ */
+export function MarketingProvider({ initial, children }: { initial: MarketingData; children: ReactNode }) {
+  const [data, setData] = useState<MarketingData>(initial);
+
+  const adopt = useCallback((result: ActionResult<{ marketing: MarketingData; reference: string }>) => {
+    if (result.ok) setData(result.data.marketing);
+    return result;
   }, []);
 
   const value = useMemo<MarketingContextValue>(
     () => ({
       data,
-      // The ref lets actions that return a value read the latest data synchronously.
-      createDraft: (input) => {
-        const result = state.createDraft(latest.current, input);
-        commit(result.data);
-        return result.campaign;
-      },
-      updateCampaign: (id, input) => commit(state.updateCampaign(latest.current, id, input)),
-      saveAsDraft: (id, input) => commit(state.saveAsDraft(latest.current, id, input)),
-      scheduleCampaign: (id, scheduledFor) => commit(state.scheduleCampaign(latest.current, id, scheduledFor)),
-      sendCampaign: (id) => commit(state.sendCampaign(latest.current, id)),
-      cancelSchedule: (id) => commit(state.cancelSchedule(latest.current, id)),
-      duplicateCampaign: (id) => {
-        const result = state.duplicateCampaign(latest.current, id);
-        commit(result.data);
-        return result.campaign;
-      },
+      saveDraft: async (target, campaign) => adopt(await send(() => saveDraftAction({ ...targetFields(target), campaign }))),
+      scheduleCampaign: async (target, campaign, timing) => adopt(await send(() => scheduleCampaignAction({ ...targetFields(target), campaign, timing }))),
+      sendCampaign: async (target, campaign) => adopt(await send(() => sendCampaignAction({ ...targetFields(target), campaign }))),
+      cancelSchedule: async (id) => adopt(await send(() => cancelScheduleAction({ id }))),
+      duplicateCampaign: async (id) => adopt(await send(() => duplicateCampaignAction({ id }))),
     }),
-    [data, commit],
+    [data, adopt],
   );
 
   return <MarketingContext value={value}>{children}</MarketingContext>;

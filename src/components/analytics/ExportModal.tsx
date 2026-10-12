@@ -8,16 +8,19 @@ import { Modal } from "@/components/ui/Modal";
 import { OptionCard, OptionGroup } from "@/components/ui/OptionCard";
 import { useToast } from "@/components/ui/Toast";
 import { EXPORT_FORMATS, EXPORT_MODULES, type ExportFormat, type ExportModuleId } from "@/data/analytics";
-import { formatRange, type AnalyticsModel, type DateRange } from "@/lib/analytics-state";
+import type { AnalyticsReport } from "@/lib/analytics-rules";
+import { formatRange } from "@/lib/analytics-state";
 import { buildReport, downloadFile, reportFileName, toCsv, toPdf } from "@/lib/report-export";
 
 const ALL_MODULES = EXPORT_MODULES.map((module) => module.id);
 
 /**
- * Export the figures on screen as a CSV or a PDF. The file is made in the browser and saved by it: nothing is sent,
- * scheduled or shared. The date range is the one selected on the page and is shown here, not edited.
+ * Export the figures on screen as a CSV or a PDF. The file is made in the browser from the report the server computed for the
+ * active business (the same object the screen shows) and saved by it: nothing is sent, scheduled or shared. The date range is the
+ * one selected on the page and is shown here, not edited.
  */
-export function ExportModal({ model, range, onClose }: { model: AnalyticsModel; range: DateRange; onClose: () => void }) {
+export function ExportModal({ report, onClose }: { report: AnalyticsReport; onClose: () => void }) {
+  const range = report.range;
   const business = useBusiness();
   const { toast } = useToast();
   const [modules, setModules] = useState<ExportModuleId[]>(ALL_MODULES);
@@ -33,9 +36,9 @@ export function ExportModal({ model, range, onClose }: { model: AnalyticsModel; 
 
   function exportReport() {
     if (none) return setShowError(true);
-    const report = buildReport(model, modules, range, business.name);
-    if (format === "csv") downloadFile(reportFileName(report, "csv"), "text/csv;charset=utf-8", toCsv(report));
-    else downloadFile(reportFileName(report, "pdf"), "application/pdf", toPdf(report));
+    const file = buildReport(report, modules, business.name);
+    if (format === "csv") downloadFile(reportFileName(file, "csv"), "text/csv;charset=utf-8", toCsv(file));
+    else downloadFile(reportFileName(file, "pdf"), "application/pdf", toPdf(file));
     toast(`Report exported as ${format === "csv" ? "CSV" : "PDF"}.`);
     onClose();
   }

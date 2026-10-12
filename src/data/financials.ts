@@ -22,7 +22,6 @@
  */
 import { addDays } from "@/lib/dates";
 import { addMoney, fromCents, lineCents, subtractMoney, sumCents, toCents } from "@/lib/money";
-import { overviewMetrics } from "./fixtures";
 import { getServiceById, type Service } from "./services";
 
 /* ───────────────────────── types ───────────────────────── */
@@ -253,13 +252,11 @@ export function getCustomerFinancials(customerId: string, data: FinancialData) {
 }
 
 /**
- * The Overview's "Total Invoiced". The approved $6,240 covers invoicing history this product does not carry as records, so it
- * stays a fixed reporting baseline; invoices created since (not imported) are added to it. The imported invoices are already
- * part of the baseline.
+ * What the stored invoices add up to. Not the Overview's or Analytics' "Total invoiced": those are reported by the reporting layer
+ * (db/reporting-queries), which adds the sample business's imported invoicing history (an adjustment) to what its rows say.
  */
 export function getTotalInvoiced(data: FinancialData): number {
-  const created = data.invoices.filter((invoice) => !invoice.imported);
-  return addMoney(overviewMetrics.totalInvoiced, ...created.map(getInvoiceTotal));
+  return addMoney(...data.invoices.map(getInvoiceTotal));
 }
 
 /** The service named by a record, or its first line item when the record has none. */

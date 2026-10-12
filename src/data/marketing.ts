@@ -1,26 +1,26 @@
 /**
  * Marketing: lightweight email and text-message campaigns to existing customers.
  *
- * This is campaign management and nothing more. A campaign is a name, a channel, an audience, a message and
- * a status: Draft, Scheduled or Sent. There are no workflows, sequences or performance analytics. A sent
- * campaign shows what the approved screens show: how many people it went to, and for each recipient whether the
- * message was delivered.
+ * This is campaign management and nothing more. A campaign is a name, a channel, an audience, a message and a status: Draft,
+ * Scheduled or Sent. There are no workflows, sequences or performance analytics. A sent campaign shows what the approved screens
+ * show: how many people it went to and, where a delivery result was recorded, for each recipient whether the message was delivered.
  *
- * The workspace totals (2 drafts, 1 scheduled, 8 sent, 146 recent recipients) and the audience sizes are approved
- * aggregates, held in CAMPAIGN_BASELINE and AUDIENCES. The campaigns below are the representative sample the
- * approved screens show; they are not eleven invented records. Recipient names that match a Customers record use
- * it (name and phone or email come from the customer); the rest are deliberate contact snapshots.
+ * Campaigns are rows in PostgreSQL, per organization, and reach the browser for the ACTIVE organization only
+ * (src/db/marketing-queries, components/marketing/MarketingProvider). The canonical Apex campaigns are seed data
+ * (scripts/db/seed-data/marketing.ts) and ship to no browser. Nothing is delivered anywhere: provider delivery (an email or SMS
+ * service) is not built, so "sent" is a recorded state, and the delivery figures of a sent campaign are recorded data.
  *
- * Times are business-local wall-clock strings ("2024-10-30T09:00", America/Chicago). Nothing here reads the
- * browser's clock or timezone.
+ * The recipients of a Scheduled or Sent campaign are a SNAPSHOT taken when it was scheduled or sent. They are not part of this
+ * data: a page that needs them asks the server for them (the people and their contact details are not sent with the campaigns).
+ *
+ * Times are business-local wall-clock strings ("2024-10-30T09:00") in the organization's time zone, converted on the server. Nothing
+ * here reads the browser's clock or time zone.
  *
  * Sources: design-reference/stitch/ marketing_*, create_campaign_email, create_campaign_sms, campaign_review_schedule,
  * scheduled_campaign_detail, cancel_scheduled_campaign_modal, sent_campaign_detail. Conflicts are listed in
  * docs/stitch-screen-map.md §11.
- *
- * Fixtures are read-only. Demo changes live in components/marketing/MarketingProvider and reset on reload.
  */
-import { formatTime } from "@/lib/dates";
+import { addDays, formatTime } from "@/lib/dates";
 import { formatDate } from "@/lib/format";
 
 export type CampaignChannel = "email" | "sms";
@@ -31,12 +31,15 @@ export const CAMPAIGN_STATUS_LABEL: Record<CampaignStatus, string> = { draft: "D
 
 export type AudienceId = "all-customers" | "due-for-maintenance" | "maintenance-customers" | "active-plans" | "selected";
 
-/** Audience sizes are approved aggregates over the full customer base, not counts of the Customers sample. */
-export const AUDIENCES: readonly { id: AudienceId; label: string; description: string; count?: number }[] = [
-  { id: "all-customers", label: "All customers", description: "Everyone with a contact record", count: 146 },
-  { id: "due-for-maintenance", label: "Customers due for maintenance", description: "Completed tune-up more than 6 months ago", count: 38 },
-  { id: "maintenance-customers", label: "Maintenance customers", description: "Customers with a maintenance history", count: 42 },
-  { id: "active-plans", label: "Customers with active plans", description: "Active maintenance plan", count: 18 },
+/**
+ * The audiences a campaign can address. How many people each reaches is not here: it is worked out from the business's own
+ * customers on the server (an audience size is a query over customers, jobs and plans, never a constant).
+ */
+export const AUDIENCES: readonly { id: AudienceId; label: string; description: string }[] = [
+  { id: "all-customers", label: "All customers", description: "Everyone with a contact record" },
+  { id: "due-for-maintenance", label: "Customers due for maintenance", description: "Completed tune-up more than 6 months ago" },
+  { id: "maintenance-customers", label: "Maintenance customers", description: "Customers with a maintenance history" },
+  { id: "active-plans", label: "Customers with active plans", description: "Active maintenance plan" },
   { id: "selected", label: "Selected customers", description: "Choose customers one by one" },
 ];
 
@@ -51,22 +54,40 @@ export const DEFAULT_AUDIENCE: Record<CampaignChannel, AudienceId> = {
 export const FIRST_NAME_TOKEN = "{{contact.first_name}}";
 export const FIRST_NAME_HELPER = "Adds the customer’s first name when available.";
 export const SMS_LIMIT = 160;
+export const EMAIL_MESSAGE_MAX = 5000;
+export const SUBJECT_MAX = 200;
+export const CAMPAIGN_NAME_MAX = 120;
 
 export const DEFAULT_SUBJECT = "Time for seasonal HVAC maintenance";
-export const DEFAULT_EMAIL_MESSAGE = `Hi ${FIRST_NAME_TOKEN},\n\nIt may be time to schedule your seasonal HVAC maintenance. You can review available Services and booking options with Apex Climate Heating & Air.`;
-export const DEFAULT_SMS_MESSAGE = `Hi ${FIRST_NAME_TOKEN}, this is Apex Climate Heating & Air. If you’re due for seasonal maintenance, you can review available booking options in Climvia.`;
+/** The starter message of a new campaign: the business's own name, never another's. */
+export const defaultEmailMessage = (businessName: string) =>
+  `Hi ${FIRST_NAME_TOKEN},\n\nIt may be time to schedule your seasonal HVAC maintenance. You can review available Services and booking options with ${businessName}.`;
+export const defaultSmsMessage = (businessName: string): string => {
+  const full = `Hi ${FIRST_NAME_TOKEN}, this is ${businessName}. If you’re due for seasonal maintenance, you can review available booking options in Climvia.`;
+  // A text message is 160 characters at most: a long business name gets the short wording.
+  return full.length <= SMS_LIMIT ? full : `Hi ${FIRST_NAME_TOKEN}, this is ${businessName}. Book your seasonal maintenance in Climvia.`.slice(0, SMS_LIMIT);
+};
 
 export type DeliveryStatus = "delivered" | "not-delivered";
 export const DELIVERY_STATUS_LABEL: Record<DeliveryStatus, string> = { delivered: "Delivered", "not-delivered": "Not delivered" };
 
-export type DeliveryRecord = {
-  /** A Customers record where there is one; its name and phone are then read from it. */
+/**
+ * One person in a campaign's recipient snapshot. The name and the contact details are those the customer had WHEN the campaign was
+ * scheduled or sent; a later edit of the customer does not change them. `customerId` (the customer's reference) links the person to
+ * the Customers record where there still is one.
+ */
+export type CampaignRecipient = {
+  /** A stable reference for lists: the position in the snapshot. */
+  id: string;
   customerId?: string;
-  /** Snapshot for a contact with no Customers record. */
-  contact?: { name: string; phone: string };
-  status: DeliveryStatus;
-  /** "2024-10-18T10:15" */
-  at: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  /** "pending": in the snapshot with no delivery result recorded. */
+  status: DeliveryStatus | "pending";
+  /** When the delivery result was recorded, business-local "2024-10-18T10:15". */
+  at?: string;
+  failureReason?: string;
 };
 
 export type Campaign = {
@@ -77,131 +98,68 @@ export type Campaign = {
   summary?: string;
   channel: CampaignChannel;
   audienceId: AudienceId;
-  /** Customers chosen when the audience is "Selected customers". */
+  /** Customers (by reference) chosen when the audience is "Selected customers". */
   selectedCustomerIds?: readonly string[];
-  /** How many people the campaign is for or went to; unset for a draft with no audience yet. */
+  /** How many people the campaign is for or went to; unset for a draft that has not been saved with an audience yet. */
   recipients?: number;
   subject?: string;
   message?: string;
   status: CampaignStatus;
-  /** Scheduled campaigns only: "2024-10-30T09:00" */
+  /** Scheduled campaigns only: "2024-10-30T09:00", the business's local time. */
   scheduledFor?: string;
   /** Sent campaigns only: "2024-10-18T10:15", or a date alone where the time is not recorded. */
   sentAt?: string;
-  /** Where a sent campaign's delivery is recorded. */
-  delivery?: { delivered: number; notDelivered: number; records: readonly DeliveryRecord[] };
+  /** Sent campaigns whose delivery result was recorded: how many messages were and were not delivered. */
+  delivery?: { delivered: number; notDelivered: number };
 };
 
 export type MarketingData = { campaigns: readonly Campaign[] };
 
-export const CAMPAIGNS: readonly Campaign[] = [
-  {
-    id: "cmp-fall-maintenance-reminder",
-    name: "Fall maintenance reminder",
-    summary: "Pre-season tune-up scheduling",
-    channel: "email",
-    audienceId: "due-for-maintenance",
-    recipients: 38,
-    subject: DEFAULT_SUBJECT,
-    message: DEFAULT_EMAIL_MESSAGE,
-    status: "scheduled",
-    scheduledFor: "2024-10-30T09:00",
-  },
-  {
-    id: "cmp-cooling-tune-up-reminder",
-    name: "Cooling tune-up reminder",
-    summary: "AC final maintenance checklist",
-    channel: "sms",
-    audienceId: "maintenance-customers",
-    recipients: 42,
-    message: DEFAULT_SMS_MESSAGE,
-    status: "sent",
-    sentAt: "2024-10-18T10:15",
-    delivery: {
-      delivered: 40,
-      notDelivered: 2,
-      // A sample of the 42: the two that were not delivered, and some of those that were.
-      records: [
-        { customerId: "david-chen", status: "delivered", at: "2024-10-18T10:15" },
-        { customerId: "sarah-mitchell", status: "delivered", at: "2024-10-18T10:15" },
-        { contact: { name: "Robert Garcia", phone: "(555) 441-2098" }, status: "delivered", at: "2024-10-18T10:15" },
-        { contact: { name: "Linda Zhao", phone: "(555) 782-9904" }, status: "not-delivered", at: "2024-10-18T10:16" },
-        { contact: { name: "James Wilson", phone: "(555) 883-1200" }, status: "delivered", at: "2024-10-18T10:15" },
-        { contact: { name: "Marcus Sterling", phone: "(555) 310-7742" }, status: "not-delivered", at: "2024-10-18T10:16" },
-      ],
-    },
-  },
-  {
-    id: "cmp-seasonal-service-reminder",
-    name: "Seasonal service reminder",
-    summary: "Early heating audit offer",
-    channel: "email",
-    audienceId: "selected",
-    selectedCustomerIds: [],
-    status: "draft",
-  },
-  {
-    id: "cmp-winter-heating-prep-notice",
-    name: "Winter heating prep notice",
-    summary: "Furnace diagnostics protocol",
-    channel: "email",
-    audienceId: "all-customers",
-    recipients: 48,
-    status: "sent",
-    sentAt: "2024-10-05",
-  },
-  {
-    id: "cmp-filter-replacement-reminder",
-    name: "Filter replacement reminder",
-    summary: "Quarterly filter renewal notice",
-    channel: "sms",
-    audienceId: "active-plans",
-    recipients: 18,
-    status: "sent",
-    sentAt: "2024-09-22",
-  },
-];
+/** What the campaign builder sends to the server: a campaign's content. The customers are named by their references. */
+export type CampaignInput = {
+  name: string;
+  channel: CampaignChannel;
+  audienceId: AudienceId;
+  selectedCustomerIds?: readonly string[];
+  subject?: string;
+  message?: string;
+};
 
-/** The workspace figures the approved Marketing screens show. */
-export const CAMPAIGN_BASELINE = { draft: 2, scheduled: 1, sent: 8, recentRecipients: 146 } as const;
-
-export const MARKETING_DATA: MarketingData = { campaigns: CAMPAIGNS };
-
-/** What a business that is not the sample one has: no campaigns. */
-export const EMPTY_MARKETING_DATA: MarketingData = { campaigns: [] };
-
-const CANONICAL_STATUS: Record<string, CampaignStatus> = Object.fromEntries(CAMPAIGNS.map((campaign) => [campaign.id, campaign.status]));
+/** When a campaign goes out: now, or the business's local date and time. */
+export type SendTiming = { mode: "now" } | { mode: "later"; date: string; time: string };
 
 /* ───────────────────────── selectors ───────────────────────── */
 
-export const getCampaignById = (id: string, data: MarketingData = MARKETING_DATA) => data.campaigns.find((campaign) => campaign.id === id);
+export const getCampaignById = (id: string, data: MarketingData) => data.campaigns.find((campaign) => campaign.id === id);
 
 export type CampaignMetrics = { drafts: number; scheduled: number; sent: number; total: number; recentRecipients: number };
 
+/** "Recent" is the last 60 days: campaigns sent in that time, and every campaign still to go out. */
+export const RECENT_WINDOW_DAYS = 60;
+
 /**
- * The totals on the Marketing screens: the approved figures, moved by what happened in the session. A sample campaign
- * that changed status moves a count from one column to the other; a campaign created in the session adds one to the
- * column it is in. Recipients of campaigns sent in the session are added to the recent recipients.
+ * The totals on the Marketing screens, counted from the campaigns: one per status, and the people reached recently (the recipients
+ * of campaigns sent within the last 60 days of `today`, plus those of campaigns scheduled to go out). Scheduling, sending and
+ * cancelling move them by exactly that campaign's own recipients.
  */
-export function getCampaignMetrics(data: MarketingData): CampaignMetrics {
-  const counts: Record<CampaignStatus, number> = { draft: CAMPAIGN_BASELINE.draft, scheduled: CAMPAIGN_BASELINE.scheduled, sent: CAMPAIGN_BASELINE.sent };
-  let recentRecipients: number = CAMPAIGN_BASELINE.recentRecipients;
+export function getCampaignMetrics(data: MarketingData, today: string): CampaignMetrics {
+  const since = addDays(today, -RECENT_WINDOW_DAYS);
+  let drafts = 0;
+  let scheduled = 0;
+  let sent = 0;
+  let recentRecipients = 0;
   for (const campaign of data.campaigns) {
-    const original = CANONICAL_STATUS[campaign.id];
-    if (original === undefined) {
-      counts[campaign.status] += 1;
-      if (campaign.status === "sent") recentRecipients += campaign.recipients ?? 0;
-    } else if (original !== campaign.status) {
-      counts[original] -= 1;
-      counts[campaign.status] += 1;
+    if (campaign.status === "draft") drafts += 1;
+    else if (campaign.status === "scheduled") {
+      scheduled += 1;
+      recentRecipients += campaign.recipients ?? 0;
+    } else {
+      sent += 1;
+      const day = campaign.sentAt?.slice(0, 10);
+      if (day !== undefined && day >= since && day <= today) recentRecipients += campaign.recipients ?? 0;
     }
   }
-  return { drafts: counts.draft, scheduled: counts.scheduled, sent: counts.sent, total: counts.draft + counts.scheduled + counts.sent, recentRecipients };
-}
-
-/** How many people an audience reaches. A chosen list is counted; the others are approved sizes. */
-export function getAudienceCount(audienceId: AudienceId, selectedCustomerIds: readonly string[] = []): number | undefined {
-  return audienceId === "selected" ? (selectedCustomerIds.length > 0 ? selectedCustomerIds.length : undefined) : getAudience(audienceId).count;
+  return { drafts, scheduled, sent, total: drafts + scheduled + sent, recentRecipients };
 }
 
 /** "Oct 30, 2024 · 9:00 AM" from "2024-10-30T09:00"; a date alone is "Oct 5, 2024". */

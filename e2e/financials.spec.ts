@@ -23,11 +23,10 @@ import {
   getRecordedPaymentsCount,
   getTotalInvoiced,
 } from "../src/data/financials";
-import { overviewMetrics } from "../src/data/fixtures";
 import { getBookingById, getJobById, getPartyName } from "../src/data/operations";
 import { getServiceById } from "../src/data/services";
 import { getTeamMemberById } from "../src/data/team";
-import { BOOK, CUSTOMERS, DIR, FINANCIALS, INVOICES, OPERATIONS, PAYMENTS, QUOTES, SERVICES, TEAM_DATA } from "./apex-data";
+import { BOOK, CUSTOMERS, DIR, FINANCIALS, INVOICES, OPERATIONS, OVERVIEW_TOTALS, PAYMENTS, QUOTES, SERVICES, STORED_INVOICED, TEAM_DATA } from "./apex-data";
 import { withInvoiceFromQuote, withPayment, withVoid } from "./financial-edits";
 
 // Pure data/selector tests: no browser needed. What recording, voiding and invoicing DO (they happen on the server, in PostgreSQL) is
@@ -86,18 +85,19 @@ test.describe("canonical financial baseline (post-#PAY-1008)", () => {
     expect(INVOICES).toHaveLength(9);
   });
 
-  test("the Overview totals are derived and equal the approved baseline", () => {
-    expect(getPaymentsReceivedTotal(FINANCIALS)).toBe(overviewMetrics.paymentsReceived);
-    expect(getRecordedPaymentsCount(FINANCIALS)).toBe(overviewMetrics.recordedPayments);
-    expect(getTotalInvoiced(FINANCIALS)).toBe(overviewMetrics.totalInvoiced);
+  test("the payment totals are derived from the records and equal the approved baseline", () => {
+    expect(getPaymentsReceivedTotal(FINANCIALS)).toBe(OVERVIEW_TOTALS.paymentsReceived);
+    expect(getRecordedPaymentsCount(FINANCIALS)).toBe(OVERVIEW_TOTALS.recordedPayments);
   });
 
-  test("Total Invoiced is the $6,240 reporting baseline: the canonical invoices are inside it, a new invoice is added to it", () => {
+  test("the stored invoices add up to $3,010, which is less than the approved $6,240 the Overview reports (the rest is imported history)", () => {
     expect(INVOICES.every((invoice) => invoice.imported)).toBe(true);
-    // The nine canonical invoices add up to less than the baseline, which covers more invoicing history than these records.
-    expect(INVOICES.reduce((total, invoice) => total + getInvoiceTotal(invoice), 0)).toBeLessThan(overviewMetrics.totalInvoiced);
+    // The nine canonical invoices add up to less than the approved total, which covers more invoicing history than these records.
+    expect(getTotalInvoiced(FINANCIALS)).toBe(STORED_INVOICED);
+    expect(INVOICES.reduce((total, invoice) => total + getInvoiceTotal(invoice), 0)).toBeLessThan(OVERVIEW_TOTALS.totalInvoiced);
+    // A new invoice adds exactly its own total to what the records hold; the approved figure is reconciled by the reporting layer.
     const { data, invoice } = withInvoiceFromQuote(FINANCIALS, "QT-884");
-    expect(getTotalInvoiced(data)).toBe(overviewMetrics.totalInvoiced + getInvoiceTotal(invoice));
+    expect(getTotalInvoiced(data)).toBe(STORED_INVOICED + getInvoiceTotal(invoice));
   });
 });
 
@@ -179,7 +179,7 @@ test.describe("what the selectors answer once a payment is recorded", () => {
     expect(getPaymentById("PAY-1001", data)).toMatchObject({ status: "voided" });
     expect(getInvoiceStatus(getInvoiceById("INV-1044", data)!, data)).toBe("paid");
     expect(getInvoiceBalance(getInvoiceById("INV-1051", data)!, data)).toBe(380);
-    expect(getPaymentsReceivedTotal(data)).toBe(overviewMetrics.paymentsReceived + 300);
+    expect(getPaymentsReceivedTotal(data)).toBe(OVERVIEW_TOTALS.paymentsReceived + 300);
     expect(snapshot()).toBe(before);
   });
 
@@ -254,7 +254,7 @@ test.describe("what the selectors answer once an invoice is made from a quote", 
     expect(getRecordedPaymentsCount(data)).toBe(7);
     expect(getOutstandingInvoices(data).map((item) => item.id)).toEqual(["INV-1050", "INV-1051", "INV-1052"]);
     expect(getOutstandingBalance(data)).toBe(965);
-    expect(getTotalInvoiced(data)).toBe(overviewMetrics.totalInvoiced + 285);
+    expect(getTotalInvoiced(data)).toBe(STORED_INVOICED + 285);
     expect(snapshot()).toBe(before);
   });
 });

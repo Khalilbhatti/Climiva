@@ -92,14 +92,14 @@ test.describe("the sample business belongs to Apex alone", () => {
 
   test("Taylor sees an unavailable state, not Apex's records, in every module that still runs on sample data", async ({ openAs }) => {
     const { page, problems } = await openAs("taylor");
-    const modules: [string, string][] = [["/website", "Website"], ["/marketplace", "Marketplace"], ["/marketing", "Marketing"], ["/analytics", "Analytics"]];
+    const modules: [string, string][] = [["/website", "Website"], ["/marketplace", "Marketplace"]];
     for (const [path, name] of modules) {
       await page.goto(path);
       await expect(page.getByRole("heading", { level: 1, name }), path).toBeVisible();
       await expect(page.getByRole("heading", { level: 2, name: `${name} isn't available for ${NORTHSTAR.name} yet` }), path).toBeVisible();
       expect(leaksIn(await page.locator("body").innerText(), APEX_ONLY), path).toEqual([]);
     }
-    // Bookings, the Schedule, Jobs, Quotes & Invoices, Payments, Maintenance Plans and Reviews are Northstar's own now: real pages with its own few records and none of Apex's.
+    // Bookings, the Schedule, Jobs, Quotes & Invoices, Payments, Maintenance Plans, Reviews, Marketing and Analytics are Northstar's own now: real pages with its own few records and none of Apex's.
     for (const [path, name] of [
       ["/bookings", "Bookings"],
       ["/schedule", "Schedule"],
@@ -108,6 +108,8 @@ test.describe("the sample business belongs to Apex alone", () => {
       ["/payments", "Payments"],
       ["/maintenance-plans", "Maintenance Plans"],
       ["/reviews", "Reviews"],
+      ["/marketing", "Marketing"],
+      ["/analytics", "Analytics"],
     ] as const) {
       await page.goto(path);
       await expect(page.getByRole("heading", { level: 1, name }), path).toBeVisible();

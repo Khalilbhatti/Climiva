@@ -15,7 +15,7 @@ import {
   getServiceNameFor,
   getUnassignedEvents,
 } from "../src/data/operations";
-import { PROTOTYPE_NOW, PROTOTYPE_TODAY, BUSINESS_TIME_ZONE, business, businessHoursByWeekday, overviewMetrics } from "../src/data/fixtures";
+import { PROTOTYPE_NOW, PROTOTYPE_TODAY, BUSINESS_TIME_ZONE, business, businessHoursByWeekday } from "../src/data/fixtures";
 import { getServiceById } from "../src/data/services";
 import { getTeamMemberById } from "../src/data/team";
 import { getSlotGroup } from "../src/lib/booking-slots";
@@ -41,7 +41,7 @@ import {
   slugOf,
   startJobError,
 } from "../src/lib/operations-rules";
-import { BOOK, BOOKINGS, CUSTOMERS, DIR, JOBS, OPERATIONS, SCHEDULE_BLOCKS, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
+import { BOOK, BOOKINGS, CUSTOMERS, DIR, JOBS, OPERATIONS, OVERVIEW_TOTALS, SCHEDULE_BLOCKS, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
 
 // Pure data/selector/rules tests: no browser needed.
 
@@ -119,10 +119,10 @@ test.describe("operational fixtures reference the shared records", () => {
   });
 
   test("Overview aggregates stay aggregates and are not backed by invented records", () => {
-    expect(overviewMetrics.bookings).toBe(24);
-    expect(overviewMetrics.completedJobs).toBe(18);
-    expect(BOOKINGS.length).toBeLessThan(overviewMetrics.bookings);
-    expect(JOBS.filter((job) => job.status === "completed").length).toBeLessThan(overviewMetrics.completedJobs);
+    expect(OVERVIEW_TOTALS.bookings).toBe(24);
+    expect(OVERVIEW_TOTALS.completedJobs).toBe(18);
+    expect(BOOKINGS.length).toBeLessThan(OVERVIEW_TOTALS.bookings);
+    expect(JOBS.filter((job) => job.status === "completed").length).toBeLessThan(OVERVIEW_TOTALS.completedJobs);
   });
 
   test("customer 'upcoming' text agrees with the confirmed bookings", () => {

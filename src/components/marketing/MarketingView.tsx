@@ -15,6 +15,7 @@ import { Select } from "@/components/ui/Select";
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/Table";
 import { Tabs } from "@/components/ui/Tabs";
 import { CHANNEL_LABEL, getCampaignMetrics, type CampaignChannel, type CampaignStatus } from "@/data/marketing";
+import { useCan, useClock } from "@/components/workspace/WorkspaceProvider";
 import { useMarketing } from "./MarketingProvider";
 import { CampaignStatusBadge, ChannelBadge, audienceName, recipientsText, sendDateText } from "./marketing-ui";
 
@@ -24,17 +25,19 @@ const ZERO = { drafts: 0, scheduled: 0, sent: 0, total: 0, recentRecipients: 0 }
 
 export function MarketingView() {
   const { data } = useMarketing();
+  const { today } = useClock();
+  const canManage = useCan("marketing:manage");
   const router = useRouter();
   const params = useSearchParams();
   const view: View = VIEWS.find((id) => id === params.get("tab")) ?? "all";
-  // ?state=empty previews the approved empty state without having to remove every campaign.
-  const previewEmpty = params.get("state") === "empty";
+  // The approved empty state: for a business with no campaigns yet, and (?state=empty) as a preview for one that has some.
+  const previewEmpty = params.get("state") === "empty" || data.campaigns.length === 0;
 
   const [query, setQuery] = useState("");
   const [channel, setChannel] = useState<"all" | CampaignChannel>("all");
 
   const campaigns = previewEmpty ? [] : data.campaigns;
-  const metrics = previewEmpty ? ZERO : getCampaignMetrics(data);
+  const metrics = previewEmpty ? ZERO : getCampaignMetrics(data, today);
 
   function setView(id: string) {
     const next = new URLSearchParams(params.toString());
@@ -62,10 +65,12 @@ export function MarketingView() {
         title="Marketing"
         description="Create and manage customer email and SMS campaigns."
         actions={
-          <ButtonLink href="/marketing/new" size="lg">
-            <Plus aria-hidden className="size-[18px]" />
-            Create campaign
-          </ButtonLink>
+          canManage && (
+            <ButtonLink href="/marketing/new" size="lg">
+              <Plus aria-hidden className="size-[18px]" />
+              Create campaign
+            </ButtonLink>
+          )
         }
       />
 
@@ -97,10 +102,12 @@ export function MarketingView() {
               title="No campaigns yet"
               description="Create an Email or SMS campaign to communicate with existing customers."
               action={
-                <ButtonLink href="/marketing/new" size="lg">
-                  <Plus aria-hidden className="size-4" />
-                  Create campaign
-                </ButtonLink>
+                canManage && (
+                  <ButtonLink href="/marketing/new" size="lg">
+                    <Plus aria-hidden className="size-4" />
+                    Create campaign
+                  </ButtonLink>
+                )
               }
             />
             <p className="mt-3 text-center text-xs text-ink-muted">Campaigns reach existing contacts from your Customers records.</p>
@@ -168,7 +175,7 @@ export function MarketingView() {
                         <TableCell className="whitespace-nowrap text-ink-muted">{sendDateText(campaign, campaign.status === "scheduled")}</TableCell>
                         <TableCell className="font-semibold">{recipientsText(campaign)}</TableCell>
                         <TableCell className="text-right">
-                          {campaign.status === "draft" ? (
+                          {campaign.status === "draft" && canManage ? (
                             <Link
                               href={`/marketing/${campaign.id}/edit`}
                               aria-label={`Edit campaign ${campaign.name}`}

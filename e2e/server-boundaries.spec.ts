@@ -16,7 +16,8 @@ import {
   NORTHSTAR_SERVICES,
   NORTHSTAR_TEAM,
 } from "../scripts/db/seed-data/northstar";
-import { BOOKINGS, CUSTOMERS, FINANCIALS, JOBS, PLANS, PROPERTIES, REVIEWS, SARAH_REPLY, SERVICES, TEAM } from "./apex-data";
+import { NORTHSTAR_MARKETING } from "../scripts/db/seed-data/northstar";
+import { BOOKINGS, CUSTOMERS, FINANCIALS, JOBS, MARKETING, PLANS, PROPERTIES, REVIEWS, SARAH_REPLY, SERVICES, TEAM } from "./apex-data";
 
 const ROOT = process.cwd();
 const SRC = join(ROOT, "src");
@@ -144,8 +145,26 @@ test.describe("nothing server-only reaches the browser", () => {
     ].filter((value) => value.length > 12 && !fixtureText.includes(value));
     expect(reviewed.length).toBeGreaterThan(8);
     expect(reviewed.filter((value) => bundle.includes(value) || bundle.includes(JSON.stringify(value).slice(1, -1)))).toEqual([]);
+    // Marketing: every campaign's name, line, subject and message, the people a sent campaign went to and their contact details, for both
+    // businesses. They are read from PostgreSQL for the verified business and sent to that business's browser only (the recipients, not even
+    // that: a page asks for one campaign's at a time).
+    const campaigns = [...MARKETING.campaigns, ...NORTHSTAR_MARKETING.campaigns]
+      .flatMap((campaign) => [campaign.name, campaign.summary ?? "", campaign.subject ?? "", campaign.message ?? "", ...(campaign.recipientRows ?? []).flatMap((recipient) => [recipient.name, recipient.phone ?? "", recipient.email ?? ""])])
+      .filter((value) => value.length > 8 && !fixtureText.includes(value));
+    expect(campaigns.length).toBeGreaterThan(30);
+    expect(campaigns.filter((value) => bundle.includes(value) || bundle.includes(JSON.stringify(value).slice(1, -1)))).toEqual([]);
     // Nor the seed modules themselves: nothing under src may import them.
     expect(sourceFiles.filter((path) => importsOf(read(path)).some((specifier) => /seed-data/.test(specifier))).map(posix)).toEqual([]);
+  });
+
+  test("no tenant aggregate, approved baseline or campaign sample is written in the application's source", () => {
+    // They are seed data (scripts/db/seed-data) turned into imported adjustments at seed time; the browser only ever gets the active business's report.
+    const removed = ["BOOKING_BREAKDOWN", "JOB_BREAKDOWN", "QUOTE_BASELINE", "INVOICE_BASELINE_COUNTS", "CANONICAL_INVOICE_COUNTS", "WEEKLY_ACTIVITY", "SERVICE_ACTIVITY", "overviewMetrics", "CAMPAIGN_BASELINE", "PLAN_BASELINE", "REVIEW_BASELINE", "MARKETING_DATA", "REPORT_PERIOD"];
+    const hits = sourceFiles.flatMap((path) => removed.filter((name) => read(path).includes(name)).map((name) => `${posix(path)}: ${name}`));
+    expect(hits).toEqual([]);
+    // Nor the numbers themselves, written as the approved totals.
+    const numbers = sourceFiles.filter((path) => /recentRecipients:\s*146|totalInvoiced:\s*6240|totalValue:\s*4820|approvedValue:\s*2975/.test(read(path))).map(posix);
+    expect(numbers).toEqual([]);
   });
 
   test("no secret is exposed to the browser through NEXT_PUBLIC_ variables", () => {
@@ -234,7 +253,22 @@ test.describe("every Server Action authorizes its caller", () => {
     // Neither names an organization from the request: the tenant is the verified one.
     expect(maintenance).not.toMatch(/organizationId:\s*(input|payload|body)/);
     expect(reviews).not.toMatch(/organizationId:\s*(input|payload|body)/);
+    // Every campaign write goes through the one helper that authorizes "marketing:manage" first; the reads that need the server (who a campaign
+    // is for) are open to any member of the workspace, and change nothing.
+    const marketing = read(join(SRC, "server", "actions", "marketing.ts"));
+    expect(marketing.match(/authorize\("marketing:manage"/g)?.length).toBe(1);
+    expect(marketing).not.toMatch(/requireMember\(/);
+    const marketingActions = [...marketing.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)];
+    expect(marketingActions.map(([, name]) => name).sort()).toEqual(["cancelScheduleAction", "duplicateCampaignAction", "saveDraftAction", "scheduleCampaignAction", "sendCampaignAction"]);
+    for (const [, name, body] of marketingActions) expect(/>\s\{\s+return mutate\(/.test(body), `${name} must start by handing everything to mutate()`).toBe(true);
+    expect(marketing).not.toMatch(/organizationId:\s*(input|payload|body)/);
+    const marketingReads = read(join(SRC, "server", "actions", "marketing-reads.ts"));
+    expect([...marketingReads.matchAll(/export async function (\w+)\(/g)].map(([, name]) => name).sort()).toEqual(["campaignRecipientsAction", "previewRecipientsAction"]);
+    expect(marketingReads).not.toMatch(/authorize\(/);
+    expect(marketingReads.match(/await requireMember\(\)/g)?.length).toBe(2);
+    expect(marketingReads).not.toMatch(/\.(insert|update|delete)\(|Tx\(/);
     // The capabilities are decided in one place.
+    expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"marketing:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"financials:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"services:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"team:manage": \["owner", "admin"\]/);
@@ -285,17 +319,17 @@ test.describe("tenant data is never cached or prerendered", () => {
 });
 
 test.describe("every fixture-backed page checks its caller and its tenant", () => {
-  const FIXTURE_MODULES = ["analytics", "marketing", "marketplace", "website"];
-  /** Customers, Services, Team, Bookings, Jobs, the Schedule, Payments, Quotes & Invoices, Maintenance Plans and Reviews are on PostgreSQL: they work for every workspace, with that workspace's own rows. */
-  const DATABASE_MODULES = ["bookings", "customers", "jobs", "maintenance-plans", "payments", "quotes-invoices", "reviews", "schedule", "services", "team"];
+  const FIXTURE_MODULES = ["marketplace", "website"];
+  /** Customers, Services, Team, Bookings, Jobs, the Schedule, Payments, Quotes & Invoices, Maintenance Plans, Reviews, Marketing and Analytics are on PostgreSQL: they work for every workspace, with that workspace's own rows. */
+  const DATABASE_MODULES = ["analytics", "bookings", "customers", "jobs", "maintenance-plans", "marketing", "payments", "quotes-invoices", "reviews", "schedule", "services", "team"];
   const workspaceDir = join(SRC, "app", "(workspace)");
   const entries = FIXTURE_MODULES.flatMap((module) => walk(join(workspaceDir, module), (path) => /(page|layout)\.tsx$/.test(path)));
 
   test("the module list matches the sidebar", () => {
-    // Settings, Help and the ten database-backed modules are real for every workspace; every other module folder still runs on the sample dataset and must be listed here.
+    // Settings, Help and the twelve database-backed modules are real for every workspace; every other module folder still runs on the sample dataset and must be listed here.
     const present = readdirSync(workspaceDir).filter((entry) => statSync(join(workspaceDir, entry)).isDirectory() && !["settings", "help", ...DATABASE_MODULES].includes(entry));
     expect(present.sort()).toEqual([...FIXTURE_MODULES].sort());
-    expect(entries.length).toBeGreaterThan(10);
+    expect(entries.length).toBeGreaterThan(5);
   });
 
   test("each page and layout calls fixtureGate() before it renders anything", () => {
@@ -308,7 +342,7 @@ test.describe("every fixture-backed page checks its caller and its tenant", () =
     expect(missing).toEqual([]);
   });
 
-  test("Customers, Services, Team, Bookings, Jobs, Schedule, Payments, Quotes & Invoices, Maintenance Plans and Reviews read the database for the verified workspace: no sample gate, no sample data", () => {
+  test("Customers, Services, Team, Bookings, Jobs, Schedule, Payments, Quotes & Invoices, Maintenance Plans, Reviews, Marketing and Analytics read the database for the verified workspace: no sample gate, no sample data", () => {
     const pages = DATABASE_MODULES.flatMap((module) => walk(join(workspaceDir, module), (path) => /(page|layout)\.tsx$/.test(path)));
     expect(pages.length).toBeGreaterThan(20);
     const ASKS_THE_SERVER = /await requireWorkspaceContext\(\)|await getCustomerBook\(\)|await getCustomerDetail\(|await getServices\(\)|await getTeam\(\)/;

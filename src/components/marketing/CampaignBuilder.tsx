@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, CalendarClock, Eye, Megaphone, Plus, Send, Users } from "lucide-react";
-import { useTimeZoneLabel } from "@/components/settings/SettingsProvider";
+import { useBusiness, useTimeZoneLabel } from "@/components/settings/SettingsProvider";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { cardClasses } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -16,39 +16,42 @@ import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/components/ui/Toast";
 import { useUnsavedGuard } from "@/components/ui/UnsavedGuard";
 import { getCustomerById } from "@/data/customers";
-import { PROTOTYPE_NOW, PROTOTYPE_TODAY } from "@/data/fixtures";
 import {
   AUDIENCES,
   CAMPAIGN_STATUS_LABEL,
   CHANNEL_LABEL,
   DEFAULT_AUDIENCE,
-  DEFAULT_EMAIL_MESSAGE,
-  DEFAULT_SMS_MESSAGE,
   DEFAULT_SUBJECT,
   FIRST_NAME_HELPER,
   FIRST_NAME_TOKEN,
   SMS_LIMIT,
+  defaultEmailMessage,
+  defaultSmsMessage,
   formatCampaignTime,
   getAudience,
-  getAudienceCount,
   getCampaignById,
   renderMessage,
   type AudienceId,
   type Campaign,
   type CampaignChannel,
+  type CampaignInput,
 } from "@/data/marketing";
-import type { CampaignInput } from "@/lib/marketing-state";
+import { addDays } from "@/lib/dates";
+import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useCan, useClock } from "@/components/workspace/WorkspaceProvider";
 import { useMarketing } from "./MarketingProvider";
 import { RecipientsModal } from "./RecipientsModal";
-import { useDirectory } from "@/components/workspace/DirectoryProvider";
+
+/** How many people each audience reaches for each channel, read from the business's own customers by the server. */
+export type AudienceSizes = Record<CampaignChannel, Record<Exclude<AudienceId, "selected">, number>>;
 
 type Form = { name: string; channel: CampaignChannel; audienceId: AudienceId; selectedCustomerIds: string[]; subject: string; message: string };
 type Timing = { mode: "now" | "later"; date: string; time: string };
 
-/** A suggested send time for a new campaign. It is only a suggestion: the date and time can be changed. */
-const SUGGESTED: Timing = { mode: "later", date: "2024-10-30", time: "09:00" };
+/** The send time a new campaign opens with: five days from the business's today, at 9:00 AM. It is only a suggestion: it can be changed. */
+const suggestedTiming = (today: string): Timing => ({ mode: "later", date: addDays(today, 5), time: "09:00" });
 
-const startingForm = (campaign?: Campaign): Form =>
+const startingForm = (businessName: string, campaign?: Campaign): Form =>
   campaign
     ? {
         name: campaign.name,
@@ -58,21 +61,35 @@ const startingForm = (campaign?: Campaign): Form =>
         subject: campaign.subject ?? "",
         message: campaign.message ?? "",
       }
-    : { name: "", channel: "email", audienceId: DEFAULT_AUDIENCE.email, selectedCustomerIds: [], subject: DEFAULT_SUBJECT, message: DEFAULT_EMAIL_MESSAGE };
+    : { name: "", channel: "email", audienceId: DEFAULT_AUDIENCE.email, selectedCustomerIds: [], subject: DEFAULT_SUBJECT, message: defaultEmailMessage(businessName) };
 
-const startingTiming = (campaign?: Campaign): Timing => {
+const startingTiming = (today: string, campaign?: Campaign): Timing => {
   if (campaign?.status === "scheduled" && campaign.scheduledFor) {
     const [date, time] = campaign.scheduledFor.split("T");
     return { mode: "later", date, time };
   }
-  return SUGGESTED;
+  return suggestedTiming(today);
 };
 
 /** Create campaign / Edit campaign, then Review & schedule. One flow for email and SMS, for new and existing campaigns. */
-export function CampaignBuilder({ campaignId }: { campaignId?: string }) {
+export function CampaignBuilder({ campaignId, audienceSizes }: { campaignId?: string; audienceSizes: AudienceSizes }) {
   const { data } = useMarketing();
-  const existing = campaignId ? getCampaignById(campaignId, data) : undefined;
+  const canManage = useCan("marketing:manage");
+  // The campaign as it was when this screen opened. Saving changes the stored campaign, and the screen must not turn into
+  // "this campaign has been sent" in the moment before it moves on.
+  const [existing] = useState(() => (campaignId ? getCampaignById(campaignId, data) : undefined));
 
+  if (!canManage) {
+    return (
+      <EmptyState
+        as="h1"
+        icon={Megaphone}
+        title="Only an owner or admin can change campaigns"
+        description="You can view your business's campaigns, but creating and changing them needs an owner or admin."
+        action={<ButtonLink href="/marketing">Back to Marketing</ButtonLink>}
+      />
+    );
+  }
   if (campaignId && !existing) {
     return (
       <EmptyState
@@ -95,19 +112,21 @@ export function CampaignBuilder({ campaignId }: { campaignId?: string }) {
       />
     );
   }
-  return <BuilderForm existing={existing} />;
+  return <BuilderForm existing={existing} audienceSizes={audienceSizes} />;
 }
 
-function BuilderForm({ existing }: { existing?: Campaign }) {
+function BuilderForm({ existing, audienceSizes }: { existing?: Campaign; audienceSizes: AudienceSizes }) {
   const dir = useDirectory();
-  const { createDraft, updateCampaign, saveAsDraft, scheduleCampaign, sendCampaign } = useMarketing();
+  const business = useBusiness();
+  const { today, now } = useClock();
+  const { saveDraft, scheduleCampaign, sendCampaign } = useMarketing();
   const router = useRouter();
   const { toast } = useToast();
   const timeZone = useTimeZoneLabel();
   const messageRef = useRef<HTMLTextAreaElement>(null);
 
   // What the form started as, so edits can be told from a form nobody has touched.
-  const [initial] = useState(() => ({ form: startingForm(existing), timing: startingTiming(existing) }));
+  const [initial] = useState(() => ({ form: startingForm(business.name, existing), timing: startingTiming(today, existing) }));
   const [form, setForm] = useState<Form>(initial.form);
   const [timing, setTiming] = useState<Timing>(initial.timing);
   const [stage, setStage] = useState<"compose" | "review">("compose");
@@ -115,30 +134,43 @@ function BuilderForm({ existing }: { existing?: Campaign }) {
   const [previewing, setPreviewing] = useState(false);
   const [viewingRecipients, setViewingRecipients] = useState(false);
   const [tokenNote, setTokenNote] = useState<string>();
+  const [pending, setPending] = useState(false);
+  const [serverError, setServerError] = useState<string>();
 
   const dirty = JSON.stringify({ form, timing }) !== JSON.stringify(initial);
   const { guard, leave } = useUnsavedGuard(dirty, "your edits to this campaign");
 
   const email = form.channel === "email";
   const audience = getAudience(form.audienceId);
-  const recipients = getAudienceCount(form.audienceId, form.selectedCustomerIds);
+  // Customers with no email address (or no phone number) could not receive the campaign, so they are not counted.
+  const chosen = dir.customers.filter((customer) => form.selectedCustomerIds.includes(customer.id) && (email ? customer.email : customer.phone));
+  const recipients = form.audienceId === "selected" ? (chosen.length > 0 ? chosen.length : undefined) : audienceSizes[form.channel][form.audienceId];
   const sample = getCustomerById(form.selectedCustomerIds[0] ?? "", dir) ?? dir.customers[0];
   const destinationNote = email ? "Customers without an email address will not receive this campaign." : "Customers without a phone number will not receive this campaign.";
+  // The recipient snapshot of a Scheduled campaign is shown as it is while the audience is unchanged; once edited, the audience as it resolves now.
+  const audienceUnchanged =
+    existing?.status === "scheduled" &&
+    form.channel === initial.form.channel &&
+    form.audienceId === initial.form.audienceId &&
+    form.selectedCustomerIds.join(",") === initial.form.selectedCustomerIds.join(",");
 
   const patch = (change: Partial<Form>) => setForm((current) => ({ ...current, ...change }));
 
   /* ───────── validation ───────── */
   const composeErrors: Partial<Record<"name" | "audience" | "subject" | "message", string>> = {};
   if (!form.name.trim()) composeErrors.name = "Enter a campaign name.";
-  if (form.audienceId === "selected" && form.selectedCustomerIds.length === 0) composeErrors.audience = "Choose at least one customer.";
+  if (form.audienceId === "selected") {
+    if (form.selectedCustomerIds.length === 0) composeErrors.audience = "Choose at least one customer.";
+    else if (chosen.length === 0) composeErrors.audience = `None of the chosen customers has ${email ? "an email address" : "a phone number"}.`;
+  } else if (recipients === 0) composeErrors.audience = "No customers match this audience yet.";
   if (email && !form.subject.trim()) composeErrors.subject = "Enter a subject line.";
   if (!form.message.trim()) composeErrors.message = "Write the message.";
   const timingErrors: Partial<Record<"date" | "time", string>> = {};
   if (timing.mode === "later") {
     if (!timing.date) timingErrors.date = "Choose the date to send.";
-    else if (timing.date < PROTOTYPE_TODAY) timingErrors.date = "Choose today or a later date.";
+    else if (timing.date < today) timingErrors.date = "Choose today or a later date.";
     if (!timing.time) timingErrors.time = "Choose the time to send.";
-    else if (timing.date === PROTOTYPE_TODAY && `${timing.date}T${timing.time}` <= PROTOTYPE_NOW) timingErrors.time = "Choose a time later than now.";
+    else if (timing.date === today && `${timing.date}T${timing.time}` <= now) timingErrors.time = "Choose a time later than now.";
   }
   const shown = (message?: string) => (showErrors ? message : undefined);
 
@@ -146,12 +178,13 @@ function BuilderForm({ existing }: { existing?: Campaign }) {
   function changeChannel(channel: CampaignChannel) {
     if (channel === form.channel) return;
     setForm((current) => {
-      const messageIsStarter = current.message === (current.channel === "email" ? DEFAULT_EMAIL_MESSAGE : DEFAULT_SMS_MESSAGE);
+      const starter = (on: CampaignChannel) => (on === "email" ? defaultEmailMessage(business.name) : defaultSmsMessage(business.name));
+      const messageIsStarter = current.message === starter(current.channel);
       const audienceIsStarter = current.audienceId === DEFAULT_AUDIENCE[current.channel];
       return {
         ...current,
         channel,
-        message: messageIsStarter ? (channel === "email" ? DEFAULT_EMAIL_MESSAGE : DEFAULT_SMS_MESSAGE) : current.message,
+        message: messageIsStarter ? starter(channel) : current.message,
         audienceId: audienceIsStarter ? DEFAULT_AUDIENCE[channel] : current.audienceId,
       };
     });
@@ -178,10 +211,13 @@ function BuilderForm({ existing }: { existing?: Campaign }) {
     name: form.name,
     channel: form.channel,
     audienceId: form.audienceId,
-    selectedCustomerIds: form.selectedCustomerIds,
+    selectedCustomerIds: form.audienceId === "selected" ? form.selectedCustomerIds : [],
     subject: form.subject,
     message: form.message,
   });
+
+  // An existing campaign is named together with the status this screen saw it in: a stale screen changes nothing.
+  const target = existing && existing.status !== "sent" ? { id: existing.id, status: existing.status } : undefined;
 
   function continueToReview() {
     if (Object.keys(composeErrors).length > 0) return setShowErrors(true);
@@ -189,44 +225,45 @@ function BuilderForm({ existing }: { existing?: Campaign }) {
     setStage("review");
   }
 
-  function saveDraft() {
+  async function saveAsDraft() {
+    if (pending) return;
     if (composeErrors.name) {
       setStage("compose");
       return setShowErrors(true);
     }
-    let id: string;
-    if (existing) {
-      saveAsDraft(existing.id, input());
-      id = existing.id;
-    } else {
-      id = createDraft(input()).id;
-    }
+    setPending(true);
+    setServerError(undefined);
+    const result = await saveDraft(target, input());
+    setPending(false);
+    if (!result.ok) return setServerError(result.error);
     toast("Draft saved.");
-    router.push(`/marketing/${id}`);
+    router.push(`/marketing/${result.data.reference}`);
   }
 
-  function finish() {
+  async function finish() {
+    if (pending) return;
     if (Object.keys(composeErrors).length > 0) {
       setStage("compose");
       return setShowErrors(true);
     }
     if (Object.keys(timingErrors).length > 0) return setShowErrors(true);
-    let id: string;
-    if (existing) {
-      updateCampaign(existing.id, input());
-      id = existing.id;
-    } else {
-      id = createDraft(input()).id;
-    }
+    setPending(true);
+    setServerError(undefined);
     if (timing.mode === "now") {
-      sendCampaign(id);
-      toast(`Campaign sent to ${recipients ?? 0} recipients.`);
+      const result = await sendCampaign(target, input());
+      setPending(false);
+      if (!result.ok) return setServerError(result.error);
+      const sent = result.data.marketing.campaigns.find((campaign) => campaign.id === result.data.reference);
+      toast(`Campaign sent to ${sent?.recipients ?? recipients ?? 0} recipients.`);
+      router.push(`/marketing/${result.data.reference}`);
     } else {
       const when = `${timing.date}T${timing.time}`;
-      scheduleCampaign(id, when);
+      const result = await scheduleCampaign(target, input(), { mode: "later", date: timing.date, time: timing.time });
+      setPending(false);
+      if (!result.ok) return setServerError(result.error);
       toast(`Campaign scheduled for ${formatCampaignTime(when)}.`);
+      router.push(`/marketing/${result.data.reference}`);
     }
-    router.push(`/marketing/${id}`);
   }
 
   const heading = existing ? "Edit campaign" : "Create campaign";
@@ -309,7 +346,7 @@ function BuilderForm({ existing }: { existing?: Campaign }) {
                     type="radio"
                     name="audience"
                     title={item.label}
-                    badge={item.count !== undefined && <span className="text-xs font-normal text-ink-muted">{item.count} customers</span>}
+                    badge={item.id !== "selected" && <span className="text-xs font-normal text-ink-muted">{audienceSizes[form.channel][item.id]} customers</span>}
                     description={item.description}
                     checked={form.audienceId === item.id}
                     onChange={() => patch({ audienceId: item.id })}
@@ -358,6 +395,11 @@ function BuilderForm({ existing }: { existing?: Campaign }) {
                   View recipients
                 </Button>
               </div>
+              {form.audienceId !== "selected" && shown(composeErrors.audience) && (
+                <p role="alert" className="text-xs text-danger">
+                  {composeErrors.audience}
+                </p>
+              )}
               <p className="text-xs text-ink-muted">{destinationNote}</p>
             </section>
 
@@ -382,7 +424,7 @@ function BuilderForm({ existing }: { existing?: Campaign }) {
                 maxLength={email ? undefined : SMS_LIMIT}
                 value={form.message}
                 error={shown(composeErrors.message)}
-                hint={email ? "Your Apex Climate branded signature will be added." : `${form.message.length} / ${SMS_LIMIT} characters`}
+                hint={email ? `Your ${business.name} signature will be added.` : `${form.message.length} / ${SMS_LIMIT} characters`}
                 onChange={(event) => patch({ message: event.target.value })}
               />
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-btn bg-surface-low px-3 py-2 text-xs">
@@ -407,9 +449,9 @@ function BuilderForm({ existing }: { existing?: Campaign }) {
                 </Button>
                 {previewing && (
                   <div role="region" aria-label="Message preview" className="mt-3 rounded-card border border-line p-4">
-                    <p className="text-xs text-ink-muted">Preview for {sample.name}</p>
+                    <p className="text-xs text-ink-muted">Preview for {sample?.name ?? "a customer"}</p>
                     {email && <p className="mt-2 text-sm font-semibold text-ink">{form.subject}</p>}
-                    <p className="mt-2 text-sm whitespace-pre-line text-ink">{renderMessage(form.message, sample.name.split(" ")[0])}</p>
+                    <p className="mt-2 text-sm whitespace-pre-line text-ink">{renderMessage(form.message, sample?.name.split(" ")[0])}</p>
                   </div>
                 )}
               </div>
@@ -461,7 +503,7 @@ function BuilderForm({ existing }: { existing?: Campaign }) {
                       label="Date"
                       type="date"
                       required
-                      min={PROTOTYPE_TODAY}
+                      min={today}
                       value={timing.date}
                       error={shown(timingErrors.date)}
                       onChange={(event) => setTiming((current) => ({ ...current, date: event.target.value }))}
@@ -521,6 +563,12 @@ function BuilderForm({ existing }: { existing?: Campaign }) {
         </div>
       )}
 
+      {serverError && (
+        <p role="alert" className="rounded-card bg-danger-soft px-4 py-3 text-sm text-danger">
+          {serverError}
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5">
         {stage === "review" ? (
           <Button variant="secondary" onClick={() => setStage("compose")}>
@@ -533,16 +581,16 @@ function BuilderForm({ existing }: { existing?: Campaign }) {
           </Button>
         )}
         <div className="flex flex-wrap items-center gap-3">
-          <Button variant="secondary" onClick={saveDraft}>
+          <Button variant="secondary" onClick={saveAsDraft} disabled={pending}>
             Save draft
           </Button>
           {stage === "compose" ? (
-            <Button onClick={continueToReview}>
+            <Button onClick={continueToReview} disabled={pending}>
               Continue to review &amp; timing
               <ArrowRight aria-hidden className="size-4" />
             </Button>
           ) : (
-            <Button onClick={finish}>
+            <Button onClick={finish} disabled={pending}>
               <Send aria-hidden className="size-4" />
               {timing.mode === "now" ? "Send campaign" : "Schedule campaign"}
             </Button>
@@ -559,6 +607,7 @@ function BuilderForm({ existing }: { existing?: Campaign }) {
           audienceId={form.audienceId}
           selectedCustomerIds={form.selectedCustomerIds}
           count={recipients}
+          campaignId={audienceUnchanged ? existing?.id : undefined}
           onClose={() => setViewingRecipients(false)}
         />
       )}

@@ -3,8 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarX, Copy, Megaphone, Pencil } from "lucide-react";
+import { CalendarX, Copy, Megaphone, Pencil, Users } from "lucide-react";
 import { useTimeZoneLabel } from "@/components/settings/SettingsProvider";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { BackLink } from "@/components/ui/BackLink";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { cardClasses } from "@/components/ui/Card";
@@ -23,12 +24,13 @@ import {
   formatCampaignTime,
   getCampaignById,
   type Campaign,
+  type CampaignRecipient,
   type DeliveryStatus,
 } from "@/data/marketing";
 import { formatTime } from "@/lib/dates";
 import { useMarketing } from "./MarketingProvider";
-import { useDirectory } from "@/components/workspace/DirectoryProvider";
-import { CampaignStatusBadge, ChannelBadge, DeliveryBadge, audienceName, describeDelivery, recipientsText } from "./marketing-ui";
+import { RecipientsModal } from "./RecipientsModal";
+import { CampaignStatusBadge, ChannelBadge, DeliveryBadge, audienceName, recipientsText } from "./marketing-ui";
 
 /** The message with its first-name token marked, as the approved screens show it. */
 function Message({ text }: { text?: string }) {
@@ -56,11 +58,15 @@ function Tile({ label, value, hint }: { label: string; value: string | number; h
   );
 }
 
-function SentDetail({ campaign }: { campaign: Campaign }) {
-  const dir = useDirectory();
+/**
+ * A Sent campaign. Where a delivery result was recorded (the sample business's earlier sends) it shows the recipients' snapshot with
+ * the result for each; a campaign sent from here records who it went to, but no delivery result (nothing is delivered).
+ */
+function SentDetail({ campaign, records }: { campaign: Campaign; records: readonly CampaignRecipient[] }) {
   const [filter, setFilter] = useState<"all" | DeliveryStatus>("all");
+  const [viewing, setViewing] = useState(false);
   const delivery = campaign.delivery;
-  const records = (delivery?.records ?? []).filter((record) => filter === "all" || record.status === filter);
+  const rows = records.filter((record) => record.status !== "pending" && (filter === "all" || record.status === filter));
   const total = campaign.recipients ?? 0;
   const tabCount = filter === "all" ? total : filter === "delivered" ? (delivery?.delivered ?? 0) : (delivery?.notDelivered ?? 0);
 
@@ -126,55 +132,63 @@ function SentDetail({ campaign }: { campaign: Campaign }) {
                     </tr>
                   </TableHead>
                   <TableBody>
-                    {records.map((record, index) => {
-                      const who = describeDelivery(record, campaign.channel, dir);
-                      const [date, time] = record.at.split("T");
+                    {rows.map((record, index) => {
+                      const [date, time] = (record.at ?? "").split("T");
                       return (
-                        <TableRow key={`${who.name}-${index}`}>
+                        <TableRow key={`${record.name}-${index}`}>
                           <TableCell>
-                            {who.customerId ? (
-                              <Link href={customerHref(who.customerId)} className="font-medium text-ink hover:text-primary hover:underline">
-                                {who.name}
+                            {record.customerId ? (
+                              <Link href={customerHref(record.customerId)} className="font-medium text-ink hover:text-primary hover:underline">
+                                {record.name}
                               </Link>
                             ) : (
-                              <span className="font-medium">{who.name}</span>
+                              <span className="font-medium">{record.name}</span>
                             )}
                             {record.status === "not-delivered" && <p className="mt-0.5 text-xs text-danger">The message could not be delivered to this contact.</p>}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-ink-muted">{who.destination}</TableCell>
+                          <TableCell className="whitespace-nowrap text-ink-muted">{(campaign.channel === "email" ? record.email : record.phone) ?? ""}</TableCell>
                           <TableCell>
-                            <DeliveryBadge status={record.status} />
+                            <DeliveryBadge status={record.status as DeliveryStatus} />
                           </TableCell>
-                          <TableCell className="text-ink-muted">
-                            {formatCampaignTime(date)} · {formatTime(time)}
-                          </TableCell>
+                          <TableCell className="text-ink-muted">{date && time ? `${formatCampaignTime(date)} · ${formatTime(time)}` : "—"}</TableCell>
                         </TableRow>
                       );
                     })}
                   </TableBody>
                 </Table>
                 <p aria-live="polite" className="text-xs text-ink-muted">
-                  Showing {records.length} sample records of {tabCount} {filter === "all" ? "recipients" : DELIVERY_STATUS_LABEL[filter].toLowerCase()}
+                  Showing {rows.length} sample records of {tabCount} {filter === "all" ? "recipients" : DELIVERY_STATUS_LABEL[filter].toLowerCase()}
                 </p>
               </div>
             </SectionCard>
           ) : (
             <SectionCard title="Delivery records">
               <p className="rounded-card bg-surface-low p-4 text-sm text-ink-muted">Delivery records aren’t kept for this campaign.</p>
+              <div className="mt-3">
+                <Button variant="secondary" size="sm" onClick={() => setViewing(true)}>
+                  <Users aria-hidden className="size-3.5" />
+                  View recipients
+                </Button>
+              </div>
             </SectionCard>
           )}
         </div>
       </div>
+      {viewing && <RecipientsModal channel={campaign.channel} audienceId={campaign.audienceId} count={campaign.recipients} campaignId={campaign.id} onClose={() => setViewing(false)} />}
     </>
   );
 }
 
-export function CampaignDetail({ campaignId }: { campaignId: string }) {
+export function CampaignDetail({ campaignId, deliveryRecords = [] }: { campaignId: string; deliveryRecords?: readonly CampaignRecipient[] }) {
   const { data, cancelSchedule, duplicateCampaign } = useMarketing();
   const router = useRouter();
   const { toast } = useToast();
   const timeZone = useTimeZoneLabel();
+  const canManage = useCan("marketing:manage");
   const [cancelling, setCancelling] = useState(false);
+  const [viewing, setViewing] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string>();
   const campaign = getCampaignById(campaignId, data);
 
   if (!campaign) {
@@ -192,11 +206,26 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
   const scheduled = campaign.status === "scheduled";
   const sent = campaign.status === "sent";
 
-  function duplicate() {
-    const copy = duplicateCampaign(campaign!.id);
-    if (!copy) return;
+  async function duplicate() {
+    if (pending) return;
+    setPending(true);
+    setError(undefined);
+    const result = await duplicateCampaign(campaign!.id);
+    setPending(false);
+    if (!result.ok) return setError(result.error);
     toast(`Draft created from ${campaign!.name}.`);
-    router.push(`/marketing/${copy.id}`);
+    router.push(`/marketing/${result.data.reference}`);
+  }
+
+  async function confirmCancel() {
+    if (pending) return;
+    setPending(true);
+    setError(undefined);
+    const result = await cancelSchedule(campaign!.id);
+    setPending(false);
+    setCancelling(false);
+    if (!result.ok) return setError(result.error);
+    toast("Scheduled send cancelled. The campaign is now a Draft.");
   }
 
   return (
@@ -212,20 +241,20 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
           {campaign.summary && <p className="text-sm text-ink-muted">{campaign.summary}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          {scheduled && (
-            <Button variant="secondary" onClick={() => setCancelling(true)}>
+          {scheduled && canManage && (
+            <Button variant="secondary" onClick={() => setCancelling(true)} disabled={pending}>
               <CalendarX aria-hidden className="size-4" />
               Cancel scheduled send
             </Button>
           )}
-          {!sent && (
+          {!sent && canManage && (
             <ButtonLink href={`/marketing/${campaign.id}/edit`}>
               <Pencil aria-hidden className="size-4" />
               Edit campaign
             </ButtonLink>
           )}
-          {sent && (
-            <Button variant="secondary" onClick={duplicate}>
+          {sent && canManage && (
+            <Button variant="secondary" onClick={duplicate} disabled={pending}>
               <Copy aria-hidden className="size-4" />
               Duplicate campaign
             </Button>
@@ -233,8 +262,14 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
         </div>
       </header>
 
+      {error && (
+        <p role="alert" className="rounded-card bg-danger-soft px-4 py-3 text-sm text-danger">
+          {error}
+        </p>
+      )}
+
       {sent ? (
-        <SentDetail campaign={campaign} />
+        <SentDetail campaign={campaign} records={deliveryRecords} />
       ) : (
         <>
           <section aria-label="Campaign summary" className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -248,10 +283,16 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
           </section>
 
           {scheduled && campaign.scheduledFor && (
-            <p className="rounded-card bg-surface-low p-4 text-sm text-ink-muted">
-              This campaign will be sent to {campaign.recipients} customers on {formatCampaignTime(campaign.scheduledFor)}. You can edit the campaign or
-              cancel the scheduled send at any time before then.
-            </p>
+            <div className="space-y-3 rounded-card bg-surface-low p-4 text-sm text-ink-muted">
+              <p>
+                This campaign will be sent to {campaign.recipients} customers on {formatCampaignTime(campaign.scheduledFor)}.
+                {canManage ? " You can edit the campaign or cancel the scheduled send at any time before then." : " Only an owner or admin can change it."}
+              </p>
+              <Button variant="secondary" size="sm" onClick={() => setViewing(true)}>
+                <Users aria-hidden className="size-3.5" />
+                View recipients
+              </Button>
+            </div>
           )}
 
           <SectionCard title="Message details">
@@ -273,6 +314,10 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
         </>
       )}
 
+      {viewing && scheduled && (
+        <RecipientsModal channel={campaign.channel} audienceId={campaign.audienceId} count={campaign.recipients} campaignId={campaign.id} onClose={() => setViewing(false)} />
+      )}
+
       {cancelling && scheduled && campaign.scheduledFor && (
         <Modal
           open
@@ -284,14 +329,7 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
               <Button variant="secondary" onClick={() => setCancelling(false)}>
                 Keep scheduled
               </Button>
-              <Button
-                variant="destructive-solid"
-                onClick={() => {
-                  cancelSchedule(campaign.id);
-                  setCancelling(false);
-                  toast("Scheduled send cancelled. The campaign is now a Draft.");
-                }}
-              >
+              <Button variant="destructive-solid" onClick={confirmCancel} disabled={pending}>
                 Cancel scheduled send
               </Button>
             </>

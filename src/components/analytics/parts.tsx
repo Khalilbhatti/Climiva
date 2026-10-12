@@ -1,8 +1,8 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { ArrowRight } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/Table";
-import type { AnalyticsModel } from "@/lib/analytics-state";
+import type { AnalyticsReport } from "@/lib/analytics-rules";
 import type { AppHref } from "@/config/routes";
 import { cn } from "@/lib/cn";
 
@@ -28,7 +28,7 @@ export function OwnerLink({ href, children }: { href: AppHref; children: ReactNo
 }
 
 /** Bookings and completed Jobs by Service, with the totals the cards above show. */
-export function ServiceActivityTable({ services }: { services: AnalyticsModel["services"] }) {
+export function ServiceActivityTable({ services }: { services: AnalyticsReport["services"] }) {
   const bookings = services.reduce((total, row) => total + row.bookings, 0);
   const completedJobs = services.reduce((total, row) => total + row.completedJobs, 0);
   return (
@@ -61,14 +61,16 @@ export function ServiceActivityTable({ services }: { services: AnalyticsModel["s
 const TICKS = 4;
 
 /**
- * Weekly Bookings and completed Jobs as paired bars. Drawn with plain elements (no chart library): each week is one
- * list item that names both numbers, and the numbers are printed above the bars.
+ * Bookings and completed Jobs per column of the selected range (weeks, or months for a long range) as paired bars. Drawn with
+ * plain elements (no chart library): each column is one list item that names both numbers, and the numbers are printed above the
+ * bars.
  */
-export function WeeklyChart({ weekly }: { weekly: AnalyticsModel["weekly"] }) {
-  const peak = Math.max(...weekly.flatMap((week) => [week.bookings, week.completedJobs]));
+export function WeeklyChart({ weekly }: { weekly: AnalyticsReport["weekly"] }) {
+  const peak = Math.max(0, ...weekly.flatMap((week) => [week.bookings, week.completedJobs]));
   // One step of headroom above the tallest bar, so its number is never clipped.
   const top = Math.max(TICKS, Math.ceil((peak + 1) / TICKS) * TICKS);
-  const percent = (value: number) => `${(value / top) * 100}%`;
+  const percent = (value: number) => `${(Math.max(0, value) / top) * 100}%`;
+  const columns: CSSProperties = { gridTemplateColumns: `repeat(${Math.max(1, weekly.length)}, minmax(0, 1fr))` };
   return (
     <div className="flex gap-3">
       <div aria-hidden className="relative h-64 w-5 shrink-0 text-right text-mini text-ink-muted">
@@ -79,13 +81,13 @@ export function WeeklyChart({ weekly }: { weekly: AnalyticsModel["weekly"] }) {
         ))}
       </div>
       <div className="min-w-0 flex-1">
-        <ol aria-label="Weekly Bookings and completed Jobs" className="relative grid h-64 grid-cols-5 gap-3 border-b border-line">
+        <ol aria-label="Weekly Bookings and completed Jobs" className="relative grid h-64 gap-3 border-b border-line" style={columns}>
           {Array.from({ length: TICKS }, (_, index) => (
             <li key={index} aria-hidden className="pointer-events-none absolute inset-x-0 border-t border-line/60" style={{ bottom: `${((index + 1) / TICKS) * 100}%` }} />
           ))}
           {weekly.map((week) => (
             <li
-              key={week.label}
+              key={week.start}
               aria-label={`${week.label}: ${week.bookings} Bookings, ${week.completedJobs} completed Jobs`}
               className="relative flex items-end justify-center gap-1.5"
             >
@@ -94,9 +96,9 @@ export function WeeklyChart({ weekly }: { weekly: AnalyticsModel["weekly"] }) {
             </li>
           ))}
         </ol>
-        <ul aria-hidden className="mt-2 grid grid-cols-5 gap-3 text-center text-xs text-ink-muted">
+        <ul aria-hidden className="mt-2 grid gap-3 text-center text-xs text-ink-muted" style={columns}>
           {weekly.map((week) => (
-            <li key={week.label}>{week.label}</li>
+            <li key={week.start}>{week.label}</li>
           ))}
         </ul>
       </div>

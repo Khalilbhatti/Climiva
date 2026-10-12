@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CalendarPlus, Info, PauseCircle, Plus, RefreshCw, ShieldCheck, Wrench } from "lucide-react";
 import { useOperations } from "@/components/operations/OperationsProvider";
+import { useReporting } from "@/components/reporting/ReportingProvider";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -18,7 +19,6 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/Table";
 import { Tabs } from "@/components/ui/Tabs";
 import {
-  PLAN_BASELINE,
   PLAN_STATUS_LABEL,
   VISIT_STATE_LABEL,
   formatPlanPrice,
@@ -43,7 +43,7 @@ import { useMaintenancePlans } from "./MaintenancePlansProvider";
 import { ScheduleVisitModal } from "./ScheduleVisitModal";
 import { PlanCustomerName, PlanStatusBadge, dueText, planCustomerName, planProperty, visitTitle } from "./plan-ui";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
-import { useCan, useClock, useWorkspace } from "@/components/workspace/WorkspaceProvider";
+import { useCan, useClock } from "@/components/workspace/WorkspaceProvider";
 
 type View = "active" | "upcoming" | "all";
 const VIEWS: View[] = ["active", "upcoming", "all"];
@@ -61,7 +61,7 @@ export function MaintenancePlansView() {
   const { data: stored } = useMaintenancePlans();
   const { data: ops } = useOperations();
   const { today } = useClock();
-  const { hasSampleData } = useWorkspace();
+  const { adjustments } = useReporting();
   const canManage = useCan("maintenance:manage");
   const router = useRouter();
   const params = useSearchParams();
@@ -80,7 +80,7 @@ export function MaintenancePlansView() {
 
   const data: PlansData = useMemo(() => (previewEmpty ? { plans: [] } : stored), [previewEmpty, stored]);
   // The sample business reports the approved workspace totals its stored plans are a sample of; any other business counts its own.
-  const metrics = previewEmpty ? ZERO : getPlanMetrics(data, ops, today, hasSampleData ? PLAN_BASELINE : undefined);
+  const metrics = previewEmpty ? ZERO : getPlanMetrics(data, ops, today, adjustments.plans);
 
   function setParams(updates: Record<string, string | null>) {
     const next = new URLSearchParams(params.toString());

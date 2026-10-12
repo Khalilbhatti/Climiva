@@ -8,8 +8,10 @@
  * reviews are seed data (scripts/db/seed-data/reviews.ts) and ship to no browser.
  *
  * The sample business's workspace totals (12 reviews, 4.7 average, 3 awaiting a reply, 5 review requests) are approved product
- * aggregates, held in REVIEW_BASELINE: its stored reviews are a representative sample (marked `imported`), not twelve invented
- * records. Any other business's totals are counted from its own reviews. The only review source is Climvia. Nothing is published
+ * aggregates: its stored reviews are a representative sample (marked `imported`), not twelve invented records, and the totals are
+ * the stored reviews plus an imported adjustment (analytics_imported_baselines) that holds the review count, the sum of the
+ * ratings, the awaiting count and the request count the stored records do not carry. The average is always sum / count, never a
+ * stored average. Any other business's totals are counted from its own reviews alone. The only review source is Climvia. Nothing is published
  * to, or read from, any outside review site, and there is no verification, scoring, incentive or gating. A review request is a
  * record that one was made: nothing is sent.
  *
@@ -50,7 +52,7 @@ export type Review = {
   response?: ReviewResponse;
   /** Text the Reply dialog opens with, for a review whose approved reply is already written. */
   replyDraft?: string;
-  /** Carried in with the sample business's history (already inside its reported totals). */
+  /** Carried in with the sample business's history (informational: its totals are reconciled by an imported adjustment). */
   imported?: boolean;
 };
 
@@ -75,10 +77,14 @@ export const defaultRequestMessage = (businessName: string) => `Thanks for choos
 export const RESPONSE_MAX = 500;
 export const REQUEST_MESSAGE_MAX = 500;
 
-/** The sample business's approved workspace totals. Its stored reviews are a representative sample of them. */
-export const REVIEW_BASELINE = { total: 12, average: 4.7, awaiting: 3, requests: 5 } as const;
+/**
+ * What the imported reporting history adds to the totals a business's reviews give, signed: the number of reviews, the SUM of their
+ * ratings (so the average stays exact when a review is added), those awaiting a reply, and the review requests. Read from
+ * analytics_imported_baselines for the active business only; none for any other business.
+ */
+export type ReviewAdjustment = { readonly count: number; readonly ratingSum: number; readonly awaiting: number; readonly requests: number };
 
-export type ReviewBaseline = { readonly total: number; readonly average: number; readonly awaiting: number; readonly requests: number };
+export const NO_REVIEW_ADJUSTMENT: ReviewAdjustment = { count: 0, ratingSum: 0, awaiting: 0, requests: 0 };
 
 /* ───────────────────────── selectors ───────────────────────── */
 
@@ -87,28 +93,33 @@ export const getReviewStatus = (review: Pick<Review, "response">): ReviewStatus 
 
 export type ReviewMetrics = { total: number; average: number; awaiting: number; responded: number; requests: number };
 
-/**
- * The totals on the Reviews screens. For the sample business: the approved figures, moved by what happened since. Replying to a
- * review that was awaiting moves one from Awaiting reply to Responded; a recorded request adds to the request count. Nobody
- * writes new reviews through the product, so the total and the average do not change. For any other business (no `baseline`)
- * they are counted from its own reviews.
- */
-export function getReviewMetrics(data: ReviewsData, baseline?: ReviewBaseline): ReviewMetrics {
-  if (!baseline) {
-    const total = data.reviews.length;
-    const awaiting = data.reviews.filter((review) => !review.response).length;
-    const sum = data.reviews.reduce((points, review) => points + review.rating, 0);
-    return { total, average: total === 0 ? 0 : Math.round((sum / total) * 10) / 10, awaiting, responded: total - awaiting, requests: data.requests.length };
-  }
-  // A carried-in review whose reply was posted since: it was awaiting in the approved figures.
-  const replied = data.reviews.filter((review) => review.imported && review.response && !review.response.imported).length;
-  const awaiting = baseline.awaiting - replied;
+/** What the stored reviews and requests themselves contribute to the totals. */
+export function getReviewContribution(data: ReviewsData): ReviewAdjustment {
   return {
-    total: baseline.total,
-    average: baseline.average,
+    count: data.reviews.length,
+    ratingSum: data.reviews.reduce((points, review) => points + review.rating, 0),
+    awaiting: data.reviews.filter((review) => !review.response).length,
+    requests: data.requests.length,
+  };
+}
+
+/**
+ * The totals on the Reviews screens: every stored review and request plus the imported `adjustment` (none for a business without
+ * reporting history). Replying to a review moves one from Awaiting reply to Responded; a recorded request adds to the request
+ * count; and the average is (sum of all ratings) / (number of all reviews), rounded to one decimal, so a review added to a
+ * business moves it exactly as much as its rating weighs, and another business's reviews never enter into it.
+ */
+export function getReviewMetrics(data: ReviewsData, adjustment: ReviewAdjustment = NO_REVIEW_ADJUSTMENT): ReviewMetrics {
+  const own = getReviewContribution(data);
+  const total = adjustment.count + own.count;
+  const points = adjustment.ratingSum + own.ratingSum;
+  const awaiting = adjustment.awaiting + own.awaiting;
+  return {
+    total,
+    average: total === 0 ? 0 : Math.round((points / total) * 10) / 10,
     awaiting,
-    responded: baseline.total - awaiting,
-    requests: baseline.requests + data.requests.length,
+    responded: total - awaiting,
+    requests: adjustment.requests + own.requests,
   };
 }
 

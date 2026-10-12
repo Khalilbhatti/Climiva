@@ -31,21 +31,6 @@ export const currentUser = {
   role: "Operations Lead",
 } as const;
 
-/**
- * The post-#PAY-1008 baseline the audit board locks. The Overview derives its payment totals from the financial
- * records (data/financials), which must equal these at the canonical state; a test checks it.
- */
-export const overviewMetrics = {
-  bookings: 24,
-  completedJobs: 18,
-  /** USD */
-  totalInvoiced: 6240,
-  /** USD, excludes voided payments */
-  paymentsReceived: 2130,
-  /** Count of recorded, non-voided payments */
-  recordedPayments: 7,
-} as const;
-
 /** "Austin, TX 78741" */
 export function formatCityStateZip(address: { city: string; state: string; postalCode: string }): string {
   return `${address.city}, ${address.state} ${address.postalCode}`;

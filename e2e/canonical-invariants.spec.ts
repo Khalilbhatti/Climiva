@@ -7,16 +7,8 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "playwright/test";
-import { buildAnalytics } from "../src/lib/analytics-state";
 import { paymentAmountError } from "../src/lib/financial-rules";
 import { getCustomerById, getPropertiesForCustomer, getPropertyById } from "../src/data/customers";
-import {
-  BOOKING_BREAKDOWN,
-  JOB_BREAKDOWN,
-  QUOTE_BASELINE,
-  SERVICE_ACTIVITY,
-  WEEKLY_ACTIVITY,
-} from "../src/data/analytics";
 import {
   getInvoiceBalance,
   getInvoiceById,
@@ -27,17 +19,17 @@ import {
   getRecordedPaymentsCount,
   getTotalInvoiced,
 } from "../src/data/financials";
-import { BUSINESS_TIME_ZONE, PROTOTYPE_NOW, PROTOTYPE_TODAY, business, businessHoursByWeekday, currentUser, overviewMetrics } from "../src/data/fixtures";
-import { COVERAGE, PLAN_BASELINE, getCurrentPlanForCustomer, getPlanById, getPlanMetrics, getVisitState } from "../src/data/maintenance-plans";
-import { CAMPAIGN_BASELINE, MARKETING_DATA, getCampaignMetrics } from "../src/data/marketing";
+import { BUSINESS_TIME_ZONE, PROTOTYPE_NOW, PROTOTYPE_TODAY, business, businessHoursByWeekday, currentUser } from "../src/data/fixtures";
+import { COVERAGE, getCurrentPlanForCustomer, getPlanById, getPlanMetrics, getVisitState } from "../src/data/maintenance-plans";
+import { getCampaignMetrics } from "../src/data/marketing";
 import { BASELINE_EXCLUDED_SERVICE_ID, getEligibleServices, getListingServices, initialMarketplaceState } from "../src/data/marketplace";
 import { getBookingById, getJobById } from "../src/data/operations";
-import { REVIEW_BASELINE, getReviewById, getReviewMetrics } from "../src/data/reviews";
+import { getReviewById, getReviewMetrics } from "../src/data/reviews";
 import { getPublicActiveServices } from "../src/data/services";
 import { initialSettings } from "../src/data/settings";
 import { getTeamMemberById } from "../src/data/team";
 import { WEBSITE_PAGES, defaultSiteContent, getShownServices } from "../src/data/website";
-import { BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, INVOICES, JOBS, OPERATIONS, PLANS, PLANS_DATA, REVIEWS, REVIEWS_DATA, ROLES, SCHEDULE_BLOCKS, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
+import { APEX_APPROVED, BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, INVOICES, JOBS, MARKETING, OPERATIONS, OVERVIEW_TOTALS, PLANS, PLANS_DATA, PLAN_ADJUSTMENT, REVIEWS, REVIEWS_DATA, REVIEW_ADJUSTMENT, ROLES, SCHEDULE_BLOCKS, SERVICES, STORED_INVOICED, TEAM, TEAM_DATA } from "./apex-data";
 import { withPayment } from "./financial-edits";
 
 const SIX_SERVICES = [
@@ -112,7 +104,7 @@ test.describe("the business", () => {
 test.describe("people", () => {
   test("Elena Rodriguez is the customer, and the stale spelling exists nowhere in the data", () => {
     expect(CUSTOMERS.filter((customer) => customer.name === "Elena Rodriguez")).toHaveLength(1);
-    const everything = JSON.stringify([CUSTOMERS, TEAM, ROLES, BOOKINGS, JOBS, FINANCIALS, PLANS, REVIEWS, MARKETING_DATA, SERVICES]);
+    const everything = JSON.stringify([CUSTOMERS, TEAM, ROLES, BOOKINGS, JOBS, FINANCIALS, PLANS, REVIEWS, MARKETING, SERVICES]);
     expect(everything).not.toContain("Elena Rostova");
     expect(everything).not.toContain("Wake County");
     expect(everything).not.toContain("North Carolina");
@@ -206,8 +198,10 @@ test.describe("money", () => {
     expect(getPaymentsReceivedTotal(FINANCIALS)).toBe(2130);
     expect(getOutstandingInvoices(FINANCIALS)).toHaveLength(2);
     expect(getOutstandingBalance(FINANCIALS)).toBe(680);
-    expect(getTotalInvoiced(FINANCIALS)).toBe(6240);
-    expect(overviewMetrics).toMatchObject({ totalInvoiced: 6240, paymentsReceived: 2130, recordedPayments: 7 });
+    // The stored invoices add up to $3,010; the approved $6,240 the Overview reports is those records plus imported history (reporting layer).
+    expect(getTotalInvoiced(FINANCIALS)).toBe(STORED_INVOICED);
+    expect(OVERVIEW_TOTALS).toMatchObject({ totalInvoiced: 6240, paymentsReceived: 2130, recordedPayments: 7 });
+    expect(APEX_APPROVED.invoices?.totalCents).toBe(624_000);
   });
 
   test("#INV-1044 is paid and cannot take another payment; #INV-1050 owes $300", () => {
@@ -236,44 +230,35 @@ test.describe("money", () => {
 
 test.describe("Growth and Insights baselines", () => {
   test("Reviews: 12 reviews, 4.7 average, 3 awaiting a reply, 5 requests", () => {
-    expect(REVIEW_BASELINE).toEqual({ total: 12, average: 4.7, awaiting: 3, requests: 5 });
-    expect(getReviewMetrics(REVIEWS_DATA, REVIEW_BASELINE)).toEqual({ total: 12, average: 4.7, awaiting: 3, responded: 9, requests: 5 });
+    expect(APEX_APPROVED.reviews).toEqual({ count: 12, average: 4.7, ratingSum: 56, awaiting: 3, requests: 5 });
+    expect(getReviewMetrics(REVIEWS_DATA, REVIEW_ADJUSTMENT)).toEqual({ total: 12, average: 4.7, awaiting: 3, responded: 9, requests: 5 });
   });
 
-  test("Marketing: 2 drafts, 1 scheduled, 8 sent, 146 recent recipients", () => {
-    expect(CAMPAIGN_BASELINE).toEqual({ draft: 2, scheduled: 1, sent: 8, recentRecipients: 146 });
-    expect(getCampaignMetrics(MARKETING_DATA)).toMatchObject({ drafts: 2, scheduled: 1, sent: 8, total: 11, recentRecipients: 146 });
+  test("Marketing: 2 drafts, 1 scheduled, 8 sent, 146 recent recipients, counted from the eleven stored campaigns", () => {
+    expect(getCampaignMetrics({ campaigns: MARKETING.campaigns }, PROTOTYPE_TODAY)).toMatchObject({ drafts: 2, scheduled: 1, sent: 8, total: 11, recentRecipients: 146 });
   });
 
   test("Maintenance Plans: the approved workspace totals", () => {
-    expect(PLAN_BASELINE).toEqual({ active: 14, visitsDue: 5, renewals: 3, paused: 1, ended: 1 });
+    expect(APEX_APPROVED.plans).toEqual({ active: 14, visitsDue: 5, renewals: 3, paused: 1, ended: 1 });
+    expect(getPlanMetrics(PLANS_DATA, OPERATIONS, PROTOTYPE_TODAY, PLAN_ADJUSTMENT)).toMatchObject({ active: 14, visitsDue: 5, renewals: 3, paused: 1, ended: 1 });
   });
 
-  test("Analytics: 24 Bookings, 18 Completed Jobs, $4,820 quoted, $6,240 invoiced, $2,130 received, all from the same sources", () => {
-    const model = buildAnalytics(FINANCIALS, PLANS_DATA, OPERATIONS, SERVICES);
-    expect(model.kpis).toEqual({ bookings: 24, completedJobs: 18, quoteValue: 4820, invoiced: 6240, paymentsReceived: 2130 });
-    expect(model.bookings.total).toBe(24);
-    expect(model.jobs.completed).toBe(18);
-    expect(QUOTE_BASELINE.totalValue).toBe(4820);
-    // The money and the plans are the shared selectors' answers, not a second copy.
-    expect(model.payments.recorded).toBe(getRecordedPaymentsCount(FINANCIALS));
-    expect(model.payments.received).toBe(getPaymentsReceivedTotal(FINANCIALS));
-    expect(model.invoices.outstanding).toBe(getOutstandingBalance(FINANCIALS));
-    expect(model.plans).toEqual(getPlanMetrics(PLANS_DATA, OPERATIONS, PROTOTYPE_TODAY, PLAN_BASELINE));
-    expect(model.plans.active).toBe(PLAN_BASELINE.active);
-  });
-
-  test("Analytics aggregates are internally consistent and are not forced to equal the sample records", () => {
+  test("Analytics: the approved aggregates are internally consistent and are not forced to equal the sample records", () => {
     const sum = (values: readonly number[]) => values.reduce((total, value) => total + value, 0);
-    expect(sum(Object.values(BOOKING_BREAKDOWN))).toBe(24);
-    expect(sum(Object.values(JOB_BREAKDOWN))).toBe(24);
-    expect(sum(WEEKLY_ACTIVITY.map((week) => week.bookings))).toBe(24);
-    expect(sum(WEEKLY_ACTIVITY.map((week) => week.completedJobs))).toBe(18);
-    expect(sum(SERVICE_ACTIVITY.map((row) => row.bookings))).toBe(24);
-    expect(sum(SERVICE_ACTIVITY.map((row) => row.completedJobs))).toBe(18);
+    const approved = APEX_APPROVED;
+    expect(sum(Object.values(approved.bookings!))).toBe(24);
+    expect(sum(Object.values(approved.jobs!))).toBe(24);
+    expect(approved.jobs!.completed).toBe(18);
+    expect(sum(approved.weekly!.map((week) => week.bookings))).toBe(24);
+    expect(sum(approved.weekly!.map((week) => week.completedJobs))).toBe(18);
+    expect(sum(approved.services!.map((row) => row.bookings))).toBe(24);
+    expect(sum(approved.services!.map((row) => row.completedJobs))).toBe(18);
+    expect(approved.quotes).toMatchObject({ valueCents: 482_000, approvedValueCents: 297_500 });
+    expect(sum(Object.values(approved.quotes!.counts))).toBe(12);
+    expect(sum(Object.values(approved.invoices!.counts))).toBe(18);
     // The sample is smaller than the aggregate, by design.
     expect(BOOKINGS.length).toBeLessThan(24 + 1);
     expect(JOBS.filter((job) => job.status === "completed").length).toBeLessThan(18);
-    for (const row of SERVICE_ACTIVITY) expect(SERVICES.some((service) => service.id === row.serviceId), row.serviceId).toBe(true);
+    for (const row of approved.services!) expect(SERVICES.some((service) => service.id === row.serviceId), row.serviceId).toBe(true);
   });
 });

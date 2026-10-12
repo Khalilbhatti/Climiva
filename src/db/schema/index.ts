@@ -11,3 +11,5 @@ export * from "./operations";
 export * from "./financials";
 export * from "./maintenance";
 export * from "./reviews";
+export * from "./marketing";
+export * from "./reporting";

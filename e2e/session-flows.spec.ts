@@ -112,9 +112,10 @@ test.describe("completing a job reaches the customer and Reviews", () => {
     await go(page, "/customers/david-chen");
     await expect(main(page)).toContainText("JB-201");
 
-    // The Overview's Completed Jobs is the workspace aggregate (18); it is a baseline, not a count of the sample.
+    // The Overview's Completed Jobs is the reporting layer's count for the month: the approved 18 (the stored completed jobs plus the
+    // imported history) and the job just completed, which moves it to 19.
     await go(page, "/");
-    await expect(kpis(page)).toContainText("18");
+    await expect(kpis(page)).toContainText("19");
 
     await go(page, "/reviews");
     await page.getByRole("button", { name: "Request review" }).click();
@@ -231,8 +232,9 @@ test.describe("cancelling a scheduled campaign keeps it as a Draft", () => {
     await expect(tabs(page, "Campaign views")).toHaveText([/^All campaigns\s*11$/, /^Drafts\s*3$/, /^Scheduled\s*0$/, /^Sent\s*8$/]);
     await expect(page.getByRole("table", { name: "Campaigns" }).locator("tbody tr").filter({ hasText: "Fall maintenance reminder" })).toContainText("Draft");
 
+    // The cancellation is stored: a reload keeps it (the campaign is a Draft, not deleted).
     await page.reload();
-    await expect(tabs(page, "Campaign views")).toHaveText([/^All campaigns\s*11$/, /^Drafts\s*2$/, /^Scheduled\s*1$/, /^Sent\s*8$/]);
+    await expect(tabs(page, "Campaign views")).toHaveText([/^All campaigns\s*11$/, /^Drafts\s*3$/, /^Scheduled\s*0$/, /^Sent\s*8$/]);
   });
 });
 

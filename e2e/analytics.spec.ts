@@ -196,8 +196,8 @@ test.describe("Analytics: date range", () => {
   });
 
   test("Change date range reopens the picker and Reset date range returns to this month", async ({ page }) => {
-    await page.goto("/analytics?range=custom&from=2024-11-15&to=2024-11-20");
-    await expect(rangeButton(page)).toContainText("Nov 15 – Nov 20, 2024");
+    await page.goto("/analytics?range=custom&from=2024-12-02&to=2024-12-06");
+    await expect(rangeButton(page)).toContainText("Dec 2 – Dec 6, 2024");
     await expect(rangeButton(page)).toContainText("Custom range");
     await expect(page.getByRole("heading", { name: "No activity for this period" })).toBeVisible();
 
@@ -211,34 +211,44 @@ test.describe("Analytics: date range", () => {
     await expect(kpis(page)).toContainText("$6,240");
   });
 
-  test("a custom range is validated, and a valid one that misses October is empty", async ({ page }) => {
+  test("a custom range is validated, and a valid one with no records is empty", async ({ page }) => {
     await page.goto("/analytics");
     await rangeButton(page).click();
     const dialog = rangeDialog(page);
     await dialog.getByRole("radio", { name: /^Custom range/ }).check();
-    await dialog.getByLabel(/^From/).fill("2024-11-20");
-    await dialog.getByLabel(/^To( \*)?$/).fill("2024-11-15");
+    await dialog.getByLabel(/^From/).fill("2024-12-06");
+    await dialog.getByLabel(/^To( \*)?$/).fill("2024-12-02");
     await dialog.getByRole("button", { name: "Apply range" }).click();
     await expect(dialog.getByText("The end date must be on or after the start date.")).toBeVisible();
     await expect(dialog.getByLabel(/^From/)).toHaveAttribute("aria-invalid", "true");
 
-    await dialog.getByLabel(/^From/).fill("2024-11-15");
-    await dialog.getByLabel(/^To( \*)?$/).fill("2024-11-20");
+    await dialog.getByLabel(/^From/).fill("2024-12-02");
+    await dialog.getByLabel(/^To( \*)?$/).fill("2024-12-06");
     await dialog.getByRole("button", { name: "Apply range" }).click();
-    await expect(page).toHaveURL(/range=custom&from=2024-11-15&to=2024-11-20/);
+    await expect(page).toHaveURL(/range=custom&from=2024-12-02&to=2024-12-06/);
     await expect(page.getByRole("heading", { name: "No activity for this period" })).toBeVisible();
+    // A range over two years long is not a report the page builds.
+    await page.goto("/analytics?range=custom&from=2020-01-01&to=2024-12-06");
+    await expect(rangeButton(page)).toContainText("This month");
   });
 
-  test("a range that overlaps October shows the reporting period, with a note that reports cover whole periods", async ({ page }) => {
+  test("a range reports the records inside its dates, and the imported history only when it covers all of its period", async ({ page }) => {
+    // October 10 to 20 covers part of the imported period: the records inside it (one declined quote, $195) and a note, not the approved totals.
     await page.goto("/analytics?range=custom&from=2024-10-10&to=2024-10-20");
-    await expect(page.getByText("Reports cover whole periods. Showing Oct 1 – Oct 31, 2024, the period with recorded activity.")).toBeVisible();
-    await expect(kpis(page)).toContainText("$6,240");
+    await expect(page.getByText("Imported history for Oct 1 – Oct 31, 2024 is only part of the figures when the range covers all of it.")).toBeVisible();
+    await expect(kpis(page).getByRole("link")).toHaveText([/^Bookings0/, /^Jobs completed0/, /^Quote value\$195/, /^Invoiced\$0/, /^Payments received\$0/]);
+
+    // The quarter covers the whole period: the approved October figures, plus the November booking BK-1048 (25 bookings).
     await page.goto("/analytics?range=this-quarter");
     await expect(rangeButton(page)).toContainText("Oct 1 – Dec 31, 2024");
-    await expect(page.getByText(/Reports cover whole periods/)).toBeVisible();
-    await expect(kpis(page)).toContainText("24");
+    await expect(page.getByText(/Imported history for/)).toHaveCount(0);
+    await expect(kpis(page)).toContainText("25");
+    await expect(kpis(page)).toContainText("$6,240");
+
+    // This month is the approved view, with no note.
     await page.goto("/analytics");
-    await expect(page.getByText(/Reports cover whole periods/)).toHaveCount(0);
+    await expect(page.getByText(/Imported history for/)).toHaveCount(0);
+    await expect(kpis(page)).toContainText("24");
   });
 
   test("an invalid range in the URL falls back to this month", async ({ page }) => {
@@ -254,8 +264,8 @@ test.describe("Analytics: date range", () => {
       try {
         await page.goto("/analytics");
         await expect(rangeButton(page)).toContainText("Oct 1 – Oct 31, 2024");
-        await page.goto("/analytics?range=custom&from=2024-10-31&to=2024-11-01");
-        await expect(rangeButton(page)).toContainText("Oct 31 – Nov 1, 2024");
+        await page.goto("/analytics?range=custom&from=2024-10-01&to=2024-11-01");
+        await expect(rangeButton(page)).toContainText("Oct 1 – Nov 1, 2024");
         await expect(kpis(page)).toContainText("$6,240");
       } finally {
         await context.close();

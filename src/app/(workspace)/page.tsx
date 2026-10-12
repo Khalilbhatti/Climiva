@@ -4,6 +4,7 @@ import { NewWorkspaceOverview } from "@/components/overview/NewWorkspaceOverview
 import { OverviewHeader } from "@/components/overview/OverviewHeader";
 import { OverviewKpis } from "@/components/overview/OverviewKpis";
 import { WorkflowActions } from "@/components/overview/WorkflowActions";
+import { getMonthTotals } from "@/server/reporting";
 import { requireWorkspaceContext } from "@/server/workspace";
 
 export const metadata: Metadata = { title: "Workspace Overview" };
@@ -17,7 +18,7 @@ export default async function OverviewPage() {
     <>
       <OverviewHeader />
 
-      <OverviewKpis />
+      <OverviewKpis month={await getMonthTotals()} />
 
       <WorkflowActions />
       <BusinessInfoCard />

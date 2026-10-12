@@ -2,11 +2,10 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "playwright/test";
 import { getPropertyById } from "../src/data/customers";
-import { business, overviewMetrics } from "../src/data/fixtures";
+import { business } from "../src/data/fixtures";
 import {
   COVERAGE,
   COVERAGE_IDS,
-  PLAN_BASELINE,
   getCustomerPlanSummary,
   getPlanById,
   getPlanMetrics,
@@ -46,7 +45,7 @@ import {
   savePage,
   unpublish,
 } from "../src/lib/website-state";
-import { BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, JOBS, OPERATIONS, PLANS, PLANS_DATA, PROPERTIES, SERVICES } from "./apex-data";
+import { BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, JOBS, OPERATIONS, OVERVIEW_TOTALS, PLANS, PLANS_DATA, PLAN_ADJUSTMENT, PROPERTIES, SERVICES } from "./apex-data";
 import { cancelled } from "./operations-edits";
 
 // Pure data/selector/state tests: no browser needed.
@@ -122,7 +121,7 @@ test.describe("maintenance plan data", () => {
   });
 
   test("aggregates are the approved 14 / 5 / 3 / 2, not a made-up 24 records", () => {
-    expect(getPlanMetrics(PLANS_DATA, OPERATIONS, TODAY, PLAN_BASELINE)).toMatchObject({ active: 14, visitsDue: 5, renewals: 3, paused: 1, ended: 1, pausedOrEnded: 2 });
+    expect(getPlanMetrics(PLANS_DATA, OPERATIONS, TODAY, PLAN_ADJUSTMENT)).toMatchObject({ active: 14, visitsDue: 5, renewals: 3, paused: 1, ended: 1, pausedOrEnded: 2 });
     expect(PLANS.length).toBeLessThan(14);
   });
 
@@ -171,7 +170,7 @@ test.describe("creating a plan and scheduling an included visit", () => {
     const before = JSON.stringify(PLANS_DATA);
     const data = { plans: [...PLANS_DATA.plans, createdPlan()] };
     expect(JSON.stringify(PLANS_DATA)).toBe(before);
-    expect(getPlanMetrics(data, OPERATIONS, TODAY, PLAN_BASELINE)).toMatchObject({ active: 15, visitsDue: 6 });
+    expect(getPlanMetrics(data, OPERATIONS, TODAY, PLAN_ADJUSTMENT)).toMatchObject({ active: 15, visitsDue: 6 });
     expect(createdPlan().visits.every((visit) => getVisitBooking(visit, OPERATIONS) === undefined)).toBe(true);
   });
 
@@ -219,7 +218,7 @@ test.describe("creating a plan and scheduling an included visit", () => {
     expect(getPlanVisitForBooking(bk1048(), PLANS_DATA)).toMatchObject({ visit: { id: visit2().id } });
     expect(getVisitState(plan.visits[1], OPERATIONS)).toBe("scheduled");
     // Still counted as due until it is completed; the approved total does not move.
-    expect(getPlanMetrics(PLANS_DATA, OPERATIONS, TODAY, PLAN_BASELINE).visitsDue).toBe(5);
+    expect(getPlanMetrics(PLANS_DATA, OPERATIONS, TODAY, PLAN_ADJUSTMENT).visitsDue).toBe(5);
     expect(getUpcomingVisits(PLANS_DATA, OPERATIONS).find(({ plan: item }) => item.id === plan.id)?.visit.id).toBe(visit2().id);
 
     // Cancelling the booking reopens the visit rather than leaving it scheduled; without the booking there is nothing to read.
@@ -231,7 +230,7 @@ test.describe("creating a plan and scheduling an included visit", () => {
     expect(getRecordedPaymentsCount(FINANCIALS)).toBe(7);
     expect(getPaymentsReceivedTotal(FINANCIALS)).toBe(2130);
     expect(getOutstandingBalance(FINANCIALS)).toBe(680);
-    expect(overviewMetrics.totalInvoiced).toBe(6240);
+    expect(OVERVIEW_TOTALS.totalInvoiced).toBe(6240);
     expect(FINANCIALS.payments.map((payment) => payment.id)).not.toContain("PAY-1009");
     // Locked Phase 4 decisions.
     expect(getInvoiceById("INV-1044", FINANCIALS)?.quoteId).toBeUndefined();

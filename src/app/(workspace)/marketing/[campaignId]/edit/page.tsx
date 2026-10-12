@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { CampaignBuilder } from "@/components/marketing/CampaignBuilder";
-import { fixtureGate } from "@/server/fixture-gate";
+import { getAudienceSizes } from "@/server/marketing-data";
+import { requireWorkspaceContext } from "@/server/workspace";
 
 export const metadata: Metadata = { title: "Edit campaign" };
 
 export default async function EditCampaignPage({ params }: PageProps<"/marketing/[campaignId]/edit">) {
-  const gate = await fixtureGate("Marketing");
-  if (gate) return gate;
+  await requireWorkspaceContext();
   const { campaignId } = await params;
-  return <CampaignBuilder campaignId={campaignId} />;
+  return <CampaignBuilder campaignId={campaignId} audienceSizes={await getAudienceSizes()} />;
 }

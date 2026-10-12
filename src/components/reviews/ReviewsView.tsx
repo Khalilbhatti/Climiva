@@ -5,6 +5,7 @@ import type { Route } from "next";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MessageSquareText, Plus, Reply, Send, Star } from "lucide-react";
+import { useReporting } from "@/components/reporting/ReportingProvider";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -13,14 +14,14 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Select } from "@/components/ui/Select";
 import { Tabs } from "@/components/ui/Tabs";
-import { REVIEW_BASELINE, REVIEW_SOURCES, getReviewMetrics, getReviewStatus, type Review, type ReviewSource } from "@/data/reviews";
+import { REVIEW_SOURCES, getReviewMetrics, getReviewStatus, type Review, type ReviewSource } from "@/data/reviews";
 import { formatDate } from "@/lib/format";
 import { ReplyModal } from "./ReplyModal";
 import { RequestReviewModal } from "./RequestReviewModal";
 import { useReviews } from "./ReviewsProvider";
 import { RelatedJobChip, ReviewStatusBadge, Stars, reviewerName } from "./review-ui";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
-import { useCan, useWorkspace } from "@/components/workspace/WorkspaceProvider";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 
 type View = "all" | "awaiting" | "responded";
 const VIEWS: View[] = ["all", "awaiting", "responded"];
@@ -30,7 +31,7 @@ export function ReviewsView() {
   const dir = useDirectory();
   const { data } = useReviews();
   const canManage = useCan("reviews:manage");
-  const { hasSampleData } = useWorkspace();
+  const { adjustments } = useReporting();
   const router = useRouter();
   const params = useSearchParams();
   const view: View = VIEWS.find((id) => id === params.get("tab")) ?? "all";
@@ -45,7 +46,7 @@ export function ReviewsView() {
 
   const reviews = useMemo(() => (previewEmpty ? [] : data.reviews), [previewEmpty, data.reviews]);
   // The sample business reports the approved workspace totals its stored reviews are a sample of; any other business counts its own.
-  const metrics = previewEmpty ? ZERO : getReviewMetrics(data, hasSampleData ? REVIEW_BASELINE : undefined);
+  const metrics = previewEmpty ? ZERO : getReviewMetrics(data, adjustments.reviews);
   const empty = reviews.length === 0;
 
   function setView(id: string) {

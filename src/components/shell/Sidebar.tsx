@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
+import { useReporting } from "@/components/reporting/ReportingProvider";
 import { NAV_GROUPS, NAV_UTILITY, isRouteActive, type NavItem } from "@/config/navigation";
 import { cn } from "@/lib/cn";
 
 function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
   const active = isRouteActive(item.href, pathname);
-  // The count pills come from the sample dataset, so only the sample business shows them.
-  const { hasSampleData } = useWorkspace();
+  // The count pills are this month's totals from the business's own records: a business with none shows no pill.
+  const { month } = useReporting();
+  const count = item.badge ? month[item.badge] : 0;
   const Icon = item.icon;
 
   return (
@@ -30,14 +31,14 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
         <Icon aria-hidden className={cn("size-[18px]", active ? "text-white" : "text-ink-muted")} />
         {item.label}
       </span>
-      {hasSampleData && item.badge !== undefined && (
+      {count > 0 && (
         <span
           className={cn(
             "rounded px-1.5 py-0.5 font-mono text-xs font-medium",
             active ? "bg-white/20 text-white" : "bg-surface-low text-ink-muted",
           )}
         >
-          {item.badge}
+          {count}
         </span>
       )}
     </Link>

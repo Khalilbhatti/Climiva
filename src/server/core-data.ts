@@ -3,11 +3,15 @@ import { cache } from "react";
 import type { Customer, CustomerBook, Equipment, Property } from "@/data/customers";
 import type { CoreSnapshot } from "@/data/directory";
 import { loadCustomerBook, loadCustomerDetail, loadServices, loadTeamData } from "@/db/core-queries";
+import { loadReportingAdjustments } from "@/db/adjustments";
 import { loadFinancials } from "@/db/fin-queries";
+import { loadMarketing } from "@/db/marketing-queries";
 import { loadMaintenance } from "@/db/maint-queries";
 import { loadOperations } from "@/db/ops-queries";
 import { loadReviews } from "@/db/review-queries";
+import { getPeriodReport } from "@/db/reporting-queries";
 import { withTenant } from "@/db/tenant";
+import { monthTotalsOf, presetRange } from "@/lib/analytics-rules";
 import { requireWorkspaceContext, resolveWorkspace } from "./workspace";
 
 /**
@@ -24,14 +28,16 @@ import { requireWorkspaceContext, resolveWorkspace } from "./workspace";
 /**
  * What the browser's providers hold for the active workspace: its Services, Team, customer book, operations (Bookings,
  * Jobs and blocked time, from which the Schedule is derived), financials (Quotes, Invoices and Payments), maintenance plans (with their visits) and
- * reviews (with their replies and requests). The modules show names and addresses from the book, so it goes with them. All of it is the ACTIVE organization's, read inside one tenant transaction; none of it is compiled into the
+ * reviews (with their replies and requests), marketing campaigns, and what it needs of the reporting layer (the imported adjustments
+ * to the Plans and Reviews totals, and this month's headline totals). The modules show names and addresses from the book, so it goes
+ * with them. All of it is the ACTIVE organization's, read inside one tenant transaction; none of it is compiled into the
  * client bundle. At this scale the lists are sent whole; windowing them by date is the next step (docs/saas-architecture.md).
  * Null when nobody is signed in to a workspace.
  */
 export const getCoreSnapshot = cache(async (): Promise<CoreSnapshot | null> => {
   const state = await resolveWorkspace();
   if (state.status !== "ready") return null;
-  const { userId, organizationId, organization } = state.context;
+  const { userId, organizationId, organization, snapshot } = state.context;
   return withTenant({ userId, organizationId }, async (tx) => {
     const services = await loadServices(tx, organizationId);
     const team = await loadTeamData(tx, organizationId);
@@ -40,7 +46,10 @@ export const getCoreSnapshot = cache(async (): Promise<CoreSnapshot | null> => {
     const financials = await loadFinancials(tx, organizationId, organization.timezone);
     const maintenance = await loadMaintenance(tx, organizationId);
     const reviews = await loadReviews(tx, organizationId, organization.timezone);
-    return { services, team, book, operations, financials, maintenance, reviews };
+    const marketing = await loadMarketing(tx, organizationId, organization.timezone);
+    const adjustments = await loadReportingAdjustments(tx, organizationId);
+    const month = monthTotalsOf(await getPeriodReport(tx, organizationId, presetRange("this-month", snapshot.clock.today)));
+    return { services, team, book, operations, financials, maintenance, reviews, marketing, reporting: { adjustments, month } };
   });
 });
 

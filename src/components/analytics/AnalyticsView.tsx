@@ -5,54 +5,33 @@ import type { Route } from "next";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CalendarDays, CalendarX, ChevronDown, Download, RotateCcw } from "lucide-react";
 import { useFinancials } from "@/components/financials/FinancialProvider";
-import { useMaintenancePlans } from "@/components/maintenance-plans/MaintenancePlansProvider";
 import { useOperations } from "@/components/operations/OperationsProvider";
-import { useServices } from "@/components/services/ServicesProvider";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
-import { DEFAULT_RANGE_ID, REPORT_PERIOD } from "@/data/analytics";
-import {
-  EMPTY_KPIS,
-  buildAnalytics,
-  formatRange,
-  hasActivity,
-  isReportPeriod,
-  rangeLabel,
-  resolveRange,
-  type DateRange,
-} from "@/lib/analytics-state";
+import { ANALYTICS_TABS, DEFAULT_RANGE_ID, hasActivity, resolveTab, type AnalyticsReport, type DateRange } from "@/lib/analytics-rules";
+import { formatRange, recentRecords, rangeLabel } from "@/lib/analytics-state";
 import { BookingsJobsPanel, FinancialPanel, KpiRow, OverviewPanel, PlansPanel } from "./AnalyticsPanels";
 import { DateRangeModal } from "./DateRangeModal";
 import { ExportModal } from "./ExportModal";
 
-const TABS = [
-  { id: "overview", label: "Overview" },
-  { id: "bookings-jobs", label: "Bookings & Jobs" },
-  { id: "financial", label: "Financial Records" },
-  { id: "plans", label: "Maintenance Plans & Services" },
-] as const;
-
-type TabId = (typeof TABS)[number]["id"];
-
 /**
- * Analytics: read-only reports over records that live in other modules. The tab and the date range live in the URL, so a
- * view can be linked to; every figure comes from lib/analytics-state, which reads the same stores the owning modules do.
+ * Analytics: read-only reports over records that live in other modules. The report arrives from the server, already worked out
+ * for the active business and the date range in the URL (PostgreSQL aggregates plus the sample business's imported history); this
+ * screen shows it, exports it, and changes the URL, which asks the server for another. The tab and the range live in the URL, so a
+ * view can be linked to and survives a reload.
  */
-export function AnalyticsView() {
+export function AnalyticsView({ report }: { report: AnalyticsReport }) {
   const { data: financial } = useFinancials();
-  const { data: plans } = useMaintenancePlans();
   const { data: operations } = useOperations();
-  const { services } = useServices();
   const router = useRouter();
   const params = useSearchParams();
 
-  const tabId: TabId = TABS.find((tab) => tab.id === params.get("tab"))?.id ?? "overview";
-  const range = resolveRange(params.get("range"), params.get("from"), params.get("to"));
-  const active = hasActivity(range);
-
-  const model = useMemo(() => buildAnalytics(financial, plans, operations, services), [financial, plans, operations, services]);
+  const tabId = resolveTab(params.get("tab"));
+  const range = report.range;
+  const active = hasActivity(report);
+  const recent = useMemo(() => recentRecords(operations, financial, range, report.today), [operations, financial, range, report.today]);
 
   const [picking, setPicking] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -73,6 +52,10 @@ export function AnalyticsView() {
   }
 
   const resetRange = () => setParams({ range: null, from: null, to: null });
+
+  // The imported history of the sample business is part of the figures only when the range covers the whole period it describes.
+  const period = report.imported.period;
+  const importedLeftOut = period !== null && !report.imported.included && range.from <= period.to && range.to >= period.from;
 
   return (
     <>
@@ -105,9 +88,10 @@ export function AnalyticsView() {
 
       {active ? (
         <>
-          {!isReportPeriod(range) && (
+          {importedLeftOut && period && (
             <p className="rounded-btn bg-surface-low px-4 py-2.5 text-sm text-ink-muted">
-              Reports cover whole periods. Showing {formatRange(REPORT_PERIOD.from, REPORT_PERIOD.to)}, the period with recorded activity.
+              Imported history for {formatRange(period.from, period.to)} is only part of the figures when the range covers all of it. These figures are the records
+              inside the selected dates.
             </p>
           )}
           {/* The longest tab label is wider than a phone, so the tab list scrolls sideways there instead of the page. */}
@@ -117,19 +101,19 @@ export function AnalyticsView() {
               idPrefix="analytics"
               value={tabId}
               onChange={(id) => setParams({ tab: id === "overview" ? null : id })}
-              tabs={TABS.map((tab) => ({ id: tab.id, label: tab.label }))}
+              tabs={ANALYTICS_TABS.map((tab) => ({ id: tab.id, label: tab.label }))}
             />
           </div>
           <div role="tabpanel" id={`analytics-panel-${tabId}`} aria-labelledby={`analytics-tab-${tabId}`}>
-            {tabId === "overview" && <OverviewPanel model={model} />}
-            {tabId === "bookings-jobs" && <BookingsJobsPanel model={model} />}
-            {tabId === "financial" && <FinancialPanel model={model} financial={financial} />}
-            {tabId === "plans" && <PlansPanel model={model} />}
+            {tabId === "overview" && <OverviewPanel report={report} />}
+            {tabId === "bookings-jobs" && <BookingsJobsPanel report={report} recent={recent} />}
+            {tabId === "financial" && <FinancialPanel report={report} recent={recent} financial={financial} />}
+            {tabId === "plans" && <PlansPanel report={report} />}
           </div>
         </>
       ) : (
         <div className="space-y-6">
-          <KpiRow kpis={EMPTY_KPIS} />
+          <KpiRow kpis={report.kpis} />
           <EmptyState
             icon={CalendarX}
             title="No activity for this period"
@@ -150,8 +134,8 @@ export function AnalyticsView() {
         </div>
       )}
 
-      {picking && <DateRangeModal current={range} onApply={applyRange} onClose={() => setPicking(false)} />}
-      {exporting && <ExportModal model={model} range={range} onClose={() => setExporting(false)} />}
+      {picking && <DateRangeModal current={range} today={report.today} onApply={applyRange} onClose={() => setPicking(false)} />}
+      {exporting && <ExportModal report={report} onClose={() => setExporting(false)} />}
     </>
   );
 }

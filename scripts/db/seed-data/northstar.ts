@@ -11,6 +11,7 @@ import type { FinancialData } from "@/data/financials";
 import type { OperationsData } from "@/data/operations";
 import type { ReviewsData } from "@/data/reviews";
 import type { SeedPlans } from "@/db/maint-queries";
+import type { SeedMarketing } from "@/db/marketing-queries";
 import type { Service } from "@/data/services";
 import { SYSTEM_ROLES, weeklyFromBusinessHours, type TeamMember } from "@/data/team";
 
@@ -362,6 +363,40 @@ export const NORTHSTAR_REVIEWS: ReviewsData = {
       channel: "email",
       message: "Thanks for choosing Northstar Heating & Cooling. We’d appreciate your feedback about your recent service.",
       at: "2024-10-27T10:30",
+    },
+  ],
+};
+
+/**
+ * Northstar's Marketing: one Draft and one Sent campaign, with names, audiences, messages and recipients of its own. Nothing here
+ * exists in Apex, and no Apex record appears here. The Sent campaign went to one chosen customer and its recipient snapshot holds
+ * that customer's contact details as they were. No delivery result was recorded for it.
+ */
+export const NORTHSTAR_MARKETING: SeedMarketing = {
+  campaigns: [
+    {
+      id: "cmp-furnace-tune-up-season-notice",
+      name: "Furnace tune-up season notice",
+      summary: "Heating season is here",
+      channel: "email",
+      audienceId: "all-customers",
+      recipients: 2,
+      subject: "Book your furnace tune-up before the cold arrives",
+      message: "Hi {{contact.first_name}},\n\nThe heating season is close. Book a furnace tune-up with Northstar Heating & Cooling while there is room on the calendar.",
+      status: "draft",
+    },
+    {
+      id: "cmp-radiant-heat-estimate-offer",
+      name: "Radiant heat estimate offer",
+      summary: "Free radiant heat estimates",
+      channel: "sms",
+      audienceId: "selected",
+      selectedCustomerIds: ["priya-raman"],
+      recipients: 1,
+      message: "Hi {{contact.first_name}}, this is Northstar Heating & Cooling. Ask us about a free radiant heat estimate for your loft.",
+      status: "sent",
+      sentAt: "2024-10-28T11:30",
+      recipientRows: [{ customerId: "priya-raman", name: "Priya Raman", phone: "(303) 555-0172", status: "pending" }],
     },
   ],
 };

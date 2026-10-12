@@ -324,7 +324,7 @@ only). Photo upload is local to the page session (file name and size only; nothi
 2. ~~Maintenance-plan names and prices for customers other than Sarah Mitchell remain unreconciled.~~ **Resolved (Phase 5, §10).**
 3. ~~Team members, contact details and permissions.~~ **Resolved in Phase 4** (§9): `src/data/team.ts` is now the Team module's dataset.
    Settings will still own business hours and the timezone; until then `businessHoursByWeekday` in `src/data/fixtures.ts` stands in.
-4. The Overview's 24 bookings and 18 completed jobs, and the sidebar badges, remain fixed aggregates until Analytics defines how they are counted.
+4. ~~The Overview's 24 bookings and 18 completed jobs, and the sidebar badges, remain fixed aggregates until Analytics defines how they are counted.~~ **Resolved (Phase 14):** they are the current month's totals of the Analytics report, the stored rows plus the sample business's imported adjustments ([saas-architecture.md §27](saas-architecture.md#27-marketing-and-analytics)).
 5. Several Stitch people have no Customers record (listed above). Whether they become customers on confirmation is a Customers / Bookings decision.
 
 ## 9. Phase 4: Team, Quotes & Invoices and Payments
@@ -464,7 +464,7 @@ quote; the quote then reads "Invoice #INV-1052" and can't be invoiced again. No 
 ### Unresolved dependencies for later modules
 
 1. **Total Invoiced ($6,240)** and the Analytics figures built on it: the nine invoices total $3,010, so the Overview total is a fixed baseline plus
-   the invoices made since (Phase 12: stored invoices that are not `imported`). It is a reporting baseline, deliberately not backed by invented rows. Analytics is still to migrate and keeps its own baselines.
+   the invoices made since (Phase 12: stored invoices that are not `imported`). It is a reporting baseline, deliberately not backed by invented rows. **Phase 14:** Analytics now reads PostgreSQL, and the baseline is a signed imported adjustment (`analytics_imported_baselines`) added to the stored invoices, so a new invoice still moves the total by exactly its own amount.
 2. ~~**Maintenance Plans** will create Bookings only.~~ **Done (Phase 5):** scheduling an included visit creates a Booking and nothing financial; no plan invoices exist.
 3. **Settings** will own business hours, timezone and tax settings; Team's availability presets and the invoice "Tax $0.00" line stand in until then.
 4. ~~**Customers** has no bookings, quotes or invoices view yet.~~ **Done (Phase 12):** the customer page lists the customer's quotes, invoices (with balance) and payments from the stored records.
@@ -591,6 +591,8 @@ analytics or traffic, DNS or domain-verification states, and a real contact-form
 
 > **Phase 13 update.** Reviews are stored in PostgreSQL (reviews, one reply each, review requests; see [saas-architecture.md §26](saas-architecture.md#26-maintenance-plans-and-reviews)). A posted or edited reply and a recorded request survive a reload, a request is only a record
 > (nothing is sent), and `lib/reviews-state.ts` is gone. Marketplace and Marketing are unchanged.
+>
+> **Phase 14 update.** Marketing is stored in PostgreSQL (campaigns, chosen customers and the recipients' snapshot taken when a campaign is scheduled or sent; see [saas-architecture.md §27](saas-architecture.md#27-marketing-and-analytics)). Save draft, Schedule, Send now, Cancel schedule (back to Draft) and Duplicate survive a reload, the campaign's time is the business's own, a Sent campaign is final, and nothing is delivered. `lib/marketing-state.ts` is gone. Marketplace is unchanged.
 
 The three Growth modules, each on its own typed dataset (`src/data/marketplace.ts`, `reviews.ts`, `marketing.ts`), pure state
 functions (`src/lib/marketplace-state.ts`, `reviews-state.ts`, `marketing-state.ts`) and a client provider. All three providers
@@ -737,6 +739,8 @@ Four pieces of work, in this order: one cross-module data correction (Part 0), *
 (the editable business identity and workspace preferences) and the integration that makes Settings the one source for the business
 record the rest of the app reads. Phases 1 to 6 are unchanged except where listed under "Deliberate changes to earlier work". Help is
 not built.
+
+> **Phase 14 update.** Analytics is computed on the server from PostgreSQL for the active business and the range in the URL (see [saas-architecture.md §27](saas-architecture.md#27-marketing-and-analytics)); the sample business's approved October 2024 figures are signed imported adjustments that a range includes only when it covers the whole month. The CSV and PDF are built from the same report. The static `data/analytics.ts` aggregates and `overviewMetrics` are gone.
 
 Routes: `/analytics` (tab and date range in the URL: `?tab=bookings-jobs|financial|plans`, `?range=last-month|this-quarter`,
 `?range=custom&from=YYYY-MM-DD&to=YYYY-MM-DD`) · `/settings`, `/settings/hours`, `/settings/branding`, `/settings/preferences`,

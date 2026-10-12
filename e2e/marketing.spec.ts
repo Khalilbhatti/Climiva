@@ -48,8 +48,9 @@ test.describe("Marketing list", () => {
   test("lists the campaigns with channel, audience, status, send date and recipients", async ({ page }) => {
     await page.goto("/marketing");
     await expect(page.getByRole("table", { name: "Campaigns" }).getByRole("columnheader")).toHaveText(["Campaign", "Channel", "Audience", "Status", "Send date", "Recipients", "Actions"]);
-    await expect(rows(page)).toHaveCount(5);
-    await expect(page.getByText("Showing 5 of 11 total campaigns")).toBeVisible();
+    // All eleven campaigns are stored: the list, the tab counts and the totals are the same eleven.
+    await expect(rows(page)).toHaveCount(11);
+    await expect(page.getByText("Showing 11 of 11 total campaigns")).toBeVisible();
 
     const fall = row(page, "Fall maintenance reminder");
     await expect(fall).toContainText("Pre-season tune-up scheduling");
@@ -80,18 +81,18 @@ test.describe("Marketing list", () => {
     await page.keyboard.press("ArrowRight");
     await expect(tab(page, "Drafts")).toHaveAttribute("aria-selected", "true");
     await expect(page).toHaveURL(/tab=draft/);
-    await expect(rows(page)).toHaveCount(1);
-    await expect(page.getByText("Showing 1 of 2 draft campaigns")).toBeVisible();
+    await expect(rows(page)).toHaveCount(2);
+    await expect(page.getByText("Showing 2 of 2 draft campaigns")).toBeVisible();
 
     await tab(page, "Scheduled").click();
     await expect(rows(page)).toHaveCount(1);
     await expect(row(page, "Fall maintenance reminder")).toBeVisible();
 
     await tab(page, "Sent").click();
-    await expect(rows(page)).toHaveCount(3);
-    await expect(page.getByText("Showing 3 of 8 sent campaigns")).toBeVisible();
+    await expect(rows(page)).toHaveCount(8);
+    await expect(page.getByText("Showing 8 of 8 sent campaigns")).toBeVisible();
     await page.getByLabel("Channel", { exact: true }).selectOption("sms");
-    await expect(rows(page)).toHaveCount(2);
+    await expect(rows(page)).toHaveCount(3);
     await page.getByRole("searchbox", { name: "Search campaigns" }).fill("zzz-nothing");
     await expect(page.getByText("No campaigns match your filters.")).toBeVisible();
 
@@ -177,17 +178,29 @@ test.describe("Create campaign: Email", () => {
     await expect(page.getByRole("button", { name: "Hide preview" })).toHaveAttribute("aria-expanded", "true");
   });
 
-  test("View recipients lists customers from the Customers records, with a sample note", async ({ page }) => {
+  test("View recipients lists the customers the audience resolves to from the Customers records, with a sample note", async ({ page }) => {
     await page.goto("/marketing/new");
+    await page.getByRole("radio", { name: /^All customers/ }).check();
     await page.getByRole("button", { name: "View recipients" }).click();
     const dialog = page.getByRole("dialog", { name: "Recipients" });
-    await expect(dialog).toContainText("Customers due for maintenance · 38 recipients");
+    await expect(dialog).toContainText("All customers · 146 recipients");
     await expect(dialog).toContainText("Sarah Mitchell");
     await expect(dialog).toContainText("sarah.m@gmail.com");
     await expect(dialog).toContainText("Elena Rodriguez");
-    await expect(dialog).toContainText("Showing 5 sample records of 38 recipients.");
+    // The five customer records are listed; the other 141 recipients are the sample business's imported contacts: counted, not listed.
+    await expect(dialog).toContainText("Showing 5 sample records of 146 recipients.");
     await dialog.getByRole("button", { name: "Close", exact: true }).click();
     await expect(dialog).toBeHidden();
+  });
+
+  test("an audience no customer record qualifies for says so instead of inventing people", async ({ page }) => {
+    await page.goto("/marketing/new");
+    await page.getByRole("button", { name: "View recipients" }).click();
+    const dialog = page.getByRole("dialog", { name: "Recipients" });
+    // Customers due for maintenance: no completed tune-up older than six months among the stored records; the 38 are imported contacts.
+    await expect(dialog).toContainText("Customers due for maintenance · 38 recipients");
+    await expect(dialog).toContainText("No customer records are listed for this audience.");
+    await expect(dialog).not.toContainText("Sarah Mitchell");
   });
 
   test("choosing selected customers counts the chosen ones", async ({ page }) => {
@@ -255,9 +268,10 @@ test.describe("Create campaign: Email", () => {
     await page.getByRole("link", { name: "Back to Marketing" }).click();
     await expect(tabCounts(page)).toHaveText([/^All campaigns\s*12$/, /^Drafts\s*2$/, /^Scheduled\s*2$/, /^Sent\s*8$/]);
     await expect(row(page, "Late fall tune-up")).toContainText("Oct 30, 2024 · 9:00 AM");
-    // A reload restores the baseline.
+    // The campaign is stored: a reload keeps it.
     await page.reload();
-    await expect(tabCounts(page)).toHaveText([/^All campaigns\s*11$/, /^Drafts\s*2$/, /^Scheduled\s*1$/, /^Sent\s*8$/]);
+    await expect(tabCounts(page)).toHaveText([/^All campaigns\s*12$/, /^Drafts\s*2$/, /^Scheduled\s*2$/, /^Sent\s*8$/]);
+    await expect(row(page, "Late fall tune-up")).toContainText("Oct 30, 2024 · 9:00 AM");
   });
 
   test("Send now makes it Sent and adds its recipients to the recent recipients", async ({ page }) => {

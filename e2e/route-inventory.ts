@@ -5,9 +5,8 @@
  */
 import { readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { CAMPAIGNS } from "../src/data/marketing";
 import { WEBSITE_PAGES } from "../src/data/website";
-import { CUSTOMERS, FINANCIALS, JOBS, PLANS, REVIEWS_DATA, ROLES, SERVICES, TEAM } from "./apex-data";
+import { CUSTOMERS, FINANCIALS, JOBS, MARKETING, PLANS, REVIEWS_DATA, ROLES, SERVICES, TEAM } from "./apex-data";
 
 export type InventoryRoute = {
   /** The URL that is visited. */
@@ -41,7 +40,7 @@ const PARAMS: Record<string, readonly string[]> = {
   planId: PLANS.map((plan) => plan.id),
   pageId: WEBSITE_PAGES.map((page) => page.id),
   reviewId: REVIEWS_DATA.reviews.map((review) => review.id),
-  campaignId: CAMPAIGNS.map((campaign) => campaign.id),
+  campaignId: MARKETING.campaigns.map((campaign) => campaign.id),
 };
 
 function expand(pattern: string): string[] {

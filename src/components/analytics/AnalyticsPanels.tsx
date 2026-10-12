@@ -11,43 +11,47 @@ import { jobHref, paymentHref } from "@/config/routes";
 import { getPropertyById, formatPropertyAddress } from "@/data/customers";
 import { PAYMENT_METHOD_LABEL, getInvoiceById, type FinancialData } from "@/data/financials";
 import { BOOKING_TABS, getPartyName, getServiceNameFor, type Booking, type Job } from "@/data/operations";
+import type { AnalyticsReport } from "@/lib/analytics-rules";
+import type { RecentRecords } from "@/lib/analytics-state";
 import { formatMonthDay, formatTime } from "@/lib/dates";
+import { paymentReference } from "@/lib/financial-rules";
 import { formatUSD } from "@/lib/format";
-import type { AnalyticsModel } from "@/lib/analytics-state";
+import { fromCents } from "@/lib/money";
 import { OwnerLink, ServiceActivityTable, StatTile, WeeklyChart } from "./parts";
 import type { Directory } from "@/data/directory";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
-type PanelProps = { model: AnalyticsModel };
+type PanelProps = { report: AnalyticsReport };
 
 const dateOf = (timestamp: string) => timestamp.slice(0, 10);
+const usd = (cents: number, fractionDigits = 0) => formatUSD(fromCents(cents), fractionDigits);
 
-/** The five headline totals. At the baseline they are the Overview's, and the money ones follow the session. */
-export function KpiRow({ kpis }: { kpis: AnalyticsModel["kpis"] }) {
+/** The five headline totals of the selected range. */
+export function KpiRow({ kpis }: { kpis: AnalyticsReport["kpis"] }) {
   return (
     <section aria-label="Key metrics" className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
       <KpiCard label="Bookings" value={kpis.bookings} icon={CalendarCheck} hint="Bookings created" href="/bookings" />
       <KpiCard label="Jobs completed" value={kpis.completedJobs} icon={CircleCheck} hint="Completed Jobs" href="/jobs" />
-      <KpiCard label="Quote value" value={formatUSD(kpis.quoteValue)} icon={ReceiptText} hint="Quotes created" href="/quotes-invoices" />
-      <KpiCard label="Invoiced" value={formatUSD(kpis.invoiced)} icon={ReceiptText} hint="Invoice total" href="/quotes-invoices" />
-      <KpiCard label="Payments received" value={formatUSD(kpis.paymentsReceived)} icon={Banknote} tone="positive" hint="Recorded non-voided Payments" href="/payments" />
+      <KpiCard label="Quote value" value={usd(kpis.quoteValueCents)} icon={ReceiptText} hint="Quotes created" href="/quotes-invoices" />
+      <KpiCard label="Invoiced" value={usd(kpis.invoicedCents)} icon={ReceiptText} hint="Invoice total" href="/quotes-invoices" />
+      <KpiCard label="Payments received" value={usd(kpis.paymentsReceivedCents)} icon={Banknote} tone="positive" hint="Recorded non-voided Payments" href="/payments" />
     </section>
   );
 }
 
 /* ───────────────────────── Overview ───────────────────────── */
 
-export function OverviewPanel({ model }: PanelProps) {
+export function OverviewPanel({ report }: PanelProps) {
   return (
     <div className="space-y-6">
-      <KpiRow kpis={model.kpis} />
+      <KpiRow kpis={report.kpis} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
         <SectionCard title="Operational activity" description="Weekly volume of Bookings and completed Jobs" className="xl:col-span-3">
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-btn bg-surface-low px-4 py-2.5 text-sm">
             <span className="text-ink-muted">Selected period summary</span>
             <span className="font-semibold text-ink">
-              {model.bookings.total} Bookings · {model.jobs.completed} Completed Jobs
+              {report.bookings.total} Bookings · {report.jobs.completed} Completed Jobs
             </span>
           </div>
           <div aria-hidden className="mb-4 flex items-center justify-end gap-4 text-xs text-ink-muted">
@@ -60,27 +64,27 @@ export function OverviewPanel({ model }: PanelProps) {
               Completed Jobs
             </span>
           </div>
-          <WeeklyChart weekly={model.weekly} />
+          <WeeklyChart weekly={report.weekly} />
         </SectionCard>
 
         <SectionCard title="Service activity" description="Bookings and completed Jobs by Service" className="xl:col-span-2">
-          <ServiceActivityTable services={model.services} />
+          <ServiceActivityTable services={report.services} />
         </SectionCard>
       </div>
 
       <SectionCard title="Financial record totals" description="These totals are separate record types for the selected period.">
         <ul className="grid gap-3 md:grid-cols-3">
           {[
-            { label: "Quotes created", detail: `${model.quotes.count} quotes`, value: model.kpis.quoteValue },
-            { label: "Invoices created", detail: `${model.invoices.count} invoices`, value: model.invoices.total },
-            { label: "Payments recorded", detail: `${model.payments.recorded} payments`, value: model.payments.received },
+            { label: "Quotes created", detail: `${report.quotes.count} quotes`, value: report.kpis.quoteValueCents },
+            { label: "Invoices created", detail: `${report.invoices.count} invoices`, value: report.invoices.totalCents },
+            { label: "Payments recorded", detail: `${report.payments.recorded} payments`, value: report.payments.receivedCents },
           ].map((row) => (
             <li key={row.label} className="flex items-center justify-between gap-3 rounded-card bg-surface-low px-4 py-3">
               <span>
                 <span className="block text-sm font-semibold text-ink">{row.label}</span>
                 <span className="block text-xs text-ink-muted">{row.detail}</span>
               </span>
-              <span className="text-lg font-bold text-primary">{formatUSD(row.value)}</span>
+              <span className="text-lg font-bold text-primary">{usd(row.value)}</span>
             </li>
           ))}
         </ul>
@@ -101,24 +105,24 @@ function jobLocation(job: Job, dir: Directory): string {
   return property ? formatPropertyAddress(property) : "No property on record";
 }
 
-export function BookingsJobsPanel({ model }: PanelProps) {
+export function BookingsJobsPanel({ report, recent }: PanelProps & { recent: RecentRecords }) {
   const dir = useDirectory();
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <SectionCard title="Bookings" description={`${model.bookings.total} total logged`} action={<OwnerLink href="/bookings">View all in Bookings</OwnerLink>}>
+        <SectionCard title="Bookings" description={`${report.bookings.total} total logged`} action={<OwnerLink href="/bookings">View all in Bookings</OwnerLink>}>
           <div className="grid grid-cols-2 gap-3">
-            <StatTile label="Confirmed" value={model.bookings.confirmed} />
-            <StatTile label="Completed" value={model.bookings.completed} />
-            <StatTile label="Pending confirmation" value={model.bookings.pending} />
-            <StatTile label="Cancelled" value={model.bookings.cancelled} />
+            <StatTile label="Confirmed" value={report.bookings.confirmed} />
+            <StatTile label="Completed" value={report.bookings.completed} />
+            <StatTile label="Pending confirmation" value={report.bookings.pending} />
+            <StatTile label="Cancelled" value={report.bookings.cancelled} />
           </div>
         </SectionCard>
-        <SectionCard title="Jobs" description={`${model.jobs.total} total logged`} action={<OwnerLink href="/jobs">View all in Jobs</OwnerLink>}>
+        <SectionCard title="Jobs" description={`${report.jobs.total} total logged`} action={<OwnerLink href="/jobs">View all in Jobs</OwnerLink>}>
           <div className="grid grid-cols-3 gap-3">
-            <StatTile label="Completed" value={model.jobs.completed} />
-            <StatTile label="Scheduled" value={model.jobs.scheduled} />
-            <StatTile label="In progress" value={model.jobs.inProgress} />
+            <StatTile label="Completed" value={report.jobs.completed} />
+            <StatTile label="Scheduled" value={report.jobs.scheduled} />
+            <StatTile label="In progress" value={report.jobs.inProgress} />
           </div>
         </SectionCard>
       </div>
@@ -136,7 +140,7 @@ export function BookingsJobsPanel({ model }: PanelProps) {
               </tr>
             </TableHead>
             <TableBody>
-              {model.recentBookings.map((booking) => (
+              {recent.bookings.map((booking) => (
                 <TableRow key={booking.id}>
                   <TableCell className="font-semibold whitespace-nowrap">
                     <Link href={bookingHref(booking)} className="text-primary hover:underline">
@@ -159,7 +163,7 @@ export function BookingsJobsPanel({ model }: PanelProps) {
 
         <SectionCard title="Recent completed Jobs" description="The latest finished work" className="xl:col-span-2">
           <ul className="space-y-3">
-            {model.recentCompletedJobs.map((job) => (
+            {recent.completedJobs.map((job) => (
               <li key={job.id} className="flex items-start justify-between gap-3 rounded-card bg-surface-low p-3">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-ink">
@@ -187,15 +191,15 @@ export function BookingsJobsPanel({ model }: PanelProps) {
 
 /* ───────────────────────── Financial Records ───────────────────────── */
 
-export function FinancialPanel({ model, financial }: PanelProps & { financial: FinancialData }) {
+export function FinancialPanel({ report, recent, financial }: PanelProps & { recent: RecentRecords; financial: FinancialData }) {
   const dir = useDirectory();
-  const { quotes, invoices, payments } = model;
+  const { quotes, invoices, payments } = report;
   return (
     <div className="space-y-6">
       <SectionCard title="Quotes" description="Estimates and proposed HVAC system servicing" action={<OwnerLink href="/quotes-invoices">View all in Quotes & Invoices</OwnerLink>}>
         <div className="grid gap-3 sm:grid-cols-2">
-          <StatTile label="Total quoted value" value={formatUSD(quotes.totalValue)} hint={`${quotes.count} quotes in total estimates`} />
-          <StatTile label="Approved quote value" value={formatUSD(quotes.approvedValue)} hint={`${quotes.counts.approved} approved`} tone="positive" />
+          <StatTile label="Total quoted value" value={usd(quotes.totalValueCents)} hint={`${quotes.count} quotes in total estimates`} />
+          <StatTile label="Approved quote value" value={usd(quotes.approvedValueCents)} hint={`${quotes.counts.approved} approved`} tone="positive" />
         </div>
         <h3 className="mt-5 mb-2 text-mini font-bold tracking-wider text-ink-muted uppercase">Quote status breakdown</h3>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
@@ -209,8 +213,8 @@ export function FinancialPanel({ model, financial }: PanelProps & { financial: F
 
       <SectionCard title="Invoices" description="Completed work and recurring maintenance charges" action={<OwnerLink href="/payments">View outstanding invoices in Payments</OwnerLink>}>
         <div className="grid gap-3 sm:grid-cols-2">
-          <StatTile label="Total invoiced" value={formatUSD(invoices.total)} hint={`${invoices.count} invoices billed to customers`} />
-          <StatTile label="Outstanding balance" value={formatUSD(invoices.outstanding)} hint="Due across unpaid and partially paid invoices" tone="warning" />
+          <StatTile label="Total invoiced" value={usd(invoices.totalCents)} hint={`${invoices.count} invoices billed to customers`} />
+          <StatTile label="Outstanding balance" value={usd(invoices.outstandingCents)} hint="Due across unpaid and partially paid invoices" tone="warning" />
         </div>
         <h3 className="mt-5 mb-2 text-mini font-bold tracking-wider text-ink-muted uppercase">Invoice status counts</h3>
         <div className="grid grid-cols-3 gap-3">
@@ -223,20 +227,20 @@ export function FinancialPanel({ model, financial }: PanelProps & { financial: F
       <SectionCard title="Payments" description="Payments recorded against invoices" action={<OwnerLink href="/payments">View all in Payments</OwnerLink>}>
         <div className="grid gap-3 sm:grid-cols-3">
           <StatTile label="Payments recorded" value={payments.recorded} hint="Recorded entries" />
-          <StatTile label="Amount received" value={formatUSD(payments.received)} hint="Recorded, non-voided" tone="positive" />
+          <StatTile label="Amount received" value={usd(payments.receivedCents)} hint="Recorded, non-voided" tone="positive" />
           <StatTile
             label="Voided payments"
             value={payments.voided.length}
             hint={
               payments.voided.length > 0
-                ? `${payments.voided.map((payment) => `#${payment.id} for ${formatUSD(payment.amount, 2)}`).join(", ")} — excluded from received totals`
+                ? `${payments.voided.map((payment) => `#${paymentReference(payment.number)} for ${usd(payment.amountCents, 2)}`).join(", ")} — excluded from received totals`
                 : "Excluded from received totals"
             }
           />
         </div>
         <h3 className="mt-5 mb-2 text-mini font-bold tracking-wider text-ink-muted uppercase">Recent payments</h3>
         <ul className="space-y-2">
-          {payments.recent.map((payment) => {
+          {recent.payments.map((payment) => {
             const invoice = getInvoiceById(payment.invoiceId, financial);
             return (
               <li key={payment.id} className="flex items-center justify-between gap-3 rounded-card bg-surface-low px-4 py-3">
@@ -266,8 +270,8 @@ export function FinancialPanel({ model, financial }: PanelProps & { financial: F
 
 /* ───────────────────────── Maintenance Plans & Services ───────────────────────── */
 
-export function PlansPanel({ model }: PanelProps) {
-  const { plans } = model;
+export function PlansPanel({ report }: PanelProps) {
+  const { plans } = report;
   return (
     <div className="space-y-6">
       <SectionCard
@@ -289,7 +293,7 @@ export function PlansPanel({ model }: PanelProps) {
         icon={Wrench}
         action={<OwnerLink href="/services">Review catalog in Services</OwnerLink>}
       >
-        <ServiceActivityTable services={model.services} />
+        <ServiceActivityTable services={report.services} />
       </SectionCard>
     </div>
   );

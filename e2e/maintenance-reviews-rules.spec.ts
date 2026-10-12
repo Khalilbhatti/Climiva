@@ -4,11 +4,11 @@
  * the database holds them again (maintenance-reviews-database.spec.ts).
  */
 import { expect, test } from "playwright/test";
-import { COVERAGE, PLAN_BASELINE, getCurrentPlanForCustomer, getNextVisit, getPlanMetrics, getVisitBooking, getVisitState, isRenewingSoon } from "../src/data/maintenance-plans";
-import { REQUEST_MESSAGE_MAX, RESPONSE_MAX, REVIEW_BASELINE, defaultRequestMessage, getReviewMetrics } from "../src/data/reviews";
+import { COVERAGE, getCurrentPlanForCustomer, getNextVisit, getPlanMetrics, getVisitBooking, getVisitState, isRenewingSoon } from "../src/data/maintenance-plans";
+import { REQUEST_MESSAGE_MAX, RESPONSE_MAX, defaultRequestMessage, getReviewMetrics } from "../src/data/reviews";
 import { MAX_COVERAGE_VISITS, PLAN_NAME_MAX, PLAN_NOTE_MAX, parseNewPlan, parseScheduleVisit, planSlug, visitWindowError, visitsOf } from "../src/lib/maintenance-rules";
 import { eligibleReviewJobs, parseReplyBody, parseReviewRequest, reviewSlug } from "../src/lib/review-rules";
-import { OPERATIONS, PLANS_DATA, REVIEWS_DATA } from "./apex-data";
+import { OPERATIONS, PLANS_DATA, PLAN_ADJUSTMENT, REVIEWS_DATA, REVIEW_ADJUSTMENT } from "./apex-data";
 import { withReply, withRequest } from "./review-edits";
 
 const TODAY = "2024-10-25";
@@ -208,16 +208,16 @@ test.describe("the totals the screens report", () => {
     expect(getReviewMetrics({ reviews: [], requests: [] })).toEqual({ total: 0, average: 0, awaiting: 0, responded: 0, requests: 0 });
   });
 
-  test("the sample business reports its approved totals through the baseline: 14 / 5 / 3 / 2 and 12 / 4.7 / 3 / 5", () => {
-    expect(getPlanMetrics(PLANS_DATA, OPERATIONS, TODAY, PLAN_BASELINE)).toMatchObject({ active: 14, visitsDue: 5, renewals: 3, paused: 1, ended: 1, pausedOrEnded: 2 });
-    expect(getReviewMetrics(REVIEWS_DATA, REVIEW_BASELINE)).toEqual({ total: 12, average: 4.7, awaiting: 3, responded: 9, requests: 5 });
+  test("the sample business reports its approved totals through the imported adjustment: 14 / 5 / 3 / 2 and 12 / 4.7 / 3 / 5", () => {
+    expect(getPlanMetrics(PLANS_DATA, OPERATIONS, TODAY, PLAN_ADJUSTMENT)).toMatchObject({ active: 14, visitsDue: 5, renewals: 3, paused: 1, ended: 1, pausedOrEnded: 2 });
+    expect(getReviewMetrics(REVIEWS_DATA, REVIEW_ADJUSTMENT)).toEqual({ total: 12, average: 4.7, awaiting: 3, responded: 9, requests: 5 });
   });
 
   test("a reply moves one review from awaiting to responded; a request adds one to the requests, and nothing else moves", () => {
     const replied = withReply(REVIEWS_DATA, "rev-sarah-mitchell", "Thank you, Sarah.");
-    expect(getReviewMetrics(replied, REVIEW_BASELINE)).toEqual({ total: 12, average: 4.7, awaiting: 2, responded: 10, requests: 5 });
+    expect(getReviewMetrics(replied, REVIEW_ADJUSTMENT)).toEqual({ total: 12, average: 4.7, awaiting: 2, responded: 10, requests: 5 });
     const { data } = withRequest(REVIEWS_DATA, { customerId: "sarah-mitchell", channel: "email", message: "Please review us." });
-    expect(getReviewMetrics(data, REVIEW_BASELINE)).toEqual({ total: 12, average: 4.7, awaiting: 3, responded: 9, requests: 6 });
+    expect(getReviewMetrics(data, REVIEW_ADJUSTMENT)).toEqual({ total: 12, average: 4.7, awaiting: 3, responded: 9, requests: 6 });
   });
 
   test("a plan's visits and the booking that schedules one are read from the bookings, never copied", () => {

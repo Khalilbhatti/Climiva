@@ -14,13 +14,16 @@ workspace switching, and a PostgreSQL database that keeps businesses apart. Not 
   hours and Workspace preferences of each business, each person's profile name, the `sites` a business owns, its
   customers (with properties and equipment), Services and team, its **operations** (bookings, jobs with work details and
   photo records, the schedule derived from them, blocked time), its **money** (quotes, invoices and payments, in whole
-  cents) and its **maintenance plans and reviews** (plans with their coverage and included visits, reviews with replies
-  and review requests). Each business sees only its own.
-- **Still on built-in sample data** (in memory for the visit, gone on reload): Website, Marketplace, Marketing and
-  Analytics. That sample belongs to **one** business, Apex Climate Heating & Air; every other business sees those modules
-  as "not available yet", never Apex's records.
+  cents), its **maintenance plans and reviews** (plans with their coverage and included visits, reviews with replies
+  and review requests), its **marketing campaigns** (Draft, Scheduled and Sent, with a snapshot of each campaign's
+  recipients) and **Analytics** (reporting queries over those records; the sample business's approved history that its
+  detailed records cannot reproduce is stored as explicit imported adjustments). Each business sees only its own.
+- **Still on built-in sample data** (in memory for the visit, gone on reload): Website and Marketplace. That sample
+  belongs to **one** business, Apex Climate Heating & Air; every other business sees those modules as "not available
+  yet", never Apex's records.
 - **Not built:** email (so no verification, password reset or invitations by email), billing for Climvia itself, a payment
-  processor, SMS, real domain connection, file storage (logo and photo last for the session), the Website Builder, deployment to AWS.
+  processor, delivery of campaigns (a campaign is recorded as sent; no email or SMS provider exists), real domain
+  connection, file storage (logo and photo last for the session), the Website Builder, deployment to AWS.
 
 Read [docs/saas-architecture.md](docs/saas-architecture.md) first: it explains the model, the isolation rules and what comes next.
 [docs/production-handoff.md](docs/production-handoff.md) covers the front end.
@@ -61,7 +64,7 @@ Set `BETTER_AUTH_URL` in `.env` to the origin you open in the browser (for examp
 | `npm run db:generate` | writes a new SQL migration after you change the schema in `src/db/schema` |
 | `npm run db:migrate` | creates the `climvia_app` role if missing and applies pending migrations (safe to repeat) |
 | `npm run db:seed` | inserts the development data below (idempotent; refuses to run when `NODE_ENV=production`) |
-| `npm run db:reset` | drops, recreates, migrates and seeds the **development** database |
+| `npm run db:reset` | drops, recreates, migrates and seeds the **development** database (run it once after pulling Phase 14: the seed only fills a business that has no core data yet) |
 | `npm run db:studio` | opens drizzle-kit Studio |
 | `npm run db:test:prepare` | recreates the separate `climvia_test` database, migrates and seeds it (run for you by `npm run test:e2e`) |
 
@@ -71,7 +74,7 @@ All use the `SEED_PASSWORD` from your `.env`.
 
 | Email | Workspaces |
 | --- | --- |
-| `alex.morgan@apex.test` | Apex Climate Heating & Air, owner (has the canonical customers, Services, team, bookings and jobs, and the sample data of the modules not yet on the database) |
+| `alex.morgan@apex.test` | Apex Climate Heating & Air, owner (has the canonical customers, Services, team, bookings, jobs, financials, plans, reviews, marketing campaigns and imported Analytics history, and the sample data of the modules not yet on the database) |
 | `jamie.rivera@apex.test` | Apex, member (can view Settings, not change them) |
 | `taylor.brooks@northstar.test` | Northstar Heating & Cooling, owner (a small set of its own customers, Services, team, two bookings and a job; none of Apex's, and no sample data) |
 | `casey.nguyen@climvia.test` | admin in **both** (use the workspace switcher) |
@@ -151,9 +154,11 @@ docs/               SaaS architecture, design map, visual audit, production hand
 | Bookings, Jobs, work details, photo records, blocked time | Bookings, Jobs | PostgreSQL (`bookings`, `jobs`, `job_files`, `schedule_blocks`); the Schedule is derived, not stored |
 | Quotes, invoices, payments | Quotes & Invoices, Payments | PostgreSQL (`quotes`, `invoices`, `payments` …), money in integer cents |
 | Maintenance plans, coverage, visits; reviews, replies, review requests | Maintenance Plans, Reviews | PostgreSQL (`maintenance_plans`, `maintenance_plan_visits`, `reviews`, `review_replies`, `review_requests` …) |
-| Everything else (website, marketplace, marketing) | its module | the sample data, sample business only |
+| Marketing campaigns, chosen customers, recipient snapshots | Marketing | PostgreSQL (`marketing_campaigns`, `marketing_campaign_selected_customers`, `marketing_campaign_recipients`) |
+| Everything else (website, marketplace) | its module | the sample data, sample business only |
 
-Analytics owns nothing: it reads the other modules.
+Analytics owns no records: its figures are computed from the other modules' rows, plus the sample business's imported
+adjustments (`analytics_imported_baselines`, written by the seed, read-only for the application).
 
 ## Testing
 
@@ -166,7 +171,7 @@ expiry, business set-up, workspace switching, tenant isolation (through the brow
 the restricted runtime role), Settings persistence, and source-level checks of the server boundaries. Each worker signs
 in as the owner of its own copy of the Apex workspace, restored before every test.
 
-At the last run all 2383 tests passed (67 spec files, about ten minutes on six workers): the earlier front-end and SaaS tests, none skipped and adapted only where Settings, customers, Services, the team, bookings, jobs, quotes, invoices, payments, maintenance plans and reviews are stored or every page needs a sign-in, plus the operations specs (SQL as the restricted role, bookings, jobs, the schedule, the cross-module checks and the business-time conversions) and the financial specs (money in cents, the payment and invoice rules, SQL as the restricted role with the concurrency tests, the seed round trip, and the record-payment, void and create-invoice flows through the real application) and the maintenance and review specs (the pure rules and totals, SQL as the restricted role with the concurrency tests, the seed round trip, and the create-plan, schedule-visit, reply, edit-reply and request-review flows through the real application).
+At the last run all 2547 tests passed (73 spec files, about fourteen minutes on six workers): the earlier front-end and SaaS tests, none skipped and adapted only where Settings, customers, Services, the team, bookings, jobs, quotes, invoices, payments, maintenance plans, reviews, marketing campaigns and Analytics are stored or every page needs a sign-in, plus the operations specs (SQL as the restricted role, bookings, jobs, the schedule, the cross-module checks and the business-time conversions) and the financial specs (money in cents, the payment and invoice rules, SQL as the restricted role with the concurrency tests, the seed round trip, and the record-payment, void and create-invoice flows through the real application) and the maintenance and review specs (the pure rules and totals, SQL as the restricted role with the concurrency tests, the seed round trip, and the create-plan, schedule-visit, reply, edit-reply and request-review flows through the real application) and the marketing and analytics specs (the pure campaign and reporting rules, SQL as the restricted role with the campaign concurrency tests, the seed round trip, and the save-draft, schedule, send, cancel, duplicate, date-range and export flows through the real application).
 See [docs/production-handoff.md](docs/production-handoff.md#testing-status) for what each group covers.
 
 ## Deploying

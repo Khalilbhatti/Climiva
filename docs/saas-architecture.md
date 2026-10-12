@@ -34,6 +34,7 @@ Read [production-handoff.md](production-handoff.md) for the front end, which thi
 24. [Operations: bookings, jobs and the schedule](#24-operations-bookings-jobs-and-the-schedule)
 25. [Financials: quotes, invoices and payments](#25-financials-quotes-invoices-and-payments)
 26. [Maintenance plans and reviews](#26-maintenance-plans-and-reviews)
+27. [Marketing and Analytics](#27-marketing-and-analytics)
 
 ## 1. Status and scope
 
@@ -45,12 +46,13 @@ reload. Now:
 | Real sign-up, log-in, log-out (Better Auth, sessions in PostgreSQL) | Email verification, password reset, invitations by email (no mail service yet) |
 | Organizations, memberships, owner / admin / member roles | A UI to invite or remove members, or to change roles |
 | Many people ↔ many businesses; a workspace switcher | Billing for Climvia itself |
-| New-business onboarding in one transaction | Marketing, Website, Marketplace and Analytics (still sample data, see §12) |
+| New-business onboarding in one transaction | Website and Marketplace (still sample data, see §12) |
 | Business information, Business hours, Workspace preferences and the profile name stored in PostgreSQL | Logo / branding / avatar storage (needs object storage) |
 | Customers, properties, equipment, Services, the team and its roles stored in PostgreSQL per organization (§13) | A flow to add or edit a customer, email invitations for team members |
 | Bookings, Jobs (with work details and photo metadata), the Schedule (derived) and blocked time stored per organization (§24) | Rescheduling a booking, file storage for photos, a public booking page for a business's own domain |
 | Quotes, invoices (with line items) and payments stored per organization, money in integer cents, balances derived, payments voided rather than deleted (§25) | A payment processor, bank or accounting connection, Climvia's own subscription billing |
 | Maintenance plans (with coverage and included visits) and reviews (with replies and review requests) stored per organization; a visit is scheduled as a real booking (§26) | Pausing or ending a plan from a screen, sending a review request (email or SMS), a public way to submit a review, automatic billing from a plan |
+| Marketing campaigns (email and text, with Draft / Scheduled / Sent state, recipient snapshots and business-time scheduling) and Analytics as PostgreSQL reporting queries, with the sample business's approved history kept as explicit imported adjustments (§27) | Sending any email or text (no provider), templates and a rich email builder, A/B tests, open and click analytics |
 | Strict tenant isolation: server authorization **and** PostgreSQL Row Level Security | The visual Website Builder, templates, domains |
 | `sites` table: one organization owns many sites | Deployment to AWS |
 
@@ -253,8 +255,8 @@ after hydration, which remounts the tree once. The first render is always the de
 
 ## 12. Transitional fixtures
 
-Website, Marketplace, Marketing, Analytics and the customer-facing previews still run on
-the sample dataset in `src/data/*`, held in React state for the visit. (Customers, Services and Team moved to PostgreSQL in §13, Bookings, the Schedule and Jobs in §24, and Quotes & Invoices and Payments in §25, and Maintenance Plans and Reviews in §26; none of them is gated.)
+Website, Marketplace and the customer-facing previews still run on
+the sample dataset in `src/data/*`, held in React state for the visit. (Customers, Services and Team moved to PostgreSQL in §13, Bookings, the Schedule and Jobs in §24, and Quotes & Invoices and Payments in §25, Maintenance Plans and Reviews in §26, and Marketing and Analytics in §27; none of them is gated.)
 
 - That dataset belongs to **one** business. An organization flagged `fixture_set = 'apex-demo'` sees it; **any other organization sees "isn't available for *Name* yet"**. The flag is set by the seed only
   (the runtime role has no column grant to set it).
@@ -263,8 +265,8 @@ the sample dataset in `src/data/*`, held in React state for the visit. (Customer
 - Overview shows a plain "Your workspace is ready" state with the real business card for any other workspace; sidebar counts are sample-business only, and global search finds the active business's own customers, jobs, bookings and schedule (§13, §24).
 - **No silent fallback.** If sign-in, the database, the organization or the membership fails, the app redirects to Log in, shows an error, or shows the unavailable state. It never falls back to
   showing the Apex sample.
-- The remaining sample dataset (marketing, website, marketplace, analytics …) is compiled into the browser JavaScript (it is static, fictional demo data, not tenant data). It is removed module by module as each moves to PostgreSQL (§21). The *foundations* it
-  points at (customers, Services, team) , the operations (bookings, jobs, blocked time) the financials (quotes, invoices, payments), the maintenance plans and the reviews are not compiled in: they are read from PostgreSQL and reach the browser only for the business that owns them (§13, "Fixture compatibility bridge", §24, §25, §26).
+- The remaining sample dataset (website, marketplace …) is compiled into the browser JavaScript (it is static, fictional demo data, not tenant data). It is removed module by module as each moves to PostgreSQL (§21). The *foundations* it
+  points at (customers, Services, team) , the operations (bookings, jobs, blocked time) the financials (quotes, invoices, payments), the maintenance plans, the reviews, the marketing campaigns and the Analytics figures are not compiled in: they are read from PostgreSQL and reach the browser only for the business that owns them (§13, "Fixture compatibility bridge", §24, §25, §26, §27).
 
 ## 13. Core business data: customers, services, team
 
@@ -355,7 +357,7 @@ in a request is never read; the organization is the one the server resolved. The
 
 ### Fixture compatibility bridge
 
-Marketing, Analytics, the Website and the Marketplace still run on the sample dataset (§12), and they reference customers, Services and team members by id (Bookings, Jobs, the Schedule, the financial documents, the maintenance plans and the reviews now point at the same records through composite foreign keys, §24, §25, §26). The bridge:
+The Website and the Marketplace still run on the sample dataset (§12), and they reference customers, Services and team members by id (Bookings, Jobs, the Schedule, the financial documents, the maintenance plans, the reviews and the marketing recipients now point at the same records through composite foreign keys, §24, §25, §26, §27). The bridge:
 
 - Those ids are the **slugs**, and the Apex seed writes the same slugs, with deterministic UUIDv5 primary keys (`src/db/stable-id.ts`: `stableId(organization, kind, slug)`), so a booking that names `sarah-mitchell` and `ac-repair-diagnostics`
   resolves to the same people and Services after a re-seed.
@@ -368,7 +370,7 @@ Marketing, Analytics, the Website and the Marketplace still run on the sample da
 ### A new organization
 
 Onboarding creates, in the same transaction as before, the six system roles and one team member for the owner. It creates no customers, no Services and none of Apex's records. Customers and Services show proper empty states; Team shows the owner;
-Bookings, the Schedule and Jobs show proper empty states with no sample records and no counters of another business (§24); so do Quotes & Invoices and Payments, with zero totals and nothing to record against (§25); the other fixture-backed modules still say "isn't available for *Name* yet" (§12).
+Bookings, the Schedule and Jobs show proper empty states with no sample records and no counters of another business (§24); so do Quotes & Invoices and Payments, with zero totals and nothing to record against (§25), Marketing, with no campaigns and audiences of zero customers, and Analytics, with zeros (§27); the other fixture-backed modules still say "isn't available for *Name* yet" (§12).
 
 ### Global search and the public previews
 
@@ -527,7 +529,7 @@ Not built. The intended design: a request's host name selects the **site**, and 
 
 Each of these moves from sample data to PostgreSQL in its own phase, with `organization_id`, RLS and tests as in §9–§10. When a module moves, its `fixtureGate` call is deleted and it works for every organization.
 
-Done: Services, Customers (+ properties, equipment), Team (staff, roles) (§13); Bookings, Jobs, the Schedule (derived) and blocked time (§24); Quotes, Invoices and Payments (§25); Maintenance Plans (with coverage and visits) and Reviews (with replies and requests) (§26). Suggested order for the rest (dependencies first): Marketing → Website (then the Builder) → Marketplace → Analytics (derived last: its Bookings 24 / Completed Jobs 18 / quote and invoice-count aggregates are still baselines, not counts of the stored records; its money lines already read §25 through the same selectors as the Overview). Also pending: branding / logo / avatar storage and photo files (an object store), invitations and member management, email, a public booking page.
+Done: Services, Customers (+ properties, equipment), Team (staff, roles) (§13); Bookings, Jobs, the Schedule (derived) and blocked time (§24); Quotes, Invoices and Payments (§25); Maintenance Plans (with coverage and visits) and Reviews (with replies and requests) (§26); Marketing (campaigns, recipient snapshots, scheduling and sent state) and Analytics (reporting queries over those tables, with the sample business's approved history as explicit imported adjustments) (§27). Suggested order for the rest (dependencies first): Website (then the Builder) → Marketplace; the public side of the Website also needs the Host → site mapping of §20. Also pending: branding / logo / avatar storage and photo files (an object store), invitations and member management, email, a public booking page.
 
 ## 22. Testing
 
@@ -550,13 +552,16 @@ The Playwright suite runs against a **production build** and a **separate databa
 
 - Maintenance plans and reviews (§26): `maintenance-reviews-database.spec.ts` (SQL as `climvia_app`: what the seed holds, the structure, reads and writes per business, grants, composite foreign keys, the visit and booking triggers, reply and request guards, no DELETE, and the concurrency tests: simultaneous replies, simultaneous requests for one job, simultaneous edits), `maintenance-reviews-flows.spec.ts` (the real application: Sarah's Comfort Care, scheduling BK-1048 once, cancel and rebook, six simultaneous schedules, Create plan, reply, edit and request persistence after a reload and in a fresh session, member read-only, replayed and forged requests, tenant isolation, empty states for a new business, completing a job creating no review or request), `maintenance-reviews-roundtrip.spec.ts` (what the seed wrote is what is read, stable ids, a second seed changes nothing), `maintenance-reviews-rules.spec.ts` (the pure rules and totals), plus `maintenance-plans.spec.ts` and `reviews.spec.ts` (the screens). `review-edits.ts` and `replay.ts` hold the pure builders and the Server Action replay helpers the specs share.
 
+- Marketing and Analytics (§27): `marketing-database.spec.ts` and `reporting-database.spec.ts` (SQL as `climvia_app`: what the seed holds, the structure, reads and writes per business, column grants, the transition and delivery triggers, recipient snapshot rules, composite foreign keys, no DELETE, the imported adjustments, and the concurrency tests: six schedules of one Draft, schedule against send, four cancels, a reschedule against a cancel, six duplicates, and Analytics unchanged by every kind of write except the ones that should move it), `marketing-flows.spec.ts` (the real application: Save draft, Schedule, Send, Cancel schedule and Duplicate persisting through a reload, business-time storage from any browser zone, stale and forged requests, recipients read only for the caller's business, Northstar, a member, a new business), `analytics-flows.spec.ts` (the canonical default view, every figure changing with a booking, job, quote, invoice, payment, plan, review or campaign, URL-backed tabs and ranges, CSV and PDF exports from the same report, tenant isolation, empty states), `marketing-analytics-roundtrip.spec.ts` (what the seed wrote is what is read, stable ids, a second seed changes nothing), and the pure `marketing-rules.spec.ts` and `analytics-rules.spec.ts` (transitions, content and timing validation, ranges, buckets, the baseline-plus-delta composition with hand-built facts, rating math). The old static `analytics-data.spec.ts` was removed with the fixtures it tested; `marketing.spec.ts`, `analytics.spec.ts` and the other regression specs were updated only where a static source became the database.
+
 ## 23. Known limitations
 
 - Email verification, password reset, invitations and member management have no UI: they need a mail service and are the next SaaS work.
 - Branding, logo and avatar are session-only until object storage exists.
-- The marketing, website, marketplace and analytics sample dataset ships in the browser bundle (fictional, public, not tenant data) until its modules migrate. Customers, Services, the team, bookings, jobs, blocked time, quotes, invoices, payments, maintenance plans and reviews do not.
+- The website and marketplace sample dataset ships in the browser bundle (fictional, public, not tenant data) until those modules migrate. Customers, Services, the team, bookings, jobs, blocked time, quotes, invoices, payments, maintenance plans, reviews, marketing campaigns and the Analytics figures do not.
 - Maintenance plans and reviews (§26): no screen pauses, ends, renews or edits a plan (no flow was approved, so the application has no UPDATE on plans), a visit is rescheduled only by cancelling its booking and booking it again, a review request is a record and nothing is sent, and a customer has no public way to submit a review yet (the sample reviews are seeded). The Website and the Marketplace show no reviews.
-- Money (§25): there is no screen to write a quote or to edit, void or reissue an invoice (an invoice is made from an approved quote and is then fixed; a mistake in it is a new invoice for the quote's replacement), no refund or credit note, no tax model (an invoice shows Tax $0.00), no deposit or overpayment, no PDF, email or print, and no payment processor. The Overview's Total Invoiced and the Analytics quote and invoice-count aggregates are reporting baselines that cover more history than the stored records (see §25).
+- Money (§25): there is no screen to write a quote or to edit, void or reissue an invoice (an invoice is made from an approved quote and is then fixed; a mistake in it is a new invoice for the quote's replacement), no refund or credit note, no tax model (an invoice shows Tax $0.00), no deposit or overpayment, no PDF, email or print, and no payment processor. The Overview's Total Invoiced and the Analytics quote and invoice-count aggregates cover more history than the stored records; the difference is held as explicit imported adjustments (§25, §27).
+- Marketing and Analytics (§27): nothing is sent or delivered (no email or SMS provider; "Sent" is a recorded state, and only the sample business's seeded history carries a delivery result). A Scheduled campaign is not sent by anything when its time comes, and there are no templates, rich email builder, A/B tests or open and click figures. The imported history is part of an Analytics figure only when the date range covers all of its period (it is never prorated), the as-of totals (plans, reviews, campaigns) ignore the range, the screen has no Reviews or Marketing panel (those totals are on their own modules and in the exports' report data), and the sidebar counts beside Bookings and Jobs refresh on the next page load, not within the visit. The sample business's campaigns can report more recipients than they list (the extra are imported contacts, counted and not listed). A development database made before this phase needs `npm run db:reset`.
 - A booking's date and time cannot be changed after it is created (there is no rescheduling flow). When one is built it must change the booking and its job in the same transaction. Nothing creates blocked time yet either: the blocks are seeded and read.
 - Photos on a job: the database holds their **metadata** (name, size, category, caption, visibility); the file itself has no home until an object store exists, so a file chosen in the browser lasts for the visit and is labelled so. The whole booking, job and customer lists are sent to the browser with the page.
 - Customers, properties and equipment can be read but not yet added or edited (no flow exists, so the database grants none). Team members are added without an email or a sign-in; there is no resend and no invitation.
@@ -665,7 +670,7 @@ have its status, assignee, confirmation time and cancellation reason changed, a 
 ### Seeds
 
 Apex: 14 bookings (BK-1006 … BK-1042, and BK-1048, Sarah Mitchell's scheduled maintenance visit, §26), 11 jobs (JB-142, JB-178 … JB-204), 4 photo records on JB-204 and 2 blocks, with deterministic uuids. JB-204 is Sarah Mitchell's completed AC Repair & Diagnostics job at 1402 Kinney Ave, Austin, TX 78704, linked to BK-1042. The Overview
-aggregates (Bookings 24, Completed Jobs 18) are **baselines**, not counts of these rows, and are deliberately not backed by invented records. Northstar: BK-1001 (confirmed, with JB-1001, assigned to Jordan Pike) and BK-1002 (a pending request), for Northstar's own customers
+aggregates (Bookings 24, Completed Jobs 18) are **baselines**, not counts of these rows, and are deliberately not backed by invented records; since Phase 14 the difference is stored as imported adjustments (§27). Northstar: BK-1001 (confirmed, with JB-1001, assigned to Jordan Pike) and BK-1002 (a pending request), for Northstar's own customers
 and services. A new workspace has none, and its counters start at 1001.
 
 ### Maintenance Plan bridge (BK-1048)
@@ -752,7 +757,7 @@ Apex's baseline is **seven recorded payments, $2,130.00 received, two outstandin
 
 ### Reporting totals that are baselines, not counts
 
-The Overview's **Total Invoiced ($6,240)** and the Analytics quote and invoice-count aggregates describe more invoicing history than the nine stored invoices, exactly as Bookings 24 and Completed Jobs 18 describe more than the stored bookings (§24). They are **not backed by invented rows**. Total Invoiced is the $6,240 baseline plus the invoices made *since* (those not `imported`), so a new invoice moves it ($6,525 after INV-1052) and the seeded ones, already inside the baseline, do not; payments recorded, amount received and the outstanding figures are derived directly from the stored rows. Analytics is **not** migrated in this phase; it reads the same selectors for its money and keeps its own baselines for the rest.
+The Overview's **Total Invoiced ($6,240)** and the Analytics quote and invoice-count aggregates describe more invoicing history than the nine stored invoices, exactly as Bookings 24 and Completed Jobs 18 describe more than the stored bookings (§24). They are **not backed by invented rows**. Since Phase 14 the difference is stored as **signed imported adjustments** (`analytics_imported_baselines`, §27): a report is the stored invoices in the range plus the adjustments, so Total Invoiced is $6,240 while only the seeded invoices exist, a new invoice moves it by exactly its own total ($6,525 after INV-1052), and a seeded invoice is never counted twice. Payments recorded, amount received and the outstanding figures are derived directly from the stored rows and need no adjustment, and the Overview and Analytics read the same reporting query.
 
 ### Authorization and tenant isolation
 
@@ -766,7 +771,7 @@ The server loads the active business's financials with the rest of its core data
 
 ### Not in this phase
 
-A payment processor, bank or accounting connection, Climvia's own billing, a Quote builder, invoice editing, refunds and credit notes, tax, PDFs and email, Maintenance Plans, Reviews records, Marketing, the Analytics aggregate facts, the Website model and Marketplace configuration. No Docker image was built or run for this phase: the Dockerfile and compose file are unchanged and compatible with the new migrations, and **Docker verification is required before AWS deployment** (§17).
+A payment processor, bank or accounting connection, Climvia's own billing, a Quote builder, invoice editing, refunds and credit notes, tax, PDFs and email, Maintenance Plans, Reviews records, Marketing, the Analytics aggregate facts, the Website model and Marketplace configuration (Maintenance Plans and Reviews followed in §26, Marketing and Analytics in §27). No Docker image was built or run for this phase: the Dockerfile and compose file are unchanged and compatible with the new migrations, and **Docker verification is required before AWS deployment** (§17).
 
 ## 26. Maintenance plans and reviews
 
@@ -809,7 +814,7 @@ The Bookings screens know which booking belongs to a plan from the **visit's sid
 
 The seed (`scripts/db/seed-data/maintenance.ts`, `reviews.ts`) writes them through the same functions the application uses, with deterministic ids. **Sarah Mitchell's Comfort Care** is $189 a year (`18900` cents), two visits a year, May 14 2024 to May 14 2025, Active, for her own property: visit 1 (Heating maintenance) fulfilled May 22 2024 with no booking or job, visit 2 (Cooling maintenance) scheduled as BK-1048 (above). Apex has six plans (Sarah's, David Chen's Seasonal Maintenance, and four for people without a Customers record: an active one, a renewing one, a paused one and an ended one); Northstar has one of its own, different in every value, whose first visit is Northstar's own BK-1001.
 
-The workspace totals the screens report (14 active plans, 5 visits due, 3 renewals, 1 paused, 1 ended; and 12 reviews, a 4.7 average, 3 awaiting a reply, 5 requests) are **reporting baselines, not counts of rows**, exactly as Bookings 24 and Total Invoiced are (§24, §25): the seed does not invent dozens of rows to match them. A plan, review or reply carried in with the sample history is marked `imported` (already inside the baseline); one created since is not and **adds** to it (a plan created moves Active 14 → 15; a reply moves Awaiting 3 → 2 and Responded 9 → 10). The baseline applies to the sample business only (`PLAN_BASELINE`, `REVIEW_BASELINE`); a business with no history counts exactly what it has, which is nothing. The runtime role cannot write an `imported` row (RLS).
+The workspace totals the screens report (14 active plans, 5 visits due, 3 renewals, 1 paused, 1 ended; and 12 reviews, a 4.7 average, 3 awaiting a reply, 5 requests) are **reporting baselines, not counts of rows**, exactly as Bookings 24 and Total Invoiced are (§24, §25): the seed does not invent dozens of rows to match them. Since Phase 14 the gap between the approved figures and the stored rows is held as signed **imported adjustments** (`analytics_imported_baselines`, §27: the `plans.*` counts, `reviews.count`, `reviews.rating_sum`, `reviews.awaiting` and `reviews.requests`), and every total is the stored rows plus the adjustment: a plan created moves Active 14 → 15, and a reply moves Awaiting 3 → 2 and Responded 9 → 10. A business with no history has no adjustment and counts exactly what it has, which is nothing. A plan, review or reply carried in with the sample history is still marked `imported` (informational only); the runtime role can write neither an `imported` row (RLS) nor an adjustment.
 
 ### The Reviews model
 
@@ -825,7 +830,7 @@ A request is a **record** that the business asked a customer for a review. **Not
 
 ### Customers, jobs and the other modules
 
-The Customer page reads the customer's plan, coverage and next visit (with its booking) from `maintenance_plans` and shows the booking as a link; the plan list and the Overview read the same plans; Jobs are untouched except that a completed job is what a request can name. A review's job chip and the job page resolve against the **active business's stored jobs**. Marketing, Analytics, the Website and the Marketplace were **not** migrated. Analytics reads the plan figures through the same selectors with the same baseline. The Website and the Marketplace show **no customer reviews** today (nothing in them reads the Reviews module), so there is nothing to wire; a public read of reviews needs the Website phase's public path (§15, §20) and a decision on which reviews a business publishes.
+The Customer page reads the customer's plan, coverage and next visit (with its booking) from `maintenance_plans` and shows the booking as a link; the plan list and the Overview read the same plans; Jobs are untouched except that a completed job is what a request can name. A review's job chip and the job page resolve against the **active business's stored jobs**. Marketing and Analytics moved in Phase 14 (§27), and Analytics reads the plan and review figures through the same selectors with the same imported adjustment. The Website and the Marketplace were **not** migrated. The Website and the Marketplace show **no customer reviews** today (nothing in them reads the Reviews module), so there is nothing to wire; a public read of reviews needs the Website phase's public path (§15, §20) and a decision on which reviews a business publishes.
 
 ### Authorization and tenant isolation
 
@@ -844,3 +849,134 @@ The server loads the active business's plans and reviews with the rest of its co
 ### Not in this phase
 
 Pausing, ending or renewing a plan from a screen, editing a plan or its visits, rescheduling a visit other than by cancelling its booking and booking it again, automatic billing from a plan, sending a review request (email or SMS), a public way for a customer to submit a review, reviews on the Website or the Marketplace, Marketing, the Analytics aggregate facts, the Website model and Marketplace configuration. No Docker image was built or run for this phase: the Dockerfile and compose file are unchanged and compatible with the new migrations, and **Docker verification is required before AWS deployment** (§17).
+
+## 27. Marketing and Analytics
+
+Phase 14 moved Marketing and Analytics to PostgreSQL. Marketing is campaign **management** (email and text-message campaigns to a business's existing customers; nothing is delivered); Analytics is a **reporting layer** over the other modules' rows, with the sample business's approved history kept as an explicit, separate, read-only source. Everything below belongs to exactly one organization, follows the rules of §9, §10 and §13, and is read for the **active** business only. Neither module is gated any more: a new business gets a real, empty Marketing and zeros in Analytics.
+
+### The Marketing campaign model
+
+Three tables (`src/db/schema/marketing.ts`, migrations `0010_marketing_analytics.sql` and `0011_marketing_analytics_rls.sql`), each with its own `organization_id` and composite `(organization_id, id)` foreign keys, like every table since §13:
+
+| Table | What it holds |
+| --- | --- |
+| `marketing_campaigns` | The campaign: `slug` (its reference, `cmp-fall-maintenance-reminder`, unique per business), `name`, `summary`, `channel` (`email` or `sms`), `audience_id`, `subject` (email only), `message`, `status`, `scheduled_for`, `sent_at` and `sent_on`, `cancelled_at`, `recipient_count`, `delivered_count` / `not_delivered_count`, `created_by` (a Team member of the same business), `position` (the order campaigns are listed in), `created_at`, `updated_at`. |
+| `marketing_campaign_selected_customers` | The customers a "Selected customers" campaign chose one by one: a **configuration**, not a snapshot. |
+| `marketing_campaign_recipients` | The **recipient snapshot** of a Scheduled or Sent campaign (below). |
+
+Only what the screens use is stored: a name, a channel, an audience, a subject (email), a message (at most 5,000 characters for an email, 160 for a text message), a status. There is no rich email builder, no template, no sequence, no A/B test. Statuses are `draft`, `scheduled` and `sent` and nothing else (a cancelled campaign is a Draft with `cancelled_at` set; there is no `paused` or `failed`). The audiences are the five the product has: all customers, customers due for maintenance, maintenance customers, customers with active plans, and selected customers. CHECK constraints keep a campaign honest (`campaigns_scheduled`: a campaign is Scheduled exactly when it has its time; `campaigns_sent`: Sent exactly when it has its day; `campaigns_delivery`: delivered + not delivered = the recipient count, both or neither, only on a Sent campaign; a text message is at most 160 characters and has no subject).
+
+### Status transitions
+
+```
+draft ──▶ scheduled ──▶ sent        (a Draft can also be sent at once)
+  ▲           │
+  └───────────┘  cancel the schedule: back to Draft, cancelled_at stamped, never deleted
+```
+
+A Draft can be saved, scheduled or sent; a Scheduled campaign can be rescheduled, taken back to Draft (the schedule is cancelled) or sent; a Sent campaign is final. The one table of moves is `CAMPAIGN_TRANSITIONS` in `src/lib/marketing-rules.ts`; it is enforced four times:
+
+1. **The action.** Every change names the campaign **and the status the screen saw it in** (`expectedStatus`). The server locks the row (`SELECT … FOR UPDATE`) and refuses if the status is no longer that one ("This campaign has changed since you opened it"), so a stale screen, a double click or a second person changes nothing twice. A request that does not say what it saw cannot be told from a stale one and is not understood.
+2. **The guard trigger** `marketing_campaigns_guard_update`: a Sent campaign cannot be changed by anyone, through any column, even the owner role (`campaigns_final`); `cancelled_at` is stamped only when a schedule is cancelled (`campaigns_cancelled_at`); a Draft carries no recipient snapshot (`campaigns_draft_snapshot`).
+3. **Row Level Security and column grants.** A campaign is created only as a plain Draft (no schedule, sent day, delivery result or cancellation can be written on the way in). `delivered_count`, `not_delivered_count`, `slug`, `created_by`, `position` and the ids have no UPDATE privilege at all. There is no DELETE privilege on campaigns.
+4. **The CHECK constraints** above.
+
+### The recipient snapshot
+
+A Draft stores only its audience **configuration** (the audience and, for "Selected customers", the chosen customers). When a campaign is **scheduled or sent**, one transaction resolves the audience from the business's own customers, writes a snapshot row per person (`recipient_name`, `recipient_email`, `recipient_phone` as they are at that moment, `status` `pending`, `customer_id` linking the person to the Customers record where there is one) and stores the count on the campaign. A later edit of a customer **never rewrites** a snapshot: the contact details are copied, not referenced, and a test edits a customer after scheduling and shows the dialog still reads the old details. `customer_id` is a composite foreign key, so an Apex campaign cannot list a Northstar customer, and a Northstar recipient cannot belong to an Apex campaign, whoever writes the row.
+
+- **When it is written.** A recipient can be inserted only for a campaign that is Scheduled or Sent **and was changed in the same transaction** (`updated_at = now()` in the policy), so the transition that earns a snapshot is the only moment it is written; a Sent campaign cannot be updated again, so no later transaction can satisfy the policy for it. A new row is always `pending` with no result.
+- **When it goes.** A pending snapshot is deleted only while its campaign is still Scheduled (a reschedule, a cancel and a send each replace it). A Sent campaign's recipients are a permanent record that nobody deletes; no recipient row is ever updated.
+- **What it can be smaller than.** The sample business's audience sizes (146, 38, 42, 18) describe a customer base its detailed Customers records do not hold, so a campaign's `recipient_count` can exceed the rows of its snapshot ("Showing 5 sample records of 146 recipients"). Those extra contacts are **imported** (see the baseline below): counted, not listed.
+- **Privacy.** The recipients are not part of the workspace snapshot that goes to the browser with every page. The detail page of a Sent campaign whose delivery result was recorded reads its recipients on the server for that page only; everything else (the "View recipients" dialog, the builder's audience preview) asks one of two read actions in `src/server/actions/marketing-reads.ts` (`campaignRecipientsAction`, `previewRecipientsAction`) when the dialog opens. They are open to any member (who can read the customers anyway), change nothing, take no organization from the request, and answer "no longer exists" for a campaign of another business. A test replays them as another business and with no session.
+
+### Audiences
+
+Worked out from the business's own customers (`resolveAudience` in `src/db/marketing-queries.ts`): **all customers** (everyone with an email address for an email campaign, a phone number for a text), **due for maintenance** (the latest completed Maintenance-category job is more than six months before the business's today), **maintenance customers** (a completed Maintenance-category job, or any maintenance plan), **active plans** (an active plan), **selected** (exactly the chosen customers, each of which must be the business's own). A customer with no destination for the channel is left out, and a campaign that would reach no one is refused ("No customers match this audience, so there is no one to send to"). The sizes the builder shows come from the same function. For the sample business each audience also carries imported contacts (an adjustment per channel and audience, `marketing.audience_extra`), so its builder still reads 146 / 38 / 42 / 18; any other business counts only its own customers.
+
+### Scheduling, the business's clock and time zones
+
+A campaign's time is chosen as the **business's local date and time** and means the same instant everywhere. The server parses it against the business's own clock (`snapshot.clock`: the sample business's fixed Oct 25, 2024, every other business's real time in its time zone), refusing a past date, an earlier time today, a malformed value and a date more than two years ahead. It converts it with the organization's IANA time zone (`localToInstant`, §24) and stores a `timestamptz`: **Oct 30, 2024 9:00 AM in America/Chicago is `2024-10-30T14:00:00Z`** (CDT) and Nov 4, 2024 9:00 AM is `15:00:00Z` (CST: the clocks went back on Nov 3), whatever the browser's or the server's zone is. It is turned back with `instantToLocal` before it reaches a browser, which never parses a date. `sent_at` is the instant a campaign was recorded as sent and `sent_on` the business's calendar day; campaigns sent before the product kept a time of day have only `sent_on`. `cancelled_at` is an instant too.
+
+### Provider delivery integration deferred
+
+**Nothing is delivered anywhere.** There is no email or SMS provider (no SES, Twilio, SendGrid or marketing-automation service), no queue and no webhook. "Sent" is a *recorded state*: Climvia records that the business sent the campaign on that day to those people. A campaign recorded from the application has **no delivery result** (its `delivered_count` / `not_delivered_count` are null, its recipients stay `pending`, and its detail page says “Delivery records aren’t kept for this campaign.”). The delivery results the sample business's earlier campaigns show (Cooling tune-up reminder: 42 recipients, 40 delivered, 2 not delivered, with six recipients listed) are **seeded history**: the runtime role cannot write a result. When a provider is integrated it will write results through its own server-side path, never through a screen. **Provider delivery integration deferred.**
+
+### Marketing actions, concurrency and authorization
+
+`marketing:manage` (`src/lib/policy.ts`) is owner and admin; a member reads the campaigns and their recipients and changes nothing (the screens hide what a member cannot do, the server and PostgreSQL still decide). In `src/server/actions/marketing.ts` the five actions (`saveDraftAction`, `scheduleCampaignAction`, `sendCampaignAction`, `cancelScheduleAction`, `duplicateCampaignAction`) each hand everything to one helper, `mutate()`, whose first step is `authorize("marketing:manage")`; the pipeline is the one of §13. **Duplicate** copies the channel, audience, chosen customers, subject and message into a **new Draft** ("<name> (copy)") with no schedule, no sent time, no delivery result and no snapshot, whatever the original's status; the original is untouched.
+
+Concurrency: the campaign row is locked for the whole change; the expected status is checked under the lock; a campaign's snapshot is replaced in the same transaction as its status; references (`cmp-…`) are allocated under a transaction advisory lock, so six simultaneous duplicates are six independent Drafts (`…-copy`, `…-copy-2` … `…-copy-6`) and never a unique-violation. Tests race six schedules of one Draft (one transition, one snapshot of N rows, never two), a schedule against a send, four cancels, a reschedule against a cancel and six duplicates, and replay a request made for a campaign as it was before it was cancelled elsewhere (refused, with the reason).
+
+### Analytics: a reporting layer over the domain tables
+
+Analytics owns **no records**. Its figures are computed when a page is asked for, by PostgreSQL, from the other modules' rows, in the active business:
+
+| Piece | Where |
+| --- | --- |
+| The pure rules: date ranges, chart columns, imported adjustments, how rows and adjustments combine, the typed `AnalyticsReport` | `src/lib/analytics-rules.ts` |
+| The queries: `getOperationsAnalytics`, `getFinancialAnalytics`, `getMaintenanceAnalytics`, `getReviewAnalytics`, `getMarketingAnalytics`, `getPeriodReport`, `getAnalyticsReport` | `src/db/reporting-queries.ts` |
+| The imported adjustments (read only) | `src/db/adjustments.ts`, table `analytics_imported_baselines` |
+| The request-scoped readers (workspace resolved from the session, `cache()` per request) | `src/server/reporting.ts` |
+
+The Analytics page is a **server component**: it resolves the workspace, reads the range from the URL (`range`, `from`, `to`; anything that is not one of the three presets or a valid custom range of at most two years is "this month"), asks `getAnalytics`, and hands the typed report to the client view, which only shows it and changes the URL. There is no materialized view, no warehouse, no generic SQL endpoint, and no client-supplied SQL or organization. The queries are grouped aggregates over rows the existing indexes already serve: Bookings and Jobs by `service_date` (grouped by day, status and Service), Quotes by `created_on`, Invoices by `issue_date` (an invoice's status and balance are derived exactly as the Payments module derives them: paid when nothing is owed, partially paid when something has been received, otherwise unpaid; the balance counts every recorded payment, whenever it was made), Payments by `paid_on` (recorded and voided apart). Maintenance plans, reviews and campaigns are **as-of-today** totals, counted from the business's rows with the same selectors the Plans, Reviews and Marketing screens use, so a total on Analytics is the number the owning module shows; they do not depend on the date range.
+
+### The imported historical baseline
+
+The sample business's approved figures (October 2024: Bookings 24, Completed Jobs 18, quotes $4,820, invoices $6,240 …) were written independently of its detailed sample records, so they cannot be reproduced from rows, and the seed does not invent hundreds of rows to match them. They are kept in an **explicit, separate, organization-scoped table**, `analytics_imported_baselines`:
+
+| Column | Meaning |
+| --- | --- |
+| `metric_key`, `dimension` | What the adjustment belongs to and how it is split: `bookings.by_status` / `confirmed`, `bookings.by_week` / `2024-10-21`, `bookings.by_service` / `ac-repair-diagnostics`, `quotes.value`, `invoices.count_by_status` / `paid`, `plans.active`, `reviews.rating_sum`, `marketing.audience_extra` / `email:all-customers`, … The keys are defined once, in `KEY` in `src/lib/analytics-rules.ts`. |
+| `period_start`, `period_end` | The business's calendar days the adjustment describes (both or neither). |
+| `integer_value` / `money_cents` | Exactly one, **signed**. |
+| `metadata` | The approved figure and what the rows contributed when it was written: documentation only. |
+
+The table is unique per business, metric, split and period (NULLs count as equal), has RLS for members of the active business to **read** and **no write privilege or policy at all**: the seed, running as the owner, is the only author.
+
+### Baseline + live delta: no double counting
+
+A baseline row is an **adjustment**, not a total: *the approved figure minus what the detailed rows contribute to it*, computed once at seed time with the same reporting functions the application reports with, over the detailed rows alone (`scripts/db/reporting-seed.ts`). A report is then
+
+> the detailed rows the date range selects **+** the adjustments whose whole period the range covers.
+
+So while the rows are as seeded the report is exactly the approved figure; a new booking, quote, invoice or payment, or a seeded row changing status, moves a figure by exactly its own contribution (a booking moving from confirmed to cancelled changes two status counts and not the total); and nothing is counted twice, because the adjustment never changes and already excludes what the rows hold. Tests assert it explicitly (`reporting-database.spec.ts`: the full report minus the rows-only report is exactly the stored adjustments, before and after a payment and a booking; `analytics-rules.spec.ts`: the same with hand-built facts). An adjustment is **negative** where the approved figure is smaller than the sample records beside it: the approved weekly and per-Service tables hold fewer bookings than the sample's records do in some places (21 to 27 October holds 11 sample bookings against an approved 4, a −7 adjustment; the sample's four quotes add up to $6,570 against an approved $4,820, −$1,750). The reconciliation is documented rather than hidden; the approved numbers themselves are unchanged. A **new organization has no adjustment rows**, so it reports only what its rows say (zeros); Northstar has a few small adjustments of its own (bookings and jobs by status, week and Service) so that tenant separation is visible.
+
+Money received needs no adjustment (the approved $2,130 is exactly the seven recorded payments), nor does the outstanding balance ($680, from the rows).
+
+### Average rating
+
+The Reviews and Analytics average is **always (sum of all ratings) / (number of all reviews)**, rounded to one decimal, never a stored average. The sample business's 12 reviews are 4 stored reviews plus adjustments for the count (8) and the **rating sum** (37), so the approved 56 / 12 = 4.7 holds, and a review added later weighs exactly its rating (61 / 13 = 4.69 → 4.7; a single 1-star review would make it 57 / 13 = 4.4). Another business's reviews never enter the calculation (each report is one business's), a reply moves a review from awaiting to responded and changes neither the count nor the average, and a cancelled or voided anything else is irrelevant. The same shape holds for plans (`plans.active`, `plans.visits_due`, …) and requests.
+
+### Date ranges
+
+The presets (This month, Last month, This quarter) are worked out from the **business's own today**: the sample business's is the product's fixed Oct 25, 2024, so its default view is October 2024; any other business's current month is the real one (so Northstar's seeded October 2024 data is asked for by date). A custom range is two valid dates, in order, at most two years apart. The URL carries the tab and the range, so a view survives a reload and a link, and a business switch (a full page load) lands on the Overview.
+
+- Dated facts are filtered by the range; a range with no records shows the approved empty state and a disabled Export.
+- Imported adjustments are included **only when the range covers their whole period** (October 2024 for the sample business), never prorated and never spread over days. October 10 to 20 therefore shows only the records inside it (one quote, $195, and no invoices) with a note that the imported history is part of the figures only when the range covers all of it; **this quarter** (Oct 1 – Dec 31) covers it and also holds November's booking BK-1048, so it shows 25 bookings (the approved 24 plus BK-1048).
+- The chart is Monday-to-Sunday weeks clipped to the range (up to ten weeks), then months. **No daily distribution is fabricated**: a one-day range is one column with exactly what happened that day.
+- Limitations: the imported history cannot be shown for a part of its period (its week and Service tables are independent marginals of the approved figures); the as-of totals ignore the range; Reviews and Marketing totals are exposed by the reporting layer and shown on their own modules' screens, and the Analytics screen keeps the four panels the approved design has (Overview, Bookings & Jobs, Financial Records, Maintenance Plans & Services) — no Reviews or Marketing panel was invented.
+
+### Exports
+
+The CSV and PDF are built in the browser **from the same typed report object the screen shows** (`src/lib/report-export.ts`), so the screen, the CSV and the PDF cannot disagree: whole dollars and cents from integer cents, the business's name, the range and the business's own "prepared on" day. A business can only export its own report (the page resolves the workspace server-side), a range with nothing in it cannot be exported, and the file name carries the range (`climvia-analytics-2024-10-01-to-2024-10-31.csv`).
+
+### The Overview and the sidebar
+
+The Overview's Bookings, Completed Jobs, Total Invoiced and Payments Received are the current month's headline totals of the **same report** (`getMonthTotals` in the Overview page; `core.reporting.month` for the sidebar), so Analytics and the Overview can never disagree, and `getTotalInvoiced` is now a plain sum of the stored invoices (the approved $6,240 is reconciled by the reporting layer, not written in the page). The sidebar's counts beside Bookings and Jobs are those totals when the page loads (nothing is shown for a business with none); they are read with the layout, so after a booking is created or a job completed in the same visit they refresh on the next page load, switch or reload while the Overview and Analytics read fresh.
+
+### Seeds
+
+Apex has eleven campaigns written by the seed through the application's own function (`scripts/db/seed-data/marketing.ts`): the five approved ones in the order the screens list them (Fall maintenance reminder, scheduled for Oct 30, 2024 9:00 AM America/Chicago, 38 recipients; Cooling tune-up reminder, sent Oct 18, 42 recipients, 40 delivered, 2 not delivered, with its six listed recipients; the Seasonal service reminder draft; Winter heating prep notice; Filter replacement reminder) plus one more Draft and five plain, older Sent campaigns (all sent more than 60 days before the sample day), so the workspace totals (**2 Drafts, 1 Scheduled, 8 Sent, 146 recent recipients**) are *counts of stored campaigns*: recent recipients are those of campaigns sent in the last 60 days plus those still scheduled (42 + 48 + 18 + 38). Northstar has one Draft and one Sent campaign of its own (its recipient is Priya Raman). The approved aggregates are in `scripts/db/seed-data/reporting.ts`, turned into adjustments after everything else is seeded; `resetTestTenant` restores campaigns, recipients and adjustments with the rest. An existing development database must be rebuilt (`npm run db:reset`) to pick the new tables and rows up: the seed only fills a business that has no core data yet. Seeding twice changes nothing (a test compares counts, timestamps and sums).
+
+### Authorization and tenant isolation
+
+Members of the **active** organization read; owner or admin write what the grants allow (§10 conventions: transaction-local context, SECURITY DEFINER membership checks, composite foreign keys, no DELETE on campaigns). **Cross-tenant Marketing or Analytics leakage, campaign recipient leakage and Analytics double counting are release blockers**: they are tested at the database (as `climvia_app`), through replayed Server Actions (forged organization, forged campaign references, forged customers, another person, no session), in the pages (Northstar sees none of Apex's campaigns, recipients or figures, and the other way round), and in the built JavaScript (no campaign name, message, recipient or contact detail of either business is in the browser's bundle, and none of the removed baseline constants is in `src/`).
+
+### Where the data meets the screens
+
+The server reads the active business's campaigns with the rest of its core data (`getCoreSnapshot`; the recipients are not part of it), `MarketingProvider` holds them, and each change goes to the server, which answers with the campaigns **as stored**; only then does the working copy change. The Plans and Reviews screens add the imported adjustments (`core.reporting.adjustments`, per business, read from the database) to what their rows say. Analytics and the Overview are server-rendered from the reporting layer.
+
+### Not in this phase / what is left
+
+Sending any email or text message, any provider (SES, Twilio, SendGrid), external marketing automation, templates and a rich email builder, A/B tests and open or click analytics, Website pages and Marketplace configuration in PostgreSQL, SaaS billing, custom domains and S3. The migration roadmap that remains is the **Website** (pages, the booking page configuration and the public preview paths) and the **Marketplace** listing, then the object store for photos and branding. **Docker verification is required before AWS deployment** (§17): the new migrations were applied and tested on the PostgreSQL stand-in used for development, the Dockerfile and compose file are unchanged, and no image was built or run.

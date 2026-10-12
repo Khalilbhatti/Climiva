@@ -1,12 +1,13 @@
 /**
- * Turns the Analytics figures into a downloadable report, in the browser. One report model feeds both formats, so the
- * CSV and the PDF always say the same thing. Nothing is sent anywhere: the file is made from what is on screen.
+ * Turns the Analytics report into a downloadable file, in the browser. The report is the one the server computed for the active
+ * business and the selected date range: the screen and the export read the same object, and one report model feeds both formats,
+ * so the screen, the CSV and the PDF always say the same thing. Nothing is sent anywhere: the file is made from what is on screen.
  */
 import { EXPORT_MODULES, type ExportFormat, type ExportModuleId } from "@/data/analytics";
-import type { AnalyticsModel, DateRange } from "./analytics-state";
+import type { AnalyticsReport } from "./analytics-rules";
 import { formatRange } from "./analytics-state";
 import { formatDate } from "./format";
-import { PROTOTYPE_TODAY } from "@/data/fixtures";
+import { fromCents } from "./money";
 import { buildPdf, type PdfLine } from "./pdf";
 
 type ReportRow = { label: string; value: number; kind: "count" | "usd" };
@@ -21,22 +22,26 @@ export type Report = {
   from: string;
   to: string;
   preparedOn: string;
+  /** The business's own today, as an ISO date (the CSV carries it as is). */
+  preparedOnIso: string;
   sections: ReportSection[];
 };
 
 const count = (label: string, value: number): ReportRow => ({ label, value, kind: "count" });
-const usd = (label: string, value: number): ReportRow => ({ label, value, kind: "usd" });
+/** Money rows hold whole US dollars and cents: the report stores integer cents, the file shows dollars. */
+const usd = (label: string, cents: number): ReportRow => ({ label, value: fromCents(cents), kind: "usd" });
 
-export function buildReport(model: AnalyticsModel, modules: readonly ExportModuleId[], range: DateRange, businessName: string): Report {
+export function buildReport(model: AnalyticsReport, modules: readonly ExportModuleId[], businessName: string): Report {
+  const range = model.range;
   const builders: Record<ExportModuleId, () => ReportSection> = {
     summary: () => ({
       title: "Summary KPIs",
       rows: [
         count("Bookings", model.kpis.bookings),
         count("Jobs completed", model.kpis.completedJobs),
-        usd("Quote value", model.kpis.quoteValue),
-        usd("Invoiced", model.kpis.invoiced),
-        usd("Payments received", model.kpis.paymentsReceived),
+        usd("Quote value", model.kpis.quoteValueCents),
+        usd("Invoiced", model.kpis.invoicedCents),
+        usd("Payments received", model.kpis.paymentsReceivedCents),
       ],
     }),
     bookings: () => ({
@@ -66,20 +71,20 @@ export function buildReport(model: AnalyticsModel, modules: readonly ExportModul
         count("Quotes draft", model.quotes.counts.draft),
         count("Quotes declined", model.quotes.counts.declined),
         count("Quotes expired", model.quotes.counts.expired),
-        usd("Total quoted", model.quotes.totalValue),
-        usd("Approved quote value", model.quotes.approvedValue),
+        usd("Total quoted", model.quotes.totalValueCents),
+        usd("Approved quote value", model.quotes.approvedValueCents),
         count("Invoices paid", model.invoices.counts.paid),
         count("Invoices unpaid", model.invoices.counts.unpaid),
         count("Invoices partially paid", model.invoices.counts["partially-paid"]),
-        usd("Total invoiced", model.invoices.total),
-        usd("Outstanding balance", model.invoices.outstanding),
+        usd("Total invoiced", model.invoices.totalCents),
+        usd("Outstanding balance", model.invoices.outstandingCents),
       ],
     }),
     payments: () => ({
       title: "Payments",
       rows: [
         count("Payments recorded", model.payments.recorded),
-        usd("Amount received", model.payments.received),
+        usd("Amount received", model.payments.receivedCents),
         count("Voided payments", model.payments.voided.length),
       ],
     }),
@@ -100,7 +105,8 @@ export function buildReport(model: AnalyticsModel, modules: readonly ExportModul
     rangeText: formatRange(range.from, range.to),
     from: range.from,
     to: range.to,
-    preparedOn: formatDate(PROTOTYPE_TODAY),
+    preparedOn: formatDate(model.today),
+    preparedOnIso: model.today,
     // The order of the modules in the picker, whichever order they were ticked in.
     sections: EXPORT_MODULES.filter((module) => modules.includes(module.id)).map((module) => builders[module.id]()),
   };
@@ -115,7 +121,7 @@ export function toCsv(report: Report): string {
     ["Section", "Metric", "Value"],
     ["Report", "Business", report.businessName],
     ["Report", "Date range", `${report.from} to ${report.to}`],
-    ["Report", "Prepared on", PROTOTYPE_TODAY],
+    ["Report", "Prepared on", report.preparedOnIso],
     ...report.sections.flatMap((section) =>
       section.rows.map((row): (string | number)[] => [section.title, row.kind === "usd" ? `${row.label} (USD)` : row.label, row.kind === "usd" ? money(row.value) : row.value]),
     ),

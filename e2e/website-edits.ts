@@ -50,7 +50,7 @@ export function websiteOf(content: SiteContent, options: { published?: boolean; 
     published,
     draft: versionOf(content),
     live: published ? versionOf(content, "published", 1) : null,
-    domain: { primary: "climvia" },
+    domain: { domains: [], routingTarget: null },
   };
 }
 

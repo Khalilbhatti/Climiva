@@ -9,6 +9,7 @@ import type { Page } from "playwright/test";
 import { withTenant } from "../src/db/tenant";
 import { STALE_DRAFT } from "../src/lib/site-builder-rules";
 import type { SiteContent } from "../src/lib/site-template";
+import { publishTxt, uniqueHost } from "./domain-helpers";
 import { readDraft } from "./draft-edits";
 import { captureAction, replay, withArguments, withFirstArgument, type Captured } from "./replay";
 import { SEED, expect, test } from "./saas";
@@ -16,9 +17,9 @@ import { saveButton, statusBadge } from "./website-builder-ui";
 
 const NOT_ALLOWED = "Only an owner or admin can change the website.";
 
-type Calls = { save: Captured; publish: Captured; unpublish: Captured; remove: Captured; connect: Captured; primary: Captured };
+type Calls = { save: Captured; publish: Captured; unpublish: Captured; add: Captured; verify: Captured; activate: Captured; disable: Captured; remove: Captured; main: Captured };
 
-/** Make each Website call once through the screens, and keep what the screen sent. The site ends up private with a recorded domain. */
+/** Make each Website call once through the screens, and keep what the screen sent. The site ends up private, its one domain claim removed. */
 async function captureAll(page: Page): Promise<Calls> {
   await page.goto("/website/builder");
   await page.getByTestId("builder-section-hero").getByTestId("section-select").click();
@@ -30,23 +31,35 @@ async function captureAll(page: Page): Promise<Calls> {
   await expect(statusBadge(page)).toHaveText("Published");
 
   await page.goto("/website/domain");
-  await page.getByRole("button", { name: "More actions for www.apexclimateair.com" }).click();
+  const custom = page.getByRole("region", { name: "Custom domains" });
+  const host = uniqueHost("captured");
+  await custom.getByRole("button", { name: "Connect custom domain" }).click();
+  const dialog = page.getByRole("dialog", { name: "Connect custom domain" });
+  await dialog.getByLabel("Domain name").fill(host);
+  const add = await captureAction(page, () => dialog.getByRole("button", { name: "Add domain" }).click());
+  await expect(custom).toContainText(host);
+  // The person puts the record the screen showed in their DNS.
+  const value = await custom.getByText(/^climvia-site-verification=/).first().innerText();
+  publishTxt(host, value.replace("climvia-site-verification=", "").trim());
+  const verify = await captureAction(page, () => custom.getByRole("button", { name: "Verify ownership" }).click());
+  await expect(custom).toContainText("Verified");
+  const activate = await captureAction(page, () => custom.getByRole("button", { name: "Activate" }).click());
+  await expect(custom).toContainText("Active in Climvia");
+  // The first active domain is the main address; make the Climvia address the main one again, then stop the domain serving, then release it.
+  const main = await captureAction(page, () => page.getByRole("region", { name: "Website address" }).getByRole("button", { name: "Make primary" }).click());
+  await expect(custom.getByRole("button", { name: "Make primary" })).toBeVisible();
+  const disable = await captureAction(page, () => custom.getByRole("button", { name: "Disable" }).click());
+  await expect(custom).toContainText("Disabled");
+  await page.getByRole("button", { name: `More actions for ${host}` }).click();
   await page.getByRole("menuitem", { name: "Remove domain" }).click();
   const remove = await captureAction(page, () => page.getByRole("dialog", { name: "Remove custom domain?" }).getByRole("button", { name: "Remove domain" }).click());
-  await expect(page.getByRole("region", { name: "Custom domain" })).toContainText("No custom domain connected");
-  await page.getByRole("region", { name: "Custom domain" }).getByRole("button", { name: "Connect custom domain" }).click();
-  const dialog = page.getByRole("dialog", { name: "Connect custom domain" });
-  await dialog.getByLabel("Domain name").fill("www.captured-example.com");
-  const connect = await captureAction(page, () => dialog.getByRole("button", { name: "Connect domain" }).click());
-  await expect(page.getByRole("region", { name: "Custom domain" })).toContainText("www.captured-example.com");
-  const primary = await captureAction(page, () => page.getByRole("region", { name: "Custom domain" }).getByRole("button", { name: "Make primary" }).click());
-  await expect(page.getByRole("region", { name: "Custom domain" })).toContainText("Primary");
+  await expect(custom).toContainText("No custom domain connected");
 
   await page.goto("/website");
   await page.getByRole("region", { name: "Publishing" }).getByRole("button", { name: "Unpublish" }).click();
   const unpublish = await captureAction(page, () => page.getByRole("dialog", { name: "Unpublish website?" }).getByRole("button", { name: "Unpublish" }).click());
   await expect(page.getByRole("region", { name: "Publishing" })).toContainText("Your website is ready to preview.");
-  return { save, publish, unpublish, remove, connect, primary };
+  return { save, publish, unpublish, add, verify, activate, disable, remove, main };
 }
 
 type Db = import("pg").Pool;
@@ -56,7 +69,8 @@ const standingState = async (db: Db) =>
   JSON.stringify(
     (
       await db.query(
-        `select o.slug, s.slug as site, s.status, s.published_version_id, s.custom_domain, s.custom_domain_status, s.primary_domain, s.updated_at::text as updated,
+        `select o.slug, s.slug as site, s.status, s.published_version_id, s.updated_at::text as updated,
+                (select string_agg(d.hostname || ':' || d.status || ':' || d.is_primary::text || ':' || d.revision::text, ',' order by d.hostname) from site_domains d where d.site_id = s.id) as domains,
                 (select count(*) from site_versions v where v.site_id = s.id) as versions,
                 (select string_agg(v.revision::text, ',' order by v.id) from site_versions v where v.site_id = s.id) as revisions,
                 (select md5(string_agg(c.props::text, '|' order by c.site_version_id, p.page_key, c.section_key)) from site_sections c join site_pages p on p.id = c.page_id where c.site_id = s.id) as text
@@ -69,7 +83,8 @@ const cloneState = async (db: Db, organizationId: string) =>
   JSON.stringify(
     (
       await db.query(
-        `select s.slug, s.status, s.published_version_id, s.custom_domain, s.custom_domain_status, s.primary_domain,
+        `select s.slug, s.status, s.published_version_id,
+                (select string_agg(d.hostname || ':' || d.status || ':' || d.is_primary::text || ':' || d.revision::text, ',' order by d.hostname) from site_domains d where d.site_id = s.id) as domains,
                 (select count(*) from site_versions v where v.site_id = s.id) as versions,
                 (select md5(string_agg(c.props::text || c.is_visible::text, '|' order by v.status, p.page_key, c.section_key)) from site_sections c join site_pages p on p.id = c.page_id join site_versions v on v.id = c.site_version_id where c.site_id = s.id) as text
            from sites s where s.organization_id = $1 order by s.slug`,
@@ -105,8 +120,8 @@ const withHero = (content: SiteContent, props: Record<string, string>): SiteCont
 test.describe("asking the Website's actions directly", () => {
   test("a member can read the website but every write is refused, and the business they belong to is untouched", async ({ page, db, apiAs }) => {
     const calls = await captureAll(page);
-    // Six different actions were captured, each with its own id.
-    expect(new Set(Object.values(calls).map((captured) => captured.headers["next-action"])).size).toBe(6);
+    // Nine different actions were captured, each with its own id.
+    expect(new Set(Object.values(calls).map((captured) => captured.headers["next-action"])).size).toBe(9);
     const jamie = await apiAs("jamie");
     const standing = await standingState(db);
     for (const [name, captured] of Object.entries(calls)) {
@@ -246,35 +261,69 @@ test.describe("asking the Website's actions directly", () => {
     expect(await published()).toBe(before + 1);
   });
 
-  test("the domain actions take a name and a choice, never a status: a domain is recorded as pending, a reserved or malformed name is refused", async ({ page, db, workerTenant }) => {
+  test("the domain actions take a name, a claim and a revision, never a status: a claim starts pending whatever else is sent, a step cannot be skipped, a screen that is behind is refused", async ({ page, db, workerTenant }) => {
     const calls = await captureAll(page);
     const api = page.context().request;
-    const site = async () => (await db.query("select custom_domain, custom_domain_status, primary_domain from sites where organization_id = $1 and slug = 'main'", [workerTenant.organizationId])).rows[0];
-    const connect = async (change: (args: Record<string, unknown>) => void) => (await replay(api, calls.connect, withFirstArgument(calls.connect, change))).text();
+    const claims = async () =>
+      (await db.query("select hostname, status, is_primary, revision from site_domains where organization_id = $1 order by hostname", [workerTenant.organizationId])).rows;
+    const add = async (change: (args: Record<string, unknown>) => void) => (await replay(api, calls.add, withFirstArgument(calls.add, change))).text();
+    const step = (captured: Captured, id: string, revision: unknown) => replay(api, captured, withFirstArgument(captured, (args) => ((args.id = id), (args.expectedRevision = revision)))).then((response) => response.text());
 
-    const before = await site();
-    for (const bad of ["climvia.com", "www.climvia.com", "apexclimate.climvia.com", "not a domain", "", "x".repeat(400), "<script>.com", "http://", "localhost"]) {
-      expect(refused(await connect((args) => (args.domain = bad))), bad).toBe(true);
+    const before = await claims();
+    expect(before.every((claim) => claim.status === "removed")).toBe(true);
+    for (const bad of ["climvia.com", "www.climvia.com", "apexclimate.climvia.com", "not a domain", "", "x".repeat(400), "<script>.com", "http://", "localhost", "127.0.0.1", "*.example.com", "user@example.com"]) {
+      expect(refused(await add((args) => (args.domain = bad))), bad).toBe(true);
     }
-    expect(refused(await connect((args) => (args.domain = 42)))).toBe(true);
-    expect(await site()).toEqual(before);
+    expect(refused(await add((args) => (args.domain = 42)))).toBe(true);
+    expect(await claims()).toEqual(before);
 
-    // A status smuggled in with the name is not read: the domain is recorded as waiting for verification, never verified.
-    expect(ok(await connect((args) => Object.assign(args, { domain: "WWW.Smuggled-Example.com", status: "verified", customDomainStatus: "verified", verified: true })))).toBe(true);
-    expect(await site()).toEqual({ custom_domain: "www.smuggled-example.com", custom_domain_status: "pending_verification", primary_domain: null });
+    // A status, a stamp or a main flag smuggled in with the name is not read: the claim waits for verification, whatever else was sent.
+    const name = uniqueHost("smuggled");
+    expect(ok(await add((args) => Object.assign(args, { domain: name.toUpperCase(), status: "active", verifiedAt: "2020-01-01", isPrimary: true, organizationId: "00000000-0000-0000-0000-000000000000" })))).toBe(true);
+    const row = (await claims()).find((claim) => claim.hostname === name);
+    expect(row).toMatchObject({ status: "pending_verification", is_primary: false, revision: 1 });
+    const id = (await db.query<{ id: string }>("select id from site_domains where hostname = $1", [name])).rows[0].id;
+    const state = async () => (await db.query("select status, is_primary, revision, last_checked_at is not null as checked from site_domains where id = $1", [id])).rows[0];
 
-    // The main address is a choice of two, and only while a domain is recorded.
-    const choose = async (primary: unknown) => (await replay(api, calls.primary, withFirstArgument(calls.primary, (args) => (args.primary = primary)))).text();
-    for (const bad of ["verified", "other.example.com", "", null, 7, ["custom"]]) expect(refused(await choose(bad)), JSON.stringify(bad)).toBe(true);
-    expect(ok(await choose("custom"))).toBe(true);
-    expect((await site()).primary_domain).toBe("www.smuggled-example.com");
-    expect(ok(await choose("climvia"))).toBe(true);
-    expect((await site()).primary_domain).toBeNull();
-    // Removing the domain, twice, is safe; choosing a custom address after that is refused.
-    expect(ok((await (await replay(api, calls.remove)).text()))).toBe(true);
-    expect(ok((await (await replay(api, calls.remove)).text()))).toBe(true);
-    expect(refused(await choose("custom"))).toBe(true);
-    expect((await site()).custom_domain).toBeNull();
+    // A step cannot be skipped, and a claim that is not verified cannot be activated, made main or disabled.
+    expect(refused(await step(calls.activate, id, 1))).toBe(true);
+    expect(refused(await step(calls.disable, id, 1))).toBe(true);
+    expect(refused(await replay(api, calls.main, withFirstArgument(calls.main, (args) => ((args.id = id), (args.expectedRevision = 1), (args.main = true)))).then((response) => response.text()))).toBe(true);
+    expect(await state()).toMatchObject({ status: "pending_verification", is_primary: false });
+
+    // Asking DNS with nothing there changes nothing; asking again at once is told to wait.
+    expect(await step(calls.verify, id, 1)).toContain("not-found");
+    expect(await step(calls.verify, id, 1)).toContain("too-soon");
+    expect(await state()).toMatchObject({ status: "pending_verification", checked: true });
+    // A revision that is behind (or not a number) is refused whatever the claim is doing.
+    expect(refused(await step(calls.verify, id, 7))).toBe(true);
+    expect(refused(await step(calls.verify, id, "1"))).toBe(true);
+    expect(refused(await step(calls.verify, "not-an-id", 1))).toBe(true);
+    expect(refused(await step(calls.verify, "00000000-0000-4000-8000-000000000000", 1))).toBe(true);
+
+    // With the record in place (and the cooldown over) it verifies; the same click again is a no-op.
+    const token = (await db.query<{ verification_token: string }>("select verification_token from site_domains where id = $1", [id])).rows[0].verification_token;
+    publishTxt(name, token);
+    await db.query("update site_domains set last_checked_at = null where id = $1", [id]);
+    expect(await step(calls.verify, id, 1)).toContain("verified");
+    expect(await state()).toMatchObject({ status: "verified", revision: 2 });
+    expect(refused(await step(calls.verify, id, 1))).toBe(true);
+    expect(ok(await step(calls.verify, id, 2))).toBe(true);
+    expect(await state()).toMatchObject({ status: "verified", revision: 2 });
+
+    // Activating needs the revision the screen last saw; the first active domain is the main one; disabling ends that.
+    expect(refused(await step(calls.activate, id, 1))).toBe(true);
+    expect(ok(await step(calls.activate, id, 2))).toBe(true);
+    expect(await state()).toMatchObject({ status: "active", is_primary: true, revision: 3 });
+    expect(ok(await step(calls.disable, id, 3))).toBe(true);
+    expect(await state()).toMatchObject({ status: "disabled", is_primary: false, revision: 4 });
+    expect(refused(await replay(api, calls.main, withFirstArgument(calls.main, (args) => ((args.id = id), (args.expectedRevision = 4), (args.main = true)))).then((response) => response.text()))).toBe(true);
+
+    // Releasing it twice is safe the second time only in that nothing else changes; a released claim cannot be activated again.
+    expect(ok(await step(calls.remove, id, 4))).toBe(true);
+    expect(refused(await step(calls.remove, id, 5))).toBe(true);
+    expect(refused(await step(calls.activate, id, 5))).toBe(true);
+    expect((await state()).status).toBe("removed");
   });
 
   test("six publishes at once make one new version, and every one of them is answered with it", async ({ page, db, workerTenant }) => {

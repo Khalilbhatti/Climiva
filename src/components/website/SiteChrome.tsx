@@ -3,12 +3,11 @@
 import Link from "next/link";
 import { ArrowUpRight, Phone } from "lucide-react";
 import { buttonClasses } from "@/components/ui/Button";
-import type { AppHref } from "@/config/routes";
 import { cn } from "@/lib/cn";
 import { formatCityStateZip, toTelHref } from "@/lib/format";
 import { BrandMark } from "./BrandMark";
 import { looksOf } from "./site-look";
-import { pageHrefIn, typeHrefIn, type SiteView } from "./site-view";
+import { homeHrefIn, pageHrefIn, typeHrefIn, type SiteView } from "./site-view";
 
 /**
  * The header and footer of a drawn website. They are not sections, so they cannot be chosen per page; they follow the site's design style
@@ -20,7 +19,7 @@ import { pageHrefIn, typeHrefIn, type SiteView } from "./site-view";
 
 type Chrome = { view: SiteView };
 
-const homeHref = (view: SiteView) => view.base as AppHref;
+const homeHref = (view: SiteView) => homeHrefIn(view);
 
 /** The pages the navigation lists: every visible page except the home page (the name leads there) and the booking page (it has a button). */
 const navPages = (view: SiteView) => view.pages.filter((page) => page.type !== "home" && page.type !== "booking");

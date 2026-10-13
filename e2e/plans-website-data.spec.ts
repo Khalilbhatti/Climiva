@@ -22,9 +22,8 @@ import {
   getRecordedPaymentsCount,
 } from "../src/data/financials";
 import { getPublicActiveServices } from "../src/data/services";
-import { getPageStatus, getPrimaryDomain, getShownServices, hasUnpublishedChanges, orderedPages, platformHost } from "../src/data/website";
+import { getPageStatus, getPrimaryDomain, getShownServices, hasUnpublishedChanges, orderedPages, platformHost, type DomainRecord } from "../src/data/website";
 import { DEFAULT_TEMPLATE_KEY } from "../src/db/default-template";
-import { normalizeDomain } from "../src/lib/site-domain";
 import { validateTemplateDefinition } from "../src/lib/site-template";
 import { parseNewPlan, planSlug, visitsOf } from "../src/lib/maintenance-rules";
 import { APEX_CONTENT, BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, JOBS, OPERATIONS, OVERVIEW_TOTALS, PLANS, PLANS_DATA, PLAN_ADJUSTMENT, PROPERTIES, SERVICES } from "./apex-data";
@@ -301,21 +300,27 @@ test.describe("website state", () => {
     expect(hasUnpublishedChanges(site)).toBe(true);
   });
 
-  test("the main address is the platform address unless a recorded custom domain is made main", () => {
-    expect(getPrimaryDomain(SITE.site, { primary: "climvia" })).toBe("apexclimate.climvia.com");
-    expect(getPrimaryDomain(SITE.site, { custom: "www.apexclimateair.com", customStatus: "configured", primary: "custom" })).toBe("www.apexclimateair.com");
-    // A "custom" choice with no domain recorded falls back to the platform address.
-    expect(getPrimaryDomain(SITE.site, { primary: "custom" })).toBe("apexclimate.climvia.com");
+  test("the main address is the platform address unless an ACTIVE custom domain is the main one", () => {
+    const claim = (status: DomainRecord["status"], isPrimary: boolean): DomainRecord => ({
+      id: "d1",
+      hostname: "www.apexclimateair.com",
+      status,
+      isPrimary,
+      revision: 1,
+      createdAt: "2024-01-01T00:00:00.000Z",
+      verifiedAt: null,
+      activatedAt: null,
+      disabledAt: null,
+      lastCheckedAt: null,
+      verification: null,
+    });
+    expect(getPrimaryDomain(SITE.site, { domains: [], routingTarget: null })).toBe("apexclimate.climvia.com");
+    expect(getPrimaryDomain(SITE.site, { domains: [claim("active", true)], routingTarget: null })).toBe("www.apexclimateair.com");
+    // A claim that is not active, or is active without being the main one, does not change the main address.
+    for (const other of [claim("pending_verification", false), claim("verified", false), claim("disabled", false), claim("active", false)]) {
+      expect(getPrimaryDomain(SITE.site, { domains: [other], routingTarget: null })).toBe("apexclimate.climvia.com");
+    }
     expect(DEFAULT_TEMPLATE_KEY).toBe("climvia-starter");
-  });
-
-  test("a domain name is only checked for shape and for not being one of Climvia's own; nothing is looked up", () => {
-    expect(normalizeDomain(" https://WWW.Example.com/path ")).toBe("www.example.com");
-    expect(normalizeDomain("not a domain")).toBeUndefined();
-    expect(normalizeDomain("nodots")).toBeUndefined();
-    expect(normalizeDomain("apexclimate.climvia.com")).toBeUndefined();
-    expect(normalizeDomain("climvia.com")).toBeUndefined();
-    expect(normalizeDomain("sub.climvia.com")).toBeUndefined();
   });
 });
 
@@ -333,9 +338,8 @@ test.describe("Phase 5 source", () => {
     "ai website builder",
     "seo score",
     "conversion analytics",
-    "domain verification",
+    // (Domain verification and the DNS record that proves ownership became real in Phase 18B. Writing DNS for the customer never will.)
     "dns automation",
-    "dns record",
     "predictive maintenance",
     "health score",
     "rostova",

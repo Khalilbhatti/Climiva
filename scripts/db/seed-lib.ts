@@ -472,13 +472,14 @@ export async function coreFingerprint(db: AdminDb, organizationId: string): Prom
 
 /**
  * The same for the website and the Marketplace listing: how many rows there are and when the newest of each was changed, plus each
- * site's state (published pointer, domain record). Kept apart from the core fingerprint so that a test that only edits the website puts back
+ * site's state (published pointer) and its custom-domain claims. Kept apart from the core fingerprint so that a test that only edits the website puts back
  * only the website, which is far cheaper than rewriting every customer, booking and invoice.
  */
 export async function websiteFingerprint(db: AdminDb, organizationId: string): Promise<string> {
   const result = await db.execute<{ fingerprint: string }>(sql`
     select concat_ws('|',
-      (select coalesce(string_agg(slug || ':' || status || ':' || coalesce(published_version_id::text, '') || ':' || coalesce(custom_domain, '') || ':' || coalesce(custom_domain_status, '') || ':' || coalesce(primary_domain, '') || ':' || updated_at::text, ',' order by slug), '') from sites where organization_id = ${organizationId}),
+      (select coalesce(string_agg(slug || ':' || status || ':' || coalesce(published_version_id::text, '') || ':' || updated_at::text, ',' order by slug), '') from sites where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(max(updated_at)::text, '') || ':' || coalesce(string_agg(status, '' order by id), '') from site_domains where organization_id = ${organizationId}),
       (select count(*) || ':' || coalesce(max(updated_at)::text, '') from site_versions where organization_id = ${organizationId}),
       (select count(*) || ':' || coalesce(max(updated_at)::text, '') from site_pages where organization_id = ${organizationId}),
       (select count(*) || ':' || coalesce(max(updated_at)::text, '') from site_sections where organization_id = ${organizationId}),

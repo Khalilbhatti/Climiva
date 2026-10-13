@@ -16,7 +16,7 @@
  *   saveSiteDraft               save the whole Draft the Builder edited (theme, settings, pages, sections) in one transaction, against a revision
  *   publishSite                 validate the whole Draft, then copy it into a NEW immutable Published version and point the site at it
  *   unpublishSite               the site is private again; its versions are kept
- *   connect/remove a custom domain, choose the primary address
+ *   (custom domains are in db/domain-queries: they belong to a Site but are claims with a life of their own)
  *
  * Every write that changes a site first locks the site row (`FOR UPDATE`), so two requests for one site queue up instead of
  * interleaving: two publishes get two different version numbers (or the second finds nothing left to publish), and an edit never lands
@@ -27,16 +27,16 @@
  */
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
-import { hasUnpublishedChanges, type CustomDomainStatus, type DomainState, type PageModel, type PageType, type SectionModel, type VersionModel, type VersionSettings, type WebsiteState } from "@/data/website";
+import { hasUnpublishedChanges, type PageModel, type PageType, type SectionModel, type VersionModel, type VersionSettings, type WebsiteState } from "@/data/website";
 import { refuse } from "@/lib/refusal";
-import { normalizeDomain, DOMAIN_PROBLEM } from "@/lib/site-domain";
 import { problemFields } from "@/lib/site-builder-fields";
 import { PAGE_RULES, STALE_DRAFT } from "@/lib/site-builder-rules";
 import { isSectionType, readProps } from "@/lib/site-sections";
 import { validateContent, validateTemplateDefinition, type ContentPage, type SiteContent } from "@/lib/site-template";
 import { readTheme } from "@/lib/site-theme";
 import type { Tx } from "./index";
-import { siteTemplates, sitePages, siteSections, sites, siteVersions, type SitePageRow, type SiteRow, type SiteSectionRow, type SiteVersionRow } from "./schema";
+import { loadDomainState } from "./domain-queries";
+import { siteDomains, siteTemplates, sitePages, siteSections, sites, siteVersions, type SitePageRow, type SiteRow, type SiteSectionRow, type SiteVersionRow } from "./schema";
 import { TEMPLATE_KEYS } from "./site-templates";
 import { stableId } from "./stable-id";
 
@@ -137,20 +137,11 @@ async function loadVersionModels(tx: Tx, organizationId: string, siteId: string,
   );
 }
 
-export function domainOf(site: Pick<SiteRow, "customDomain" | "customDomainStatus" | "primaryDomain">): DomainState {
-  const custom = site.customDomain ?? undefined;
-  return {
-    custom,
-    customStatus: custom ? ((site.customDomainStatus as CustomDomainStatus | null) ?? "pending_verification") : undefined,
-    primary: custom && site.primaryDomain === custom ? "custom" : "climvia",
-  };
-}
-
 /**
  * What the Website module holds for one site: its Draft and, while it is published, the Published snapshot visitors see. Null when the
  * site has no Draft yet (a site made before this phase, or one the business has not created a website for).
  */
-export async function loadWebsiteState(tx: Tx, organizationId: string, site: SiteRow): Promise<WebsiteState | null> {
+export async function loadWebsiteState(tx: Tx, organizationId: string, site: SiteRow, domains: { reveal: boolean; routingTarget: string | null }): Promise<WebsiteState | null> {
   const versions = await tx
     .select()
     .from(siteVersions)
@@ -158,20 +149,23 @@ export async function loadWebsiteState(tx: Tx, organizationId: string, site: Sit
   const draft = versions.find((version) => version.status === "draft");
   if (!draft) return null;
   const live = site.publishedVersionId ? versions.find((version) => version.id === site.publishedVersionId) : undefined;
-  const [draftModel, liveModel] = await loadVersionModels(tx, organizationId, site.id, live ? [draft, live] : [draft]);
+  const [[draftModel, liveModel], domain] = await Promise.all([
+    loadVersionModels(tx, organizationId, site.id, live ? [draft, live] : [draft]),
+    loadDomainState(tx, organizationId, site.id, domains.reveal, domains.routingTarget),
+  ]);
   return {
     site: { id: site.id, name: site.name, platformSlug: site.platformSlug },
     published: site.status === "published" && liveModel !== undefined,
     draft: draftModel,
     live: liveModel ?? null,
-    domain: domainOf(site),
+    domain,
   };
 }
 
 /** The primary site's website state, or null (no primary site, or no Draft yet). */
-export async function loadPrimaryWebsite(tx: Tx, organizationId: string): Promise<WebsiteState | null> {
+export async function loadPrimaryWebsite(tx: Tx, organizationId: string, domains: { reveal: boolean; routingTarget: string | null }): Promise<WebsiteState | null> {
   const site = await findPrimarySite(tx, organizationId);
-  return site ? loadWebsiteState(tx, organizationId, site) : null;
+  return site ? loadWebsiteState(tx, organizationId, site, domains) : null;
 }
 
 /** Every published version of a site, newest first: the history a rollback would read. */
@@ -611,7 +605,8 @@ export async function publishSite(ctx: SiteContext, siteId: string, userId: stri
 
   // Already live with exactly this content: nothing to publish.
   if (site.status === "published" && site.publishedVersionId) {
-    const state = await loadWebsiteState(tx, organizationId, site);
+    // Only the content is compared here, so the domains are loaded without their verification records.
+    const state = await loadWebsiteState(tx, organizationId, site, { reveal: false, routingTarget: null });
     if (state && !hasUnpublishedChanges(state) && state.live) return { versionId: state.live.id, number: state.live.number ?? 0, changed: false };
   }
 
@@ -691,43 +686,6 @@ export async function unpublishSite(ctx: SiteContext, siteId: string): Promise<v
     .where(and(eq(sites.organizationId, organizationId), eq(sites.id, siteId)));
 }
 
-/* ───────────────────────── the site's addresses ───────────────────────── */
-
-/** Record a custom domain for the site. Nothing is verified: it is stored as pending verification and the platform address stays main. */
-export async function connectCustomDomain(ctx: SiteContext, siteId: string, input: unknown): Promise<string> {
-  const { tx, organizationId } = ctx;
-  const host = typeof input === "string" && input.length <= 300 ? normalizeDomain(input) : undefined;
-  if (!host) return refuse(DOMAIN_PROBLEM, { domain: DOMAIN_PROBLEM });
-  await lockSite(tx, organizationId, siteId);
-  // Recording a domain is a claim, not a verification: several businesses may name the same one, and nothing is revealed about any of them.
-  await tx
-    .update(sites)
-    .set({ customDomain: host, customDomainStatus: "pending_verification", primaryDomain: null })
-    .where(and(eq(sites.organizationId, organizationId), eq(sites.id, siteId)));
-  return host;
-}
-
-export async function removeCustomDomain(ctx: SiteContext, siteId: string): Promise<void> {
-  const { tx, organizationId } = ctx;
-  await lockSite(tx, organizationId, siteId);
-  await tx
-    .update(sites)
-    .set({ customDomain: null, customDomainStatus: null, primaryDomain: null })
-    .where(and(eq(sites.organizationId, organizationId), eq(sites.id, siteId)));
-}
-
-/** Which address is the main one. The custom domain can be made main only while one is recorded. */
-export async function setPrimaryAddress(ctx: SiteContext, siteId: string, primary: unknown): Promise<void> {
-  const { tx, organizationId } = ctx;
-  if (primary !== "climvia" && primary !== "custom") return refuse("The address was not understood.");
-  const site = await lockSite(tx, organizationId, siteId);
-  if (primary === "custom" && !site.customDomain) return refuse("There is no custom domain to make the main address.");
-  await tx
-    .update(sites)
-    .set({ primaryDomain: primary === "custom" ? site.customDomain : null })
-    .where(and(eq(sites.organizationId, organizationId), eq(sites.id, siteId)));
-}
-
 /* ───────────────────────── seeding and tests ───────────────────────── */
 
 export type SeedSite = {
@@ -741,7 +699,6 @@ export type SeedSite = {
   draft: SiteContent;
   /** The content of each Published version, in order (1, 2 ...). The last one is the live one. Empty: the site is private. */
   published: readonly SiteContent[];
-  customDomain?: { host: string; status: CustomDomainStatus; primary: boolean };
 };
 
 /**
@@ -800,9 +757,6 @@ export async function insertSeedSite(tx: Tx, organizationId: string, seed: SeedS
     .set({
       status: lastVersionId ? "published" : "draft",
       publishedVersionId: lastVersionId ?? null,
-      customDomain: seed.customDomain?.host ?? null,
-      customDomainStatus: seed.customDomain?.status ?? null,
-      primaryDomain: seed.customDomain?.primary ? seed.customDomain.host : null,
     })
     .where(eq(sites.id, siteId));
   return siteId;
@@ -813,7 +767,9 @@ export async function insertSeedSite(tx: Tx, organizationId: string, seed: SeedS
  * whose slug is not in `keep` when it is given (a test that created another site leaves nothing behind). Owner connection.
  */
 export async function clearSiteContent(tx: Tx, organizationId: string, keep?: readonly string[]): Promise<void> {
-  await tx.update(sites).set({ status: "draft", publishedVersionId: null, customDomain: null, customDomainStatus: null, primaryDomain: null }).where(eq(sites.organizationId, organizationId));
+  // A test copy writes its domains again too; the claims are removed first because a Site cannot be deleted while they point at it.
+  await tx.delete(siteDomains).where(eq(siteDomains.organizationId, organizationId));
+  await tx.update(sites).set({ status: "draft", publishedVersionId: null }).where(eq(sites.organizationId, organizationId));
   await tx.delete(siteSections).where(eq(siteSections.organizationId, organizationId));
   await tx.delete(sitePages).where(eq(sitePages.organizationId, organizationId));
   await tx.delete(siteVersions).where(eq(siteVersions.organizationId, organizationId));

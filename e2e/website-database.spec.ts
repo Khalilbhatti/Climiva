@@ -339,7 +339,7 @@ test.describe("who can change what", () => {
           [table],
         )
       ).rows.map((row) => row.column_name);
-    expect(await updatable("sites")).toEqual(["custom_domain", "custom_domain_status", "name", "primary_domain", "published_version_id", "selected_template_id", "status"]);
+    expect(await updatable("sites")).toEqual(["name", "published_version_id", "selected_template_id", "status"]);
     expect(await updatable("site_versions")).toEqual(["settings", "template_id", "theme"]);
     expect(await updatable("site_pages")).toEqual(["is_visible", "slug", "sort_order", "title"]);
     expect(await updatable("site_sections")).toEqual(["is_visible", "label", "props", "sort_order", "variant"]);
@@ -530,11 +530,9 @@ test.describe("a reference cannot cross a Site, a Version or a business", () => 
 });
 
 test.describe("Sites: identity, addresses and domains", () => {
-  test("a Site starts private, and the runtime role can never create one already published or with a verified domain", async () => {
+  test("a Site starts private, and the runtime role can never create one already published", async () => {
     const published = await as(user.alex, apex, (client) => insertRow(client, "sites", site(apex, { status: "published" })));
     expect(published.constraint).toBe("sites_new_private");
-    const verified = await as(user.alex, apex, (client) => insertRow(client, "sites", site(apex, { custom_domain: "claimed.example.com", custom_domain_status: "verified" })));
-    expect(verified.constraint).toBe("sites_new_private");
     const ok = await as(user.alex, apex, (client) => insertRow(client, "sites", site(apex)));
     expect(ok.error).toBeUndefined();
   });
@@ -577,37 +575,11 @@ test.describe("Sites: identity, addresses and domains", () => {
     expect(duplicateSlug.constraint).toBe("sites_org_slug_unique");
   });
 
-  test("a custom domain is a claim until it is verified, and the runtime role cannot verify one", async () => {
-    // Recording a domain is a claim: two businesses may record the same name and neither learns of the other.
-    const claims = await as(user.alex, apex, async (client) => {
-      await client.query("update sites set custom_domain = 'shared.example.com', custom_domain_status = 'pending_verification' where id = $1", [a.commercial]);
-      return count(client, "select 1 from sites where custom_domain = 'shared.example.com'");
-    });
-    expect(claims.value).toBe(1);
-    const both = await asOwner(async (client) => {
-      await client.query("update sites set custom_domain = 'shared.example.com', custom_domain_status = 'pending_verification' where id in ($1, $2)", [a.commercial, n.main]);
-      return count(client, "select 1 from sites where custom_domain = 'shared.example.com'");
-    });
-    expect(both.value).toBe(2);
-    // The application cannot mark a domain verified, for its own Site or anyone's.
-    const verify = await as(user.alex, apex, (client) => client.query("update sites set custom_domain_status = 'verified' where id = $1", [a.main]));
-    expect(verify.constraint).toBe("sites_domain_verified");
-    // Only a VERIFIED domain belongs to exactly one Site.
-    const verifiedTwice = await asOwner(async (client) => {
-      await client.query("update sites set custom_domain = 'shared.example.com', custom_domain_status = 'verified' where id = $1", [a.commercial]);
-      return client.query("update sites set custom_domain = 'shared.example.com', custom_domain_status = 'verified' where id = $1", [n.main]);
-    });
-    expect(verifiedTwice.constraint).toBe("sites_custom_domain_verified_unique");
-  });
-
-  test("a domain record is consistent: a status needs a domain, a main address is the custom domain or the platform address, and a name is lower-case", async () => {
-    expect((await asOwner((client) => client.query("update sites set custom_domain = 'x.example.com' where id = $1", [a.commercial]))).constraint).toBe("sites_custom_domain_status");
-    expect((await asOwner((client) => client.query("update sites set custom_domain_status = 'pending_verification' where id = $1", [a.commercial]))).constraint).toBe("sites_custom_domain_status");
-    expect((await asOwner((client) => client.query("update sites set custom_domain = 'x.example.com', custom_domain_status = 'live' where id = $1", [a.commercial]))).constraint).toBe("sites_custom_domain_status");
-    expect((await asOwner((client) => client.query("update sites set custom_domain = 'UPPER.example.com', custom_domain_status = 'configured' where id = $1", [a.commercial]))).constraint).toBe("sites_custom_domain_shape");
-    expect((await as(user.alex, apex, (client) => client.query("update sites set primary_domain = 'other.example.com' where id = $1", [a.commercial]))).constraint).toBe("sites_primary_is_custom");
-    const baseline = await admin.query<{ custom_domain: string; custom_domain_status: string; primary_domain: string | null }>("select custom_domain, custom_domain_status, primary_domain from sites where id = $1", [a.main]);
-    expect(baseline.rows[0]).toEqual({ custom_domain: "www.apexclimateair.com", custom_domain_status: "configured", primary_domain: null });
+  test("a Site no longer carries a domain of its own: its custom domains are claims in site_domains (domains-database.spec.ts)", async () => {
+    const columns = (await admin.query<{ column_name: string }>("select column_name from information_schema.columns where table_name = 'sites'")).rows.map((row) => row.column_name);
+    for (const gone of ["custom_domain", "custom_domain_status", "primary_domain"]) expect(columns).not.toContain(gone);
+    // The seed claims nothing: a business starts with its platform address and no custom domain.
+    expect((await admin.query("select count(*)::int as n from site_domains where organization_id in ($1, $2)", [apex, northstar])).rows[0].n).toBe(0);
   });
 });
 

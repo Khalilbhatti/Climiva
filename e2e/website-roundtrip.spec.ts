@@ -43,9 +43,12 @@ test.afterAll(async () => {
 const marketplaceOf = (user: string, org: string) =>
   withTenant({ userId: user, organizationId: org }, async (tx) => loadMarketplace(tx, org, await loadServices(tx, org)));
 
+/** What these specs ask the loaders for: the domains without their verification records. */
+const NO_DOMAINS = { reveal: false, routingTarget: null };
+
 test.describe("what was seeded is what is read", () => {
   test("Apex: the primary Site's Draft and its Published version v1 are the approved website, and the second Site is private", async () => {
-    const state = await withTenant({ userId: ids.alex, organizationId: ids.apex }, (tx) => loadPrimaryWebsite(tx, ids.apex));
+    const state = await withTenant({ userId: ids.alex, organizationId: ids.apex }, (tx) => loadPrimaryWebsite(tx, ids.apex, NO_DOMAINS));
     expect(state?.published).toBe(true);
     expect(canonicalContent(state!.draft)).toBe(canonicalContent(versionOf(APEX_CONTENT)));
     expect(canonicalContent(state!.live!)).toBe(canonicalContent(versionOf(APEX_CONTENT)));
@@ -55,17 +58,17 @@ test.describe("what was seeded is what is read", () => {
       ["commercial", false, "draft", "apexclimate-commercial"],
       ["main", true, "published", "apexclimate"],
     ]);
-    const second = await withTenant({ userId: ids.alex, organizationId: ids.apex }, (tx) => loadWebsiteState(tx, ids.apex, sites.find((site) => site.slug === "commercial")!));
+    const second = await withTenant({ userId: ids.alex, organizationId: ids.apex }, (tx) => loadWebsiteState(tx, ids.apex, sites.find((site) => site.slug === "commercial")!, NO_DOMAINS));
     expect(second?.published).toBe(false);
     expect(second?.live).toBeNull();
   });
 
   test("Northstar: its own Site comes back as seeded, through its own tenant only", async () => {
-    const state = await withTenant({ userId: ids.taylor, organizationId: ids.northstar }, (tx) => loadPrimaryWebsite(tx, ids.northstar));
+    const state = await withTenant({ userId: ids.taylor, organizationId: ids.northstar }, (tx) => loadPrimaryWebsite(tx, ids.northstar, NO_DOMAINS));
     expect(canonicalContent(state!.live!)).toBe(canonicalContent(versionOf(NORTHSTAR_CONTENT)));
     // Through the same functions another business's Sites are invisible.
-    expect(await withTenant({ userId: ids.taylor, organizationId: ids.apex }, (tx) => loadPrimaryWebsite(tx, ids.apex))).toBeNull();
-    expect(await withTenant({ userId: ids.alex, organizationId: ids.northstar }, (tx) => loadPrimaryWebsite(tx, ids.northstar))).toBeNull();
+    expect(await withTenant({ userId: ids.taylor, organizationId: ids.apex }, (tx) => loadPrimaryWebsite(tx, ids.apex, NO_DOMAINS))).toBeNull();
+    expect(await withTenant({ userId: ids.alex, organizationId: ids.northstar }, (tx) => loadPrimaryWebsite(tx, ids.northstar, NO_DOMAINS))).toBeNull();
   });
 
   test("Apex's listing is published and shows five of the six Services; Northstar's shows its own two", async () => {
@@ -115,7 +118,7 @@ test.describe("identity and repeatability", () => {
                   (select max(updated_at)::text from site_versions where organization_id in ($1, $2)) as version_updated,
                   (select max(updated_at)::text from site_sections where organization_id in ($1, $2)) as section_updated,
                   (select max(updated_at)::text from marketplace_listings where organization_id in ($1, $2)) as listing_updated,
-                  (select string_agg(s.slug || ':' || s.platform_slug || ':' || s.status || ':' || coalesce(s.custom_domain, ''), ',' order by s.organization_id, s.slug) from sites s where s.organization_id in ($1, $2)) as states`,
+                  (select string_agg(s.slug || ':' || s.platform_slug || ':' || s.status || ':' || (select count(*) from site_domains d where d.site_id = s.id), ',' order by s.organization_id, s.slug) from sites s where s.organization_id in ($1, $2)) as states`,
           [ids.apex, ids.northstar],
         )
       ).rows[0];
@@ -154,7 +157,7 @@ fixtures.describe("a test copy of the sample business", () => {
                   (select count(*)::int from site_pages where organization_id = $1) as pages,
                   (select count(*)::int from site_sections where organization_id = $1) as sections,
                   (select count(*)::int from marketplace_listing_services where organization_id = $1) as selections,
-                  (select string_agg(slug || ':' || status || ':' || coalesce(custom_domain, ''), ',' order by slug) from sites where organization_id = $1) as sites_state,
+                  (select string_agg(slug || ':' || status || ':' || (select count(*) from site_domains d where d.site_id = sites.id), ',' order by slug) from sites where organization_id = $1) as sites_state,
                   (select string_agg(status || ':' || description, ',') from marketplace_listings where organization_id = $1) as listing_state,
                   (select md5(string_agg(s.props::text, '|' order by s.site_id, p.page_key, s.section_key)) from site_sections s join site_pages p on p.id = s.page_id join site_versions v on v.id = p.site_version_id where s.organization_id = $1 and v.status = 'draft') as draft_text`,
           [org],

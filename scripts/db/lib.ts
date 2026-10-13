@@ -13,6 +13,9 @@ import * as schema from "../../src/db/schema";
 /** Where the end-to-end tests keep the files their database refers to: their own directory, never the development one. */
 export const TEST_ASSET_DIR = process.env.TEST_ASSET_DIR ?? join(".data", "assets-test");
 
+/** Where the tests put the DNS answers the test server reads (one file per name). Recreated with the database. */
+export const TEST_DNS_DIR = process.env.TEST_DNS_DIR ?? join(".data", "dns-test");
+
 /**
  * Empty a LOCAL asset directory, because the database that referred to its files is being recreated (a rebuilt database must not find
  * files that belong to rows it no longer has, and a seeded one must not refer to files that are missing). Refuses any directory outside

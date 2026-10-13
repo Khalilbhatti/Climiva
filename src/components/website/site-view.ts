@@ -26,7 +26,10 @@ export type SiteView = {
   services: readonly Service[];
   display: ServiceDisplay;
   theme: SiteTheme;
-  /** Where this view's pages live: "/sites/apexclimate" for a visitor, "/website/preview" for the signed-in Draft preview. */
+  /**
+   * Where this view's pages live: "/sites/apexclimate" for a visitor on the platform, "/website/preview" for the signed-in Draft preview, and
+   * the empty string on a customer's own domain, where the pages are at the root of the host ("/", "/services").
+   */
   base: string;
   /** The visible pages, in order: the navigation and the targets of links. */
   pages: readonly { key: string; title: string; slug: string; type: PageType }[];
@@ -34,9 +37,12 @@ export type SiteView = {
   visitor: boolean;
 };
 
+/** The home page: the view's base, or the root of the host when the base is empty (a customer's own domain). */
+export const homeHrefIn = (view: Pick<SiteView, "base">): AppHref => (view.base === "" ? "/" : view.base) as AppHref;
+
 export const pageHrefIn = (view: Pick<SiteView, "base" | "pages">, key: string): AppHref => {
   const page = view.pages.find((candidate) => candidate.key === key);
-  return (page && page.slug !== "" ? `${view.base}/${page.slug}` : view.base) as AppHref;
+  return (page && page.slug !== "" ? `${view.base}/${page.slug}` : homeHrefIn(view)) as AppHref;
 };
 
 /** The page of a kind ("booking", "services"), if the site has a visible one. */

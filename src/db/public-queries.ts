@@ -2,13 +2,15 @@
  * The PUBLIC read and write paths: what a visitor without a session can reach.
  *
  * A visitor has no session, no membership and no organization, so none of the tenant queries (which run inside `withTenant`, under Row
- * Level Security) apply to them. They go through four SQL functions (migrations 0013 and 0018), which are the only place a request with no
+ * Level Security) apply to them. They go through six SQL functions (migrations 0013, 0018 and 0020), which are the only place a request with no
  * membership touches tenant rows:
  *
  *   app_public_site(platform_slug, page_slug)   a PUBLISHED site as a visitor sees it
  *   app_public_listing(public_slug)             a PUBLISHED Marketplace listing, showing only what it switches on
  *   app_public_create_booking(...)              one booking of source "Website" for a Service the site's business offers online
  *   app_public_asset(asset_id)                  where a business's CURRENT logo is stored (migration 0018), for the route that serves it
+ *   app_public_domain(hostname)                 which PUBLISHED site an ACTIVE custom domain belongs to (migration 0020): its public identity only
+ *   app_public_site_domain(platform_slug)       a published site's main active custom domain, for its canonical address (migration 0020)
  *
  * The functions take a PUBLIC IDENTITY, find the owning organization themselves, and return a small projection built field by field. They
  * run as the runtime role with no tenant context: nothing here uses an organization id, and the runtime role has no more privilege than
@@ -18,7 +20,7 @@
  * No `server-only` import on purpose (shared with the specs); nothing under src/ that is a Client Component may import this file.
  */
 import { sql } from "drizzle-orm";
-import type { PublicListingData, PublicNavPage, PublicPage, PublicSite } from "@/data/public-site";
+import type { PublicHost, PublicListingData, PublicNavPage, PublicPage, PublicSite } from "@/data/public-site";
 import { assetUrl } from "@/lib/asset-rules";
 import { SERVICE_CATEGORIES, type BookingMethod, type IntakeQuestion, type Service, type ServiceCategory, type ServicePricing, type ServiceVisibility } from "@/data/services";
 import type { BusinessInfo } from "@/data/settings";
@@ -233,6 +235,26 @@ export async function loadPublicAsset(assetId: string): Promise<PublicAsset | nu
   if ((storageDriver !== "local" && storageDriver !== "s3") || typeof storageKey !== "string" || typeof mediaType !== "string") return null;
   if (typeof byteSize !== "number" || typeof checksum !== "string") return null;
   return { storageDriver, storageKey, mediaType, byteSize, checksum };
+}
+
+/**
+ * The published Site an ACTIVE custom domain belongs to, or null (unknown, not active, or its site is not published: all the same). The name
+ * must already be normalized (lib/hostname); this passes it through untouched, so a spelling that is not stored finds nothing.
+ */
+export async function loadPublicHost(hostname: string): Promise<PublicHost | null> {
+  if (typeof hostname !== "string" || hostname.length === 0 || hostname.length > 231) return null;
+  const result = await getDb().execute<{ host: unknown }>(sql`select app_public_domain(${hostname}) as host`);
+  const raw = result.rows[0]?.host;
+  if (!isJson(raw) || typeof raw.platformSlug !== "string" || typeof raw.canonicalHost !== "string") return null;
+  return { platformSlug: raw.platformSlug, canonicalHost: raw.canonicalHost };
+}
+
+/** A published site's main ACTIVE custom domain, or null. */
+export async function loadPublicSiteDomain(platformSlug: string): Promise<string | null> {
+  if (typeof platformSlug !== "string" || platformSlug.length === 0 || platformSlug.length > 63) return null;
+  const result = await getDb().execute<{ host: unknown }>(sql`select app_public_site_domain(${platformSlug}) as host`);
+  const raw = result.rows[0]?.host;
+  return typeof raw === "string" ? raw : null;
 }
 
 export type PublicBookingInput = {

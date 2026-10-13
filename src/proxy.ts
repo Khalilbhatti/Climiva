@@ -1,5 +1,7 @@
 import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse, type NextRequest } from "next/server";
+import { classifyHost } from "@/lib/hostname";
+import { hostConfig } from "@/lib/domain-config";
 
 /**
  * An early, cheap redirect, not the security boundary.
@@ -16,12 +18,40 @@ import { NextResponse, type NextRequest } from "next/server";
  * the database, not this file). Those pages resolve the business from the public address on the server and show published
  * content only. The signed-in previews of a Draft (/website/preview, /marketplace/preview) are NOT public: they need a session cookie
  * here and a verified membership in the page.
+ *
+ * The first thing it does is look at the HOST, and only the `Host` header (`Forwarded` and `X-Forwarded-Host` are sent by whoever makes the
+ * request, so they choose nothing). A name that is the platform's own (its domain, APP_HOSTS, `localhost`, an IP address) goes on to the rules
+ * above. Any other name is a customer's domain, or nothing: the request is rewritten (the address in the browser does not change) to the one
+ * route that serves a customer's site, `/custom-site`, where the database says whether the name is active. A customer's domain therefore
+ * never reaches the workspace, the sign-in pages or any API: `/settings`, `/login` and `/api/branding` there are only pages the site does
+ * not have. The one path passed through as it is is `/assets/<id>`, the public logo, which asks the database itself and ignores the host.
+ * A Host that is not a name at all is refused.
  */
 const PUBLIC_PREFIXES = ["/api/auth", "/sites", "/listings", "/assets"];
 const AUTH_PAGES = ["/login", "/signup"];
 
+/** Where a customer's domain is served from. */
+const CUSTOM_SITE = "/custom-site";
+
+/** A path that ends in a file extension is never a page. */
+const FILE = /\.[a-zA-Z0-9]+$/;
+
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
+
+  const host = classifyHost(request.headers.get("host"), hostConfig());
+  if (host === "refuse") return new NextResponse("Not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+  if (host === "custom") {
+    if (pathname.startsWith("/assets/")) return NextResponse.next();
+    const target = request.nextUrl.clone();
+    target.pathname = `${CUSTOM_SITE}${pathname === "/" ? "" : pathname}`;
+    return NextResponse.rewrite(target);
+  }
+
+  // On the platform's own names a file path (an icon, a font) was never this file's business and still is not: it goes straight on. It is handled
+  // here, and not left out of the matcher, because on a customer's domain EVERY path must pass the check above.
+  if (FILE.test(pathname)) return NextResponse.next();
+
   const hasSession = Boolean(getSessionCookie(request));
 
   if (AUTH_PAGES.includes(pathname)) return NextResponse.next();
@@ -38,6 +68,6 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except Next's own assets and files with an extension (icon.svg, fonts).
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|.*\\.[a-zA-Z0-9]+$).*)"],
+  // Everything except Next's own assets and the two icons. (Other file paths are looked at too: see the customer's-domain check above.)
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg).*)"],
 };

@@ -67,7 +67,7 @@ export function usePublishing() {
       >
         <p className="rounded-card bg-surface-low p-3 text-sm text-ink-muted">
           Customers can no longer open the live website
-          {website?.domain.custom ? " on either address" : ""}. Bookings, Services, Customers, Jobs, Invoices and Payments are not changed.
+          {website?.domain.domains.some((record) => record.status === "active") ? " on any of its addresses" : ""}. Bookings, Services, Customers, Jobs, Invoices and Payments are not changed.
         </p>
       </Modal>
     ),

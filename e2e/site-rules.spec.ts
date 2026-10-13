@@ -10,7 +10,7 @@ import { DEFAULT_TEMPLATE, DEFAULT_TEMPLATE_KEY } from "../src/db/default-templa
 import { emptyMarketplaceState, getListingServices, sameConfig } from "../src/data/marketplace";
 import { checkPublicBooking, parsePublicBooking, bookingReferenceOf, PUBLIC_BOOKING_SERVICE, type PublicBookingRequest } from "../src/lib/public-booking-rules";
 import { parseListingConfig } from "../src/lib/marketplace-rules";
-import { normalizeDomain, publicListingHref, publicSiteHref } from "../src/lib/site-domain";
+import { canonicalUrl, publicListingHref, publicSiteHref } from "../src/lib/site-domain";
 import { SECTION_REGISTRY, SECTION_TYPES, TOKENS, fieldsOf, fillTokens, isSectionType, locationOf, readProps, textProblem, validateProps, variantDef } from "../src/lib/site-sections";
 import { MAX_PAGES, MAX_SECTIONS_PER_PAGE, validateContent, validateTemplateDefinition } from "../src/lib/site-template";
 import { DEFAULT_THEME, accentStyle, readTheme, validateTheme } from "../src/lib/site-theme";
@@ -235,15 +235,15 @@ test.describe("the template definition and whole-site content", () => {
 });
 
 test.describe("addresses", () => {
-  test("a custom domain is checked for shape only, and Climvia's own names are never accepted", () => {
-    expect(normalizeDomain(" https://WWW.Example.com/path?x=1 ")).toBe("www.example.com");
-    expect(normalizeDomain("example.co.uk")).toBe("example.co.uk");
-    for (const bad of ["", "nodots", "has space.com", "-bad.com", "a..b.com", "climvia.com", "apex.climvia.com", "x.y.climvia.com", "http://", "localhost"]) {
-      expect(normalizeDomain(bad), JSON.stringify(bad)).toBeUndefined();
-    }
+  test("a page calls itself by the site's main active custom domain, and by nothing when it has none", () => {
+    expect(canonicalUrl(null, "https", "services")).toBeNull();
+    expect(canonicalUrl("www.example.com", "https", "")).toBe("https://www.example.com");
+    expect(canonicalUrl("www.example.com", "https", "/")).toBe("https://www.example.com");
+    expect(canonicalUrl("www.example.com", "https", "services")).toBe("https://www.example.com/services");
+    expect(canonicalUrl("www.example.com", "http", "booking/ac-repair")).toBe("http://www.example.com/booking/ac-repair");
   });
 
-  test("public addresses are paths on this application until domain routing exists", () => {
+  test("public addresses on the platform are paths on this application", () => {
     expect(publicSiteHref("apexclimate")).toBe("/sites/apexclimate");
     expect(publicSiteHref("apexclimate", "/")).toBe("/sites/apexclimate");
     expect(publicSiteHref("apexclimate", "/booking")).toBe("/sites/apexclimate/booking");

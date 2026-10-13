@@ -16,6 +16,8 @@
  *
  * Fixtures: none. The approved Apex Climate Heating & Air site is seed data (scripts/db/seed-data/website.ts).
  */
+import { PLATFORM_DOMAIN } from "@/lib/hostname";
+import type { DomainStatus } from "@/lib/domain-rules";
 import type { Props, SectionType } from "@/lib/site-sections";
 import type { SiteTheme } from "@/lib/site-theme";
 import { getPublicActiveServices, type Service } from "./services";
@@ -78,25 +80,33 @@ export type VersionModel = {
 
 /* ───────────────────────── addresses and domains ───────────────────────── */
 
-/** The domain every Site's platform address lives under: `<platform-slug>.climvia.com`. Nothing resolves it yet (see section 28). */
-export const PLATFORM_DOMAIN = "climvia.com";
+/** A Site's platform address: `<platform-slug>.climvia.com` (PLATFORM_DOMAIN, lib/hostname). A custom domain never replaces it. */
 export const platformHost = (platformSlug: string) => `${platformSlug}.${PLATFORM_DOMAIN}`;
 
-export type CustomDomainStatus = "configured" | "pending_verification" | "verified";
-
-export const CUSTOM_DOMAIN_STATUS_LABEL: Record<CustomDomainStatus, string> = {
-  configured: "Configured",
-  pending_verification: "Pending verification",
-  // Nothing sets this yet: verifying a domain belongs to the domain-routing phase.
-  verified: "Verified",
+/** One custom domain a Site's business has claimed, and how far the claim has got (lib/domain-rules). */
+export type DomainRecord = {
+  id: string;
+  /** The normalized ASCII name: the only form that is stored and compared. */
+  hostname: string;
+  status: DomainStatus;
+  /** The Site's main custom domain. Only an active domain can be, and there is at most one. */
+  isPrimary: boolean;
+  /** Counts changes to the claim's state. A screen sends the one it saw, and is refused if the claim has moved on. */
+  revision: number;
+  createdAt: string;
+  verifiedAt: string | null;
+  activatedAt: string | null;
+  disabledAt: string | null;
+  lastCheckedAt: string | null;
+  /** The TXT record that proves ownership. Present only for people who may manage the website, and only while it is still needed. */
+  verification: { recordName: string; recordValue: string } | null;
 };
 
 export type DomainState = {
-  /** The custom domain recorded for the site, if any. It is a RECORD: nothing verifies it or routes to it yet. */
-  custom?: string;
-  customStatus?: CustomDomainStatus;
-  /** Which address is the main one. The Climvia address can't be removed. */
-  primary: "climvia" | "custom";
+  /** Every claim of the Site that has not been removed, oldest first. */
+  domains: DomainRecord[];
+  /** Where a customer points their DNS (CUSTOM_DOMAIN_TARGET), or null until production routing is configured. */
+  routingTarget: string | null;
 };
 
 export type SiteIdentity = {
@@ -117,7 +127,11 @@ export type WebsiteState = {
   domain: DomainState;
 };
 
-export const getPrimaryDomain = (site: SiteIdentity, domain: DomainState) => (domain.primary === "custom" && domain.custom ? domain.custom : platformHost(site.platformSlug));
+/** The Site's main custom domain, if one is active. Active in Climvia says nothing about DNS or certificates (lib/domain-rules ACTIVATION_NOTE). */
+export const primaryDomainOf = (domain: DomainState): DomainRecord | undefined => domain.domains.find((record) => record.isPrimary && record.status === "active");
+
+/** The address shown as the site's main one: its main active custom domain, or the platform address. */
+export const getPrimaryDomain = (site: SiteIdentity, domain: DomainState) => primaryDomainOf(domain)?.hostname ?? platformHost(site.platformSlug);
 
 /** The site's pages in the order they are shown. */
 export const orderedPages = (version: VersionModel): PageModel[] => [...version.pages].sort((a, b) => a.sortOrder - b.sortOrder);

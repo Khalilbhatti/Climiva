@@ -1,6 +1,7 @@
 import type { Page } from "playwright/test";
 import { business } from "../scripts/db/seed-data/apex";
-import { expect, test } from "./fixtures";
+import { insertActiveClaim, uniqueHost } from "./domain-helpers";
+import { expect, test } from "./saas";
 import { SERVICES } from "./apex-data";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
@@ -410,13 +411,12 @@ test.describe("Directory preview", () => {
     await expect(primaryNav(page)).toHaveCount(0);
   });
 
-  test("the listing's Website row is the Climvia address; a custom domain that is only recorded does not replace it", async ({ page, workerTenant }) => {
-    await page.goto("/website/domain");
-    await page.getByRole("button", { name: "Make primary" }).first().click();
-    await expect(toast(page)).toContainText("www.apexclimateair.com is now the primary website address.");
-    await primaryNav(page).getByRole("link", { name: /^Marketplace/ }).click();
+  test("the listing's Website row is the Climvia address; an active custom domain does not replace it", async ({ page, db, workerTenant }) => {
+    const host = uniqueHost("listing");
+    await insertActiveClaim(db, workerTenant.organizationId, host);
+    await page.goto("/marketplace");
     await expect(page.getByRole("region", { name: "Business information" })).toContainText(`${workerTenant.platformSlug}.climvia.com`);
-    await expect(page.getByRole("region", { name: "Business information" })).not.toContainText("www.apexclimateair.com");
+    await expect(page.getByRole("region", { name: "Business information" })).not.toContainText(host);
     await expect(preview(page)).toContainText(`${workerTenant.platformSlug}.climvia.com`);
   });
 });

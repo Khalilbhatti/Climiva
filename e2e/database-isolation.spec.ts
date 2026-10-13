@@ -317,34 +317,43 @@ test.describe("the sites table", () => {
     expect(result).toMatch(/sites_organization_id|violates foreign key/i);
   });
 
-  test("a recorded domain is a claim (two sites may record the same name), only a verified one belongs to a single site, and names are stored lower-case", async () => {
+  test("a domain name belongs to one claim at a time across businesses, in one spelling only, and is free again once the claim is removed", async () => {
     const client = await admin.connect();
-    const attempt = (sql: string, params: unknown[]) =>
-      client.query(sql, params).then(
-        () => "accepted",
-        (error: Error) => error.message,
+    // Each attempt is its own savepoint: a failed statement aborts a transaction, and the next attempt needs it alive.
+    const attempt = async (sql: string, params: unknown[]) => {
+      await client.query("savepoint attempt");
+      try {
+        await client.query(sql, params);
+        return "accepted";
+      } catch (error) {
+        await client.query("rollback to savepoint attempt");
+        return (error as Error).message;
+      }
+    };
+    const claim = (org: string, host: string) =>
+      attempt(
+        `insert into site_domains (organization_id, site_id, hostname, verification_token)
+         select organization_id, id, $2, translate(encode(decode(replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''), 'hex'), 'base64'), '+/=', '-_')
+           from sites where organization_id = $1 and slug = 'main'`,
+        [org, host],
       );
     try {
       await client.query("begin");
-      const claim = "update sites set custom_domain = 'shared.example.test', custom_domain_status = $2 where organization_id = $1 and slug = 'main'";
-      expect(await attempt(claim, [apex, "pending_verification"])).toBe("accepted");
-      expect(await attempt(claim, [northstar, "pending_verification"])).toBe("accepted");
-      expect(await attempt(claim, [apex, "verified"])).toBe("accepted");
-      expect(await attempt(claim, [northstar, "verified"])).toMatch(/sites_custom_domain_verified_unique|duplicate key/i);
+      expect(await claim(apex, "shared.example.test")).toBe("accepted");
+      // The same name by another business is refused, and so is every other spelling of it: only the normalized form can be stored at all.
+      expect(await claim(northstar, "shared.example.test")).toMatch(/site_domains_hostname_unique|duplicate key/i);
+      for (const spelling of ["Shared.Example.Test", "shared.example.test.", "sháred.example.test", " shared.example.test", "*.example.test", "127.0.0.1", "localhost", "a.climvia.com", "climvia.com"]) {
+        expect(await claim(northstar, spelling), spelling).toMatch(/site_domains_hostname_(shape|reserved)|check constraint/i);
+      }
+      // Removing the claim frees the name for another business, which gets a token of its own.
+      expect(await attempt("update site_domains set status = 'removed', removed_at = now() where hostname = 'shared.example.test' and organization_id = $1", [apex])).toBe("accepted");
+      expect(await claim(northstar, "shared.example.test")).toBe("accepted");
+      const tokens = await client.query<{ n: number }>("select count(distinct verification_token)::int as n from site_domains where hostname = 'shared.example.test'");
+      expect(tokens.rows[0].n).toBe(2);
     } finally {
       await client.query("rollback").catch(() => undefined);
       client.release();
     }
-    const mixedCase = await admin.query("update sites set custom_domain = 'Mixed.Example.Test', custom_domain_status = 'configured' where organization_id = $1 and slug = 'main'", [apex]).then(
-      () => "accepted",
-      (error: Error) => error.message,
-    );
-    expect(mixedCase).toMatch(/sites_custom_domain_shape|check constraint/i);
-    const mainAddress = await admin.query("update sites set primary_domain = 'Other.Example.Test' where organization_id = $1 and slug = 'main'", [apex]).then(
-      () => "accepted",
-      (error: Error) => error.message,
-    );
-    expect(mainAddress).toMatch(/sites_primary_domain_lowercase|sites_primary_is_custom|check constraint/i);
   });
 });
 

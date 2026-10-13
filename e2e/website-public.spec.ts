@@ -598,9 +598,9 @@ test.describe("a new business", () => {
     await completeOnboarding(page, { name, phone: "(303) 555-0199", email: "hello@freshstart.test", street: "77 Pine Street", city: "Boulder", state: "CO", zip: "80301" });
 
     const organization = (await db.query<{ id: string; slug: string }>("select id, slug from organizations where name = $1", [name])).rows[0];
-    const sites = (await db.query("select id, name, slug, platform_slug, is_primary, status, published_version_id, selected_template_id, custom_domain from sites where organization_id = $1", [organization.id])).rows;
+    const sites = (await db.query("select id, name, slug, platform_slug, is_primary, status, published_version_id, selected_template_id, (select count(*)::int from site_domains d where d.site_id = sites.id) as domains from sites where organization_id = $1", [organization.id])).rows;
     expect(sites).toHaveLength(1);
-    expect(sites[0]).toMatchObject({ name, slug: "main", is_primary: true, status: "draft", published_version_id: null, custom_domain: null });
+    expect(sites[0]).toMatchObject({ name, slug: "main", is_primary: true, status: "draft", published_version_id: null, domains: 0 });
     expect(sites[0].platform_slug).toBe(organization.slug);
     expect(sites[0].selected_template_id).not.toBeNull();
     const versions = (await db.query("select status, version_number from site_versions where site_id = $1", [sites[0].id])).rows;

@@ -13,12 +13,15 @@ import {
   parsePublicBooking,
 } from "@/lib/public-booking-rules";
 import { clientAddress, withinLimit } from "../rate-limit";
+import { getRequestSite } from "../request-host";
 
 /**
  * A booking made by a visitor from a published site's Booking page. There is no session and no workspace here, by design:
  *
  *   1. the request names a SITE (by its public identity) and a Service of that site's business; it never names an organization, and
- *      anything extra in it is ignored,
+ *      anything extra in it is ignored. On a customer's own domain the site is NOT taken from the request at all: the Host header names it
+ *      (through the database's active domains), and a slug the browser sends is ignored, so a form posted to one business's domain can
+ *      only ever book that business's Services,
  *   2. the visitor's address is rate limited (a script cannot post the form in a loop),
  *   3. the site is looked up as a visitor sees it (published only); the business, its hours, its clock and its Services come from there,
  *   4. the Service must be one that business offers for online booking, the time one of its slots on a day it is open, and the answers
@@ -39,18 +42,23 @@ export async function submitPublicBookingAction(input: unknown): Promise<ActionR
   if (!parsed.ok) return failure(parsed.error, parsed.fields);
   const request = parsed.value;
 
+  // Which site is this request FOR? The platform's pages name it (the address in the path); a customer's domain is named by its Host.
+  const origin = await getRequestSite();
+  if (origin.kind === "unknown") return failure(PUBLIC_BOOKING_UNAVAILABLE);
+  const siteSlug = origin.kind === "custom" ? origin.host.platformSlug : request.siteSlug;
+
   const address = clientAddress((await headers()).get("x-forwarded-for"));
-  if (!withinLimit(`booking:${request.siteSlug}:${address}`, LIMIT_PER_WINDOW, WINDOW_MS)) return failure(PUBLIC_BOOKING_BUSY);
+  if (!withinLimit(`booking:${siteSlug}:${address}`, LIMIT_PER_WINDOW, WINDOW_MS)) return failure(PUBLIC_BOOKING_BUSY);
 
   try {
-    const site = await loadPublicSite(request.siteSlug, "");
+    const site = await loadPublicSite(siteSlug, "");
     if (!site) return failure(PUBLIC_BOOKING_UNAVAILABLE);
     const clock = businessClock(site.fixedClock, site.preferences.timeZone, PROTOTYPE_NOW);
     const checked = checkPublicBooking(request, site.services.find((service) => service.id === request.serviceSlug), site.hours, clock.today);
     if (!checked.ok) return failure(checked.error, checked.fields);
 
     const result = await createPublicBooking({
-      platformSlug: request.siteSlug,
+      platformSlug: siteSlug,
       serviceSlug: request.serviceSlug,
       submissionKey: request.submissionKey,
       date: request.date,

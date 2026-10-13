@@ -19,7 +19,8 @@
  *
  * A Site's public identity is `platform_slug`: globally unique, lower-case, the same in `/sites/<platform_slug>` and in
  * `<platform_slug>.climvia.com`. Public pages resolve Site -> owning organization on the server; no organization id ever comes from a
- * browser. `custom_domain` is a RECORD of a domain the business wants to use (nothing verifies or routes it yet).
+ * browser. Custom domains are not columns of a Site: they are claims in `site_domains` (below), several per Site, each with its own
+ * state, and they never replace the platform address.
  */
 import { sql } from "drizzle-orm";
 import { boolean, check, foreignKey, index, integer, jsonb, pgTable, text, timestamp, unique, uniqueIndex, uuid, type PgTableExtraConfigValue } from "drizzle-orm/pg-core";
@@ -30,7 +31,7 @@ export const SITE_STATUSES = ["draft", "published", "archived"] as const;
 export type SiteStatus = (typeof SITE_STATUSES)[number];
 export const VERSION_STATUSES = ["draft", "published"] as const;
 export const PAGE_TYPE_VALUES = ["home", "services", "content", "contact", "booking"] as const;
-export const CUSTOM_DOMAIN_STATUSES = ["configured", "pending_verification", "verified"] as const;
+export const DOMAIN_STATUS_VALUES = ["pending_verification", "verified", "active", "disabled", "removed"] as const;
 
 const list = (values: readonly string[]) => sql.raw(values.map((value) => `'${value}'`).join(", "));
 
@@ -84,10 +85,6 @@ export const sites = pgTable(
     selectedTemplateId: uuid("selected_template_id").references(() => siteTemplates.id, { onDelete: "restrict" }),
     /** The Published version visitors see. Set only by Publish; null while the site is private. */
     publishedVersionId: uuid("published_version_id"),
-    /** The address that is the site's main one when it is a custom domain; null while the platform address is main. */
-    primaryDomain: text("primary_domain"),
-    customDomain: text("custom_domain"),
-    customDomainStatus: text("custom_domain_status"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -97,10 +94,6 @@ export const sites = pgTable(
     unique("sites_org_id_unique").on(table.organizationId, table.id),
     unique("sites_platform_slug_unique").on(table.platformSlug),
     uniqueIndex("sites_primary_unique").on(table.organizationId).where(sql`${table.isPrimary}`),
-    // A domain is a CLAIM until it is verified: several businesses may have recorded the same name (so recording one reveals nothing about
-    // another business and cannot block it). Only a VERIFIED domain belongs to exactly one site. Nothing sets "verified" yet, and the
-    // runtime role cannot (see migration 0013); a later domain-routing phase will.
-    uniqueIndex("sites_custom_domain_verified_unique").on(table.customDomain).where(sql`${table.customDomainStatus} = 'verified'`),
     // The published version is a version OF THIS SITE of this organization (a composite key, so another site's cannot be named).
     foreignKey({
       name: "sites_published_version_fk",
@@ -116,15 +109,82 @@ export const sites = pgTable(
     check("sites_status", sql`${table.status} in ('draft', 'published', 'archived')`),
     // A site is published exactly when it points at a published version.
     check("sites_published_pointer", sql`(${table.status} = 'published') = (${table.publishedVersionId} is not null)`),
-    check("sites_primary_domain_lowercase", sql`${table.primaryDomain} is null or ${table.primaryDomain} = lower(${table.primaryDomain})`),
-    check("sites_custom_domain_shape", sql`${table.customDomain} is null or (${table.customDomain} = lower(${table.customDomain}) and char_length(${table.customDomain}) between 4 and 253)`),
-    check("sites_custom_domain_status", sql`(${table.customDomain} is null) = (${table.customDomainStatus} is null) and (${table.customDomainStatus} is null or ${table.customDomainStatus} in (${list(CUSTOM_DOMAIN_STATUSES)}))`),
-    // The main address is the custom domain or the platform address (null), never some other host.
-    check("sites_primary_is_custom", sql`${table.primaryDomain} is null or coalesce(${table.primaryDomain} = ${table.customDomain}, false)`),
   ],
 ).enableRLS();
 
 export type SiteRow = typeof sites.$inferSelect;
+
+/**
+ * A custom domain a Site's business has CLAIMED, and how far the claim has got. Ownership is proved by a TXT record carrying
+ * `verification_token` (lib/domain-rules); the claim is then ACTIVATED, which tells this application to serve the Site for requests whose
+ * Host is the name. The platform address (`sites.platform_slug`) is separate and never stored here.
+ *
+ * `hostname` is the normalized ASCII name (lib/hostname) and the ONLY form that is stored, compared or looked up. A name belongs to at most
+ * one claim that has not been removed, across every business (a partial unique index), so case, a trailing dot or a Unicode spelling can
+ * not make a second claim. A removed claim is history: the name is free again, and the next claim of it gets a new token of its own.
+ *
+ * The token is private to the people who manage the website: it is read only for them, and is in no public projection and no generic Site
+ * object. A claim reaches its Site through a composite (organization_id, site_id) foreign key, so it cannot belong to another business's
+ * Site; the transition guard and the lifecycle CHECK (migration 0020) make skipping a state impossible, and no row is ever deleted.
+ */
+export const siteDomains = pgTable(
+  "site_domains",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id").notNull(),
+    siteId: uuid("site_id").notNull(),
+    hostname: text("hostname").notNull(),
+    status: text("status").notNull().default("pending_verification"),
+    /** 32 random bytes as base64url. Never derived from anything, never reused (a unique index), immutable. */
+    verificationToken: text("verification_token").notNull(),
+    verificationCreatedAt: timestamp("verification_created_at", { withTimezone: true }).notNull().defaultNow(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    activatedAt: timestamp("activated_at", { withTimezone: true }),
+    disabledAt: timestamp("disabled_at", { withTimezone: true }),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    /** The Site's main custom domain: at most one per Site, and only an active one. The platform address is main while none is. */
+    isPrimary: boolean("is_primary").notNull().default(false),
+    /** Counts every change to the claim (maintained inside the database). A screen that is behind sends the one it saw and is refused. */
+    revision: integer("revision").notNull().default(1),
+    createdByUserId: text("created_by_user_id").references(() => authUser.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table): PgTableExtraConfigValue[] => [
+    foreignKey({ name: "site_domains_site_fk", columns: [table.organizationId, table.siteId], foreignColumns: [sites.organizationId, sites.id] }).onDelete("restrict"),
+    unique("site_domains_org_id_unique").on(table.organizationId, table.id),
+    uniqueIndex("site_domains_hostname_unique").on(table.hostname).where(sql`${table.status} <> 'removed'`),
+    uniqueIndex("site_domains_token_unique").on(table.verificationToken),
+    uniqueIndex("site_domains_primary_unique").on(table.siteId).where(sql`${table.isPrimary}`),
+    index("site_domains_site_idx").on(table.organizationId, table.siteId),
+    check("site_domains_status", sql`${table.status} in (${list(DOMAIN_STATUS_VALUES)})`),
+    // Only the normalized ASCII form can be stored: labels of letters, digits and hyphens, a top-level label that starts with a letter (so no IP
+    // address), at most 231 characters (so `_climvia-verification.<name>` fits in a DNS name). The platform's own names and development names can not be claimed.
+    check(
+      "site_domains_hostname_shape",
+      sql`${table.hostname} ~ '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$' and char_length(${table.hostname}) <= 231`,
+    ),
+    check(
+      "site_domains_hostname_reserved",
+      sql`${table.hostname} !~ '(^|\\.)climvia\\.com$' and ${table.hostname} !~ '(^|\\.)(localhost|local|localdomain|internal|invalid)$' and ${table.hostname} !~ '\\.home\\.arpa$'`,
+    ),
+    check("site_domains_token_format", sql`${table.verificationToken} ~ '^[A-Za-z0-9_-]{43}$'`),
+    check(
+      "site_domains_lifecycle",
+      sql`(${table.status} = 'pending_verification' and ${table.verifiedAt} is null and ${table.activatedAt} is null and ${table.disabledAt} is null and ${table.removedAt} is null)
+        or (${table.status} = 'verified' and ${table.verifiedAt} is not null and ${table.activatedAt} is null and ${table.disabledAt} is null and ${table.removedAt} is null)
+        or (${table.status} = 'active' and ${table.verifiedAt} is not null and ${table.activatedAt} is not null and ${table.disabledAt} is null and ${table.removedAt} is null)
+        or (${table.status} = 'disabled' and ${table.verifiedAt} is not null and ${table.activatedAt} is not null and ${table.disabledAt} is not null and ${table.removedAt} is null)
+        or (${table.status} = 'removed' and ${table.removedAt} is not null)`,
+    ),
+    // Only an active domain can be the Site's main one; disabling or removing a domain therefore ends its being main.
+    check("site_domains_primary_is_active", sql`not ${table.isPrimary} or ${table.status} = 'active'`),
+    check("site_domains_revision", sql`${table.revision} >= 1`),
+  ],
+).enableRLS();
+
+export type SiteDomainRow = typeof siteDomains.$inferSelect;
 
 /**
  * One state of a Site's content. A Draft (`status = 'draft'`, no number) is the mutable one; a Published version

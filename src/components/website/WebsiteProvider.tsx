@@ -5,21 +5,26 @@ import { useHoursRows, useBusiness, useSettings } from "@/components/settings/Se
 import { useServices } from "@/components/services/ServicesProvider";
 import { getPrimaryDomain, orderedPages, platformHost, type PageModel, type VersionModel, type WebsiteState } from "@/data/website";
 import type { ActionResult } from "@/lib/action-result";
+import type { OwnershipOutcome } from "@/lib/domain-rules";
 import type { SiteContent } from "@/lib/site-template";
 import { send } from "@/lib/send-action";
 import {
+  activateDomainAction,
+  addDomainAction,
   applyTemplateAction,
-  connectDomainAction,
   createWebsiteAction,
+  disableDomainAction,
   publishWebsiteAction,
   removeDomainAction,
   saveDraftAction,
-  setPrimaryAddressAction,
+  setMainDomainAction,
   unpublishWebsiteAction,
+  verifyDomainAction,
 } from "@/server/actions/website";
 import type { SiteView } from "./site-view";
 
-type Done = Promise<ActionResult<{ website: WebsiteState | null; versionNumber?: number }>>;
+type Answer = { website: WebsiteState | null; versionNumber?: number; domainCheck?: OwnershipOutcome };
+type Done = Promise<ActionResult<Answer>>;
 
 type WebsiteContextValue = {
   /** The business's primary website as stored (its Draft and Published snapshot), or null before one has been created. */
@@ -32,9 +37,15 @@ type WebsiteContextValue = {
   /** Publish the Draft. With a revision, only if the stored Draft is still that one (the Builder always sends it). */
   publish: (expectedRevision?: number) => Done;
   unpublish: () => Done;
-  connectDomain: (domain: string) => Done;
-  setPrimaryAddress: (primary: "climvia" | "custom") => Done;
-  removeDomain: () => Done;
+  /** Claim a custom domain for the website. It starts as "ownership not verified". */
+  addDomain: (hostname: string) => Done;
+  /** Look for the claim's DNS record. The answer's `domainCheck` says what was found. Each domain call carries the revision the screen showed. */
+  verifyDomain: (id: string, expectedRevision: number) => Done;
+  activateDomain: (id: string, expectedRevision: number) => Done;
+  disableDomain: (id: string, expectedRevision: number) => Done;
+  removeDomain: (id: string, expectedRevision: number) => Done;
+  /** Make an active domain the main address (`main: true`), or make the Climvia address the main one again (`main: false`). */
+  setMainDomain: (id: string, expectedRevision: number, main: boolean) => Done;
 };
 
 const WebsiteContext = createContext<WebsiteContextValue | null>(null);
@@ -49,7 +60,7 @@ const WebsiteContext = createContext<WebsiteContextValue | null>(null);
 export function WebsiteProvider({ initial, children }: { initial: WebsiteState | null; children: ReactNode }) {
   const [website, setWebsite] = useState<WebsiteState | null>(initial);
 
-  const adopt = useCallback((result: ActionResult<{ website: WebsiteState | null; versionNumber?: number }>) => {
+  const adopt = useCallback((result: ActionResult<Answer>) => {
     if (result.ok) setWebsite(result.data.website);
     return result;
   }, []);
@@ -62,9 +73,12 @@ export function WebsiteProvider({ initial, children }: { initial: WebsiteState |
       applyTemplate: async (templateKey, expectedRevision) => adopt(await send(() => applyTemplateAction({ templateKey, expectedRevision, confirmReplace: true }))),
       publish: async (expectedRevision) => adopt(await send(() => (expectedRevision === undefined ? publishWebsiteAction() : publishWebsiteAction({ expectedRevision })))),
       unpublish: async () => adopt(await send(() => unpublishWebsiteAction())),
-      connectDomain: async (domain) => adopt(await send(() => connectDomainAction({ domain }))),
-      setPrimaryAddress: async (primary) => adopt(await send(() => setPrimaryAddressAction({ primary }))),
-      removeDomain: async () => adopt(await send(() => removeDomainAction())),
+      addDomain: async (domain) => adopt(await send(() => addDomainAction({ domain }))),
+      verifyDomain: async (id, expectedRevision) => adopt(await send(() => verifyDomainAction({ id, expectedRevision }))),
+      activateDomain: async (id, expectedRevision) => adopt(await send(() => activateDomainAction({ id, expectedRevision }))),
+      disableDomain: async (id, expectedRevision) => adopt(await send(() => disableDomainAction({ id, expectedRevision }))),
+      removeDomain: async (id, expectedRevision) => adopt(await send(() => removeDomainAction({ id, expectedRevision }))),
+      setMainDomain: async (id, expectedRevision, main) => adopt(await send(() => setMainDomainAction({ id, expectedRevision, main }))),
     }),
     [website, adopt],
   );
@@ -88,7 +102,7 @@ export function useWebsiteState(): WebsiteState {
   return website;
 }
 
-/** The address visitors use: the main one (a recorded custom domain made main, otherwise the platform address). Null with no website. */
+/** The address shown as the main one: the main ACTIVE custom domain if there is one, otherwise the platform address. Null with no website. */
 export function useSiteAddress(): string | null {
   const { website } = useWebsite();
   return website ? getPrimaryDomain(website.site, website.domain) : null;

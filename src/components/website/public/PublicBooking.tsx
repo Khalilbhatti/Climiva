@@ -10,6 +10,16 @@ import { BookingJourney, type JourneyResult, type JourneySubmission } from "../B
 import type { SiteView } from "../site-view";
 
 /**
+ * A random key for one journey. `crypto.randomUUID` exists only on secure origins (https, and localhost); a visitor can arrive on another
+ * (a staging address over http, or a customer's domain before its certificate is in place), and the key only has to be unique and unguessable,
+ * so random bytes will do where the UUID function is missing.
+ */
+function newSubmissionKey(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
  * A booking journey on the published site. It sends the visitor's request to the public booking action: the site's public address, the
  * Service's slug, a random key for this journey (so a double click or a retry is one booking) and what the visitor typed. It names no
  * organization; the server finds the business from the site.
@@ -35,7 +45,7 @@ export function PublicBooking({
   const key = useRef<string>(undefined);
 
   async function submit(s: JourneySubmission): Promise<JourneyResult> {
-    key.current ??= crypto.randomUUID();
+    key.current ??= newSubmissionKey();
     const result = await send(() =>
       submitPublicBookingAction({
         siteSlug,

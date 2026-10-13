@@ -13,6 +13,9 @@ import type { SectionModel, SiteIdentity, VersionSettings } from "./website";
 import type { PageType } from "./website";
 import type { SiteTheme } from "@/lib/site-theme";
 
+/** What a request's Host resolves to: the public identity of the site (read through the same visit as any other) and the name its pages call themselves. */
+export type PublicHost = { platformSlug: string; canonicalHost: string };
+
 export type PublicNavPage = { key: string; title: string; slug: string; type: PageType; sortOrder: number };
 
 export type PublicPage = { key: string; title: string; slug: string; type: PageType; sections: SectionModel[] };

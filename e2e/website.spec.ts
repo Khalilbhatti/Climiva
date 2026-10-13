@@ -36,9 +36,8 @@ test.describe("Website overview", () => {
 
     const address = card(page, "Website address");
     await expect(address).toContainText(host);
-    await expect(address).toContainText("www.apexclimateair.com");
-    // A recorded custom domain is not described as live: it is only configured.
-    await expect(address).toContainText("Configured");
+    // Nothing is seeded as a custom domain: the business has the Climvia address, and a way to add one.
+    await expect(address.getByRole("link", { name: "Connect custom domain" })).toBeVisible();
 
     const checklist = card(page, "Website checklist");
     for (const item of ["Business information", "Services", "Business hours", "Booking experience"]) await expect(checklist).toContainText(item);
@@ -465,140 +464,16 @@ test.describe("Publishing", () => {
 });
 
 test.describe("Domain", () => {
-  test("shows the Climvia address and the recorded custom domain, with the Climvia one primary", async ({ page, workerTenant }) => {
+  // The custom-domain claims themselves (add, verify, activate, disable, remove, primary) are in domains-ui.spec.ts.
+  test("shows the Climvia address as the primary one, and the empty custom-domain state before any domain is added", async ({ page, workerTenant }) => {
     await page.goto("/website/domain");
     await expect(websiteTabs(page).getByRole("link", { name: "Domain" })).toHaveAttribute("aria-current", "page");
-    await expect(page.getByText("Domain and publishing are separate")).toBeVisible();
-    await expect(page.getByText("Connecting or removing a domain does not change your Website content or Published status.")).toBeVisible();
-
     const climvia = card(page, "Website address");
     await expect(climvia).toContainText(`${workerTenant.platformSlug}.climvia.com`);
-    await expect(climvia).toContainText("Climvia domain");
-    await expect(climvia).toContainText("Active");
     await expect(climvia).toContainText("Primary website address");
-    await expect(climvia).toContainText("The Climvia domain cannot be deleted.");
-    await expect(climvia.getByRole("button", { name: /Remove/ })).toHaveCount(0);
-
-    const custom = card(page, "Custom domain");
-    await expect(custom).toContainText("www.apexclimateair.com");
-    // It is a record: configured, not connected, and the page says nothing opens on it yet.
-    await expect(custom).toContainText("Configured");
-    await expect(custom).toContainText("Visitors can't open www.apexclimateair.com yet");
-    await expect(custom.getByRole("button", { name: "Make primary" })).toBeVisible();
-    await expect(custom.getByRole("link", { name: /View website/ })).toBeVisible();
-    // No DNS, certificate or propagation states, and nothing claims the domain is live or verified.
-    for (const banned of [/dns/i, /ssl/i, /certificate/i, /propagat/i, /nameserver/i, /\bverified\b/i]) await expect(main(page)).not.toContainText(banned);
-    await expect(custom).not.toContainText(/\bconnected\b/i);
-  });
-
-  test("Make primary swaps which address is primary, and either can be made primary again", async ({ page, workerTenant }) => {
-    await page.goto("/website/domain");
-    await card(page, "Custom domain").getByRole("button", { name: "Make primary" }).click();
-    await expect(toast(page)).toContainText("www.apexclimateair.com is now the primary website address.");
-    await expect(card(page, "Custom domain")).toContainText("Primary");
-    await expect(card(page, "Website address")).not.toContainText("Primary website address");
-    await expect(page.getByText("Current primary address:")).toContainText("www.apexclimateair.com");
-    // The preview's address bar follows.
-    await page.getByRole("link", { name: "Preview website" }).click();
-    await expect(page.getByText("www.apexclimateair.com", { exact: false }).first()).toBeVisible();
-    await page.getByRole("link", { name: "Back to editor" }).click();
-
-    await page.getByRole("link", { name: "Website" }).first().click();
-    await websiteTabs(page).getByRole("link", { name: "Domain" }).click();
-    await card(page, "Website address").getByRole("button", { name: "Make primary" }).click();
-    await expect(card(page, "Website address")).toContainText("Primary website address");
-    await expect(page.getByText("Current primary address:")).toContainText(`${workerTenant.platformSlug}.climvia.com`);
-  });
-
-  test("the overflow menu opens with the keyboard, closes with Escape, and offers Remove domain", async ({ page }) => {
-    await page.goto("/website/domain");
-    const trigger = page.getByRole("button", { name: "More actions for www.apexclimateair.com" });
-    await expect(trigger).toHaveAttribute("aria-expanded", "false");
-    await trigger.press("Enter");
-    await expect(trigger).toHaveAttribute("aria-expanded", "true");
-    const menu = page.getByRole("menu", { name: "More actions for www.apexclimateair.com" });
-    await expect(menu.getByRole("menuitem", { name: "Remove domain" })).toBeFocused();
-    await page.keyboard.press("Escape");
-    await expect(menu).toBeHidden();
-    await expect(trigger).toBeFocused();
-
-    await trigger.click();
-    await page.mouse.click(5, 5);
-    await expect(menu).toBeHidden();
-  });
-
-  test("Remove custom domain explains the change, restores Climvia as primary and keeps publishing as it was", async ({ page, workerTenant }) => {
-    const host = `${workerTenant.platformSlug}.climvia.com`;
-    await page.goto("/website/domain");
-    await page.getByRole("button", { name: "More actions for www.apexclimateair.com" }).click();
-    await page.getByRole("menuitem", { name: "Remove domain" }).click();
-
-    const dialog = page.getByRole("dialog", { name: "Remove custom domain?" });
-    await expect(dialog).toContainText("www.apexclimateair.com will no longer be connected to this Website. The Climvia domain will remain available.");
-    await expect(dialog).toContainText(`${host} will become the primary website address.`);
-    await expect(dialog).toContainText("Domain being removed");
-    await expect(dialog).toContainText("New primary address");
-
-    // Cancel changes nothing; Escape closes it; focus returns to the page.
-    await dialog.getByRole("button", { name: "Cancel" }).click();
-    await expect(card(page, "Custom domain")).toContainText("www.apexclimateair.com");
-    await page.getByRole("button", { name: "More actions for www.apexclimateair.com" }).click();
-    await page.getByRole("menuitem", { name: "Remove domain" }).click();
-    await page.keyboard.press("Escape");
-    await expect(dialog).toBeHidden();
-
-    await page.getByRole("button", { name: "More actions for www.apexclimateair.com" }).click();
-    await page.getByRole("menuitem", { name: "Remove domain" }).click();
-    await dialog.getByRole("button", { name: "Remove domain" }).click();
-    await expect(toast(page)).toContainText(`Custom domain removed. ${host} is now your primary website address.`);
-
-    // Restored state.
-    await expect(card(page, "Website address")).toContainText("Primary website address");
-    await expect(card(page, "Custom domain")).toContainText("No custom domain connected");
-    await expect(main(page)).not.toContainText("www.apexclimateair.com");
-    await expect(card(page, "Custom domain").getByRole("button", { name: "Connect custom domain" })).toBeVisible();
-    // Publishing and content are untouched.
-    await expect(page.getByRole("heading", { level: 1, name: "Website" })).toBeVisible();
-    await expect(main(page)).toContainText("Published");
-    await websiteTabs(page).getByRole("link", { name: "Pages & content" }).click();
-    await expect(page.getByRole("region", { name: "Website pages" })).toContainText("5 Published");
-  });
-
-  test("a custom domain can be connected again: validated by shape only, nothing is looked up", async ({ page }) => {
-    await page.goto("/website/domain");
-    await page.getByRole("button", { name: "More actions for www.apexclimateair.com" }).click();
-    await page.getByRole("menuitem", { name: "Remove domain" }).click();
-    await page.getByRole("dialog", { name: "Remove custom domain?" }).getByRole("button", { name: "Remove domain" }).click();
-
-    await card(page, "Custom domain").getByRole("button", { name: "Connect custom domain" }).click();
-    const dialog = page.getByRole("dialog", { name: "Connect custom domain" });
-    await dialog.getByRole("button", { name: "Connect domain" }).click();
-    await expect(dialog.getByText("Enter a domain name like www.yourbusiness.com.")).toBeVisible();
-    await dialog.getByLabel("Domain name").fill("apexclimate.climvia.com");
-    await dialog.getByRole("button", { name: "Connect domain" }).click();
-    await expect(dialog.getByText("Enter a domain name like www.yourbusiness.com.")).toBeVisible();
-    await dialog.getByLabel("Domain name").fill("https://www.apexheatingair.com/");
-    await dialog.getByRole("button", { name: "Connect domain" }).click();
-    await expect(toast(page)).toContainText("Domain added. www.apexheatingair.com is recorded for your Website and waiting for verification.");
-    await expect(card(page, "Custom domain")).toContainText("www.apexheatingair.com");
-    // A newly entered domain is pending verification, never "connected".
-    await expect(card(page, "Custom domain")).toContainText("Pending verification");
-    await page.reload();
-    await expect(card(page, "Custom domain")).toContainText("www.apexheatingair.com");
-    // A newly connected domain is not primary until the owner says so.
-    await expect(card(page, "Website address")).toContainText("Primary website address");
-  });
-
-  test("removing the domain while the site is private leaves it private", async ({ page }) => {
-    await page.goto("/website");
-    await card(page, "Publishing").getByRole("button", { name: "Unpublish" }).click();
-    await page.getByRole("dialog", { name: "Unpublish website?" }).getByRole("button", { name: "Unpublish" }).click();
-    await websiteTabs(page).getByRole("link", { name: "Domain" }).click();
-    await page.getByRole("button", { name: "More actions for www.apexclimateair.com" }).click();
-    await page.getByRole("menuitem", { name: "Remove domain" }).click();
-    await page.getByRole("dialog", { name: "Remove custom domain?" }).getByRole("button", { name: "Remove domain" }).click();
-    await expect(page.getByRole("heading", { level: 1, name: "Website" }).locator("..")).toContainText("Private");
-    await expect(page.getByRole("button", { name: "Publish website" })).toBeVisible();
+    await expect(climvia).toContainText("cannot be removed");
+    await expect(card(page, "Custom domains")).toContainText("No custom domain connected");
+    await expect(card(page, "Custom domains").getByRole("button", { name: "Connect custom domain" })).toBeVisible();
   });
 });
 

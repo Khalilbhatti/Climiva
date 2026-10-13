@@ -1,28 +1,23 @@
 /**
- * Domain names for a Site: what a custom domain may look like, and how a site's addresses are chosen.
+ * Where a Site's pages are, as addresses inside this application.
  *
- * A domain here is a RECORD of an address the business wants to use. Nothing is looked up, verified or routed: there is no DNS, no
- * certificate and no host-based routing yet (that is a later phase), and a recorded domain is therefore never described as live.
+ * A custom domain is NOT handled here: a claim on a hostname, its normalization and its states are in lib/hostname and lib/domain-rules.
  * Pure: no database, no network.
  */
 import type { AppHref } from "@/config/routes";
-import { PLATFORM_DOMAIN } from "@/data/website";
 
-const HOST = /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/;
-
-/** A hostname that looks like a domain name and is not one of Climvia's own; nothing is looked up. */
-export function normalizeDomain(input: string): string | undefined {
-  const host = input.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/[/?#].*$/, "");
-  if (!HOST.test(host)) return undefined;
-  if (host === PLATFORM_DOMAIN || host.endsWith(`.${PLATFORM_DOMAIN}`)) return undefined;
-  return host;
-}
-
-export const DOMAIN_PROBLEM = "Enter a domain name like www.yourbusiness.com.";
-
-/** Where a published site is served until domain routing exists: the platform address as a path on this application. */
+/** Where a published site is served on the platform: its platform address as a path on this application. (On a customer's own domain its pages are at the root of the host.) */
 export const publicSiteHref = (platformSlug: string, path = ""): AppHref => `/sites/${platformSlug}${path === "/" ? "" : path}` as AppHref;
 
 /** Where a published Marketplace listing is served: its public address under /listings. */
 export const publicListingHref = (publicSlug: string): AppHref => `/listings/${publicSlug}` as AppHref;
 
+/**
+ * The address a page of a site calls itself, for its metadata: on the site's main ACTIVE custom domain, or null when it has none.
+ * `scheme` is `https` in production (a domain is served over TLS) and may be `http` in development; `path` is "" for the home page.
+ */
+export function canonicalUrl(canonicalHost: string | null, scheme: "http" | "https", path: string): string | null {
+  if (!canonicalHost) return null;
+  const clean = path === "" || path === "/" ? "" : `/${path.replace(/^\/+/, "")}`;
+  return `${scheme}://${canonicalHost}${clean}`;
+}

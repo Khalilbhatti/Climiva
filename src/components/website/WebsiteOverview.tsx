@@ -32,7 +32,9 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
 import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { WEEK_ORDER } from "@/data/settings";
-import { CUSTOM_DOMAIN_STATUS_LABEL, findPage, getPrimaryDomain, getShownServices, hasUnpublishedChanges, orderedPages, platformHost, type VersionModel } from "@/data/website";
+import { findPage, getPrimaryDomain, getShownServices, hasUnpublishedChanges, orderedPages, platformHost, primaryDomainOf, type VersionModel } from "@/data/website";
+import { DOMAIN_STATUS_LABEL } from "@/lib/domain-rules";
+import { DOMAIN_TONE } from "./domain-ui";
 import { publicSiteHref } from "@/lib/site-domain";
 import { DEFAULT_THEME, themeAttributes, themeStyle } from "@/lib/site-theme";
 import { PREVIEW_BASE, previewHref } from "./site-links";
@@ -311,24 +313,24 @@ export function WebsiteOverview() {
                 <p className="text-micro font-semibold tracking-wider text-ink-muted uppercase">Climvia address</p>
                 <div className="mt-0.5 flex items-center justify-between gap-3">
                   <p className="font-mono text-sm font-semibold text-ink">{platform}</p>
-                  {domain.primary === "climvia" && <StatusBadge tone="positive">Primary</StatusBadge>}
+                  {!primaryDomainOf(domain) && <StatusBadge tone="positive">Primary</StatusBadge>}
                 </div>
               </li>
-              {domain.custom && (
-                <li className="rounded-btn bg-surface-low px-4 py-3">
+              {domain.domains.map((record) => (
+                <li key={record.id} className="rounded-btn bg-surface-low px-4 py-3">
                   <p className="text-micro font-semibold tracking-wider text-ink-muted uppercase">Custom domain</p>
                   <div className="mt-0.5 flex items-center justify-between gap-3">
-                    <p className="font-mono text-sm font-semibold text-ink">{domain.custom}</p>
+                    <p className="font-mono text-sm font-semibold break-all text-ink">{record.hostname}</p>
                     <span className="flex items-center gap-1.5">
-                      {domain.primary === "custom" && <StatusBadge tone="positive">Primary</StatusBadge>}
-                      <StatusBadge tone={domain.customStatus === "configured" ? "primary" : "warning"}>{CUSTOM_DOMAIN_STATUS_LABEL[domain.customStatus ?? "pending_verification"]}</StatusBadge>
+                      {record.isPrimary && <StatusBadge tone="positive">Primary</StatusBadge>}
+                      <StatusBadge tone={DOMAIN_TONE[record.status]}>{DOMAIN_STATUS_LABEL[record.status]}</StatusBadge>
                     </span>
                   </div>
                 </li>
-              )}
+              ))}
             </ul>
             <Link href="/website/domain" className={`${rowLink} mt-3`}>
-              {domain.custom ? "Manage domain" : "Connect custom domain"}
+              {domain.domains.length > 0 ? "Manage domains" : "Connect custom domain"}
               <ArrowRight aria-hidden className="size-3.5" />
             </Link>
           </Card>
@@ -347,10 +349,10 @@ export function WebsiteOverview() {
               ))}
               <li className="flex items-center justify-between gap-3 rounded-btn bg-surface-low px-3 py-2 text-sm text-ink">
                 <span className="flex items-center gap-2">
-                  {domain.custom ? <CircleCheck aria-hidden className="size-4 text-positive" /> : <Circle aria-hidden className="size-4 text-ink-faint" />}
+                  {domain.domains.some((record) => record.status === "active") ? <CircleCheck aria-hidden className="size-4 text-positive" /> : <Circle aria-hidden className="size-4 text-ink-faint" />}
                   Custom domain
                 </span>
-                <span className="text-xs font-semibold text-ink-muted">{domain.custom ? CUSTOM_DOMAIN_STATUS_LABEL[domain.customStatus ?? "pending_verification"] : "Optional"}</span>
+                <span className="text-xs font-semibold text-ink-muted">{domain.domains[0] ? DOMAIN_STATUS_LABEL[(domain.domains.find((record) => record.status === "active") ?? domain.domains[0]).status] : "Optional"}</span>
               </li>
             </ul>
           </Card>

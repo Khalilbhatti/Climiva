@@ -12,9 +12,9 @@ import { Pool } from "pg";
 import { canonicalContent, orderedPages, type WebsiteState } from "../src/data/website";
 import { DEFAULT_TEMPLATE, DEFAULT_TEMPLATE_KEY } from "../src/db/default-template";
 import { TEMPLATE_KEYS } from "../src/db/site-templates";
+import { claimDomain } from "../src/db/domain-queries";
 import { loadPublicSite } from "../src/db/public-queries";
 import {
-  connectCustomDomain,
   createDraftFromTemplate,
   createSite,
   findPrimarySite,
@@ -23,9 +23,7 @@ import {
   loadPrimaryWebsite,
   loadWebsiteState,
   publishSite,
-  removeCustomDomain,
   replaceDraftWithTemplate,
-  setPrimaryAddress,
   unpublishSite,
   type SiteContext,
 } from "../src/db/site-queries";
@@ -36,9 +34,13 @@ import { APEX_CONTENT, NORTHSTAR_CONTENT } from "./apex-data";
 import type { SiteContent } from "../src/lib/site-template";
 import { editDraft, editSection, readDraft, saveContent, setHeadlineOf } from "./draft-edits";
 import { test } from "./fixtures";
+import { TEST_HOST_CONFIG, uniqueHost } from "./domain-helpers";
 import { versionOf } from "./website-edits";
 
 type Tenant = { userId: string; organizationId: string; platformSlug: string };
+
+/** What these specs ask the loaders for: the domains without their verification records. */
+const NO_DOMAINS = { reveal: false, routingTarget: null };
 
 let admin: Pool;
 test.beforeAll(() => {
@@ -180,7 +182,7 @@ test.describe("publishing", () => {
     expect(await contentOf(first.id)).toEqual(firstContent);
     expect(await contentOf(second.id)).toEqual(secondContent);
     expect(await publishedHeadline(workerTenant.platformSlug)).toBe("Version two headline");
-    const state = await withTenant({ userId: workerTenant.userId, organizationId: workerTenant.organizationId }, (tx) => loadPrimaryWebsite(tx, workerTenant.organizationId));
+    const state = await withTenant({ userId: workerTenant.userId, organizationId: workerTenant.organizationId }, (tx) => loadPrimaryWebsite(tx, workerTenant.organizationId, NO_DOMAINS));
     expect(state?.live?.number).toBe(2);
     expect(canonicalContent(state!.draft)).not.toBe(canonicalContent(state!.live!));
   });
@@ -414,7 +416,7 @@ test.describe("more than one Site in a business", () => {
     expect(await loadPublicSite(workerTenant.platformSlug, "")).not.toBeNull();
   });
 
-  test("a second Site chooses its own template and domain record; the first keeps its own", async ({ workerTenant }) => {
+  test("a second Site chooses its own template and claims its own domain; the first keeps its own", async ({ workerTenant }) => {
     const first = await siteId(workerTenant);
     const second = await must(workerTenant, (ctx) => createSite(ctx.tx, ctx.organizationId, { name: "Second site", slug: "second", platformSlug: secondSlug(workerTenant) }));
     // Before it has a Draft, a Site has chosen no template.
@@ -424,15 +426,17 @@ test.describe("more than one Site in a business", () => {
     await must(workerTenant, (ctx) => createDraftFromTemplate(ctx, second, DEFAULT_TEMPLATE_KEY));
     expect((await siteRow(second)).selected_template_id).toBe(template);
 
-    await must(workerTenant, (ctx) => connectCustomDomain(ctx, second, "www.second-example.com"));
-    const domains = await admin.query<{ slug: string; custom_domain: string | null; custom_domain_status: string | null }>(
-      "select slug, custom_domain, custom_domain_status from sites where organization_id = $1 order by slug",
+    const host = uniqueHost("second");
+    await must(workerTenant, (ctx) => claimDomain(ctx, second, host, workerTenant.userId, TEST_HOST_CONFIG));
+    const claims = await admin.query<{ slug: string; hostname: string | null; status: string | null }>(
+      "select s.slug, d.hostname, d.status from sites s left join site_domains d on d.organization_id = s.organization_id and d.site_id = s.id where s.organization_id = $1 order by s.slug",
       [workerTenant.organizationId],
     );
-    expect(domains.rows).toEqual([
-      { slug: "commercial", custom_domain: null, custom_domain_status: null },
-      { slug: "main", custom_domain: "www.apexclimateair.com", custom_domain_status: "configured" },
-      { slug: "second", custom_domain: "www.second-example.com", custom_domain_status: "pending_verification" },
+    // Only the second Site has a claim: a business's other Sites are not given one, and nothing was seeded.
+    expect(claims.rows).toEqual([
+      { slug: "commercial", hostname: null, status: null },
+      { slug: "main", hostname: null, status: null },
+      { slug: "second", hostname: host, status: "pending_verification" },
     ]);
   });
 
@@ -482,7 +486,7 @@ test.describe("applying a template", () => {
     expect(draft.status).toBe("draft");
     const state = await withTenant({ userId: workerTenant.userId, organizationId: workerTenant.organizationId }, async (tx) => {
       const site = (await listSites(tx, workerTenant.organizationId)).find((candidate) => candidate.id === id)!;
-      return loadWebsiteState(tx, workerTenant.organizationId, site);
+      return loadWebsiteState(tx, workerTenant.organizationId, site, NO_DOMAINS);
     });
     expect(canonicalContent(state!.draft)).toBe(canonicalContent(versionOf(DEFAULT_TEMPLATE)));
     expect(state?.published).toBe(false);
@@ -512,7 +516,7 @@ test.describe("applying a template", () => {
     const draftId = (await draftOf(site)).id;
     await must(workerTenant, (ctx) => replaceDraftWithTemplate(ctx, site, DEFAULT_TEMPLATE_KEY, { confirmReplace: true }));
     expect((await draftOf(site)).id).toBe(draftId);
-    const replaced = await withTenant({ userId: workerTenant.userId, organizationId: workerTenant.organizationId }, (tx) => loadPrimaryWebsite(tx, workerTenant.organizationId));
+    const replaced = await withTenant({ userId: workerTenant.userId, organizationId: workerTenant.organizationId }, (tx) => loadPrimaryWebsite(tx, workerTenant.organizationId, NO_DOMAINS));
     expect(canonicalContent(replaced!.draft)).toBe(canonicalContent(versionOf(DEFAULT_TEMPLATE)));
     expect(await contentOf(live.id)).toEqual(liveBefore);
     expect(await publishedHeadline(workerTenant.platformSlug)).toBe("Heating & cooling service when you need it.");
@@ -520,19 +524,19 @@ test.describe("applying a template", () => {
   });
 });
 
-test.describe("the domain record", () => {
-  test("a custom domain is recorded as pending verification, can be made the main address and removed, and publishing is independent of all of it", async ({ workerTenant }) => {
+test.describe("a Site's domain claims", () => {
+  test("a claim is stored as pending with a token of its own, in its normalized form, and publishing is independent of it", async ({ workerTenant }) => {
     const site = await siteId(workerTenant);
     const before = await siteRow(site);
-    await must(workerTenant, (ctx) => connectCustomDomain(ctx, site, " https://WWW.New-Example.com/page "));
-    expect((await admin.query("select custom_domain, custom_domain_status, primary_domain from sites where id = $1", [site])).rows[0]).toEqual({ custom_domain: "www.new-example.com", custom_domain_status: "pending_verification", primary_domain: null });
-    await must(workerTenant, (ctx) => setPrimaryAddress(ctx, site, "custom"));
-    expect((await admin.query("select primary_domain from sites where id = $1", [site])).rows[0].primary_domain).toBe("www.new-example.com");
-    await must(workerTenant, (ctx) => setPrimaryAddress(ctx, site, "climvia"));
-    expect((await admin.query("select primary_domain from sites where id = $1", [site])).rows[0].primary_domain).toBeNull();
-    await must(workerTenant, (ctx) => removeCustomDomain(ctx, site));
-    expect((await admin.query("select custom_domain, custom_domain_status from sites where id = $1", [site])).rows[0]).toEqual({ custom_domain: null, custom_domain_status: null });
-    expect(await operate(workerTenant, (ctx) => setPrimaryAddress(ctx, site, "custom"))).toMatchObject({ refused: "There is no custom domain to make the main address." });
+    const host = uniqueHost("claim");
+    const id = await must(workerTenant, (ctx) => claimDomain(ctx, site, ` ${host.toUpperCase()}. `, workerTenant.userId, TEST_HOST_CONFIG));
+    expect((await admin.query("select hostname, status, is_primary, revision, length(verification_token) as token_length from site_domains where id = $1", [id])).rows[0]).toEqual({
+      hostname: host,
+      status: "pending_verification",
+      is_primary: false,
+      revision: 1,
+      token_length: 43,
+    });
     // Publishing is untouched by any of it.
     const after = await siteRow(site);
     expect(after.status).toBe(before.status);
@@ -540,20 +544,23 @@ test.describe("the domain record", () => {
     expect((await versionsOf(site)).length).toBe(2);
   });
 
-  test("a domain that is not a domain name, or is one of Climvia's own, is refused and nothing is recorded", async ({ workerTenant }) => {
+  test("a name that is not a domain name, or is one of Climvia's own, is refused and nothing is recorded", async ({ workerTenant }) => {
     const site = await siteId(workerTenant);
-    for (const bad of ["not a domain", "nodots", "climvia.com", "someone.climvia.com", "", 5, null, "x".repeat(400)]) {
-      expect(await operate(workerTenant, (ctx) => connectCustomDomain(ctx, site, bad))).toHaveProperty("refused");
+    for (const bad of ["not a domain", "nodots", "climvia.com", "someone.climvia.com", "", 5, null, "x".repeat(400), "https://example.com", "*.example.com", "127.0.0.1"]) {
+      expect(await operate(workerTenant, (ctx) => claimDomain(ctx, site, bad, workerTenant.userId, TEST_HOST_CONFIG))).toHaveProperty("refused");
     }
-    expect((await admin.query("select custom_domain from sites where id = $1", [site])).rows[0].custom_domain).toBe("www.apexclimateair.com");
+    expect((await admin.query("select count(*)::int as n from site_domains where site_id = $1", [site])).rows[0].n).toBe(0);
   });
 
-  test("a domain is a claim: several businesses can record the same name (the standing Apex site and each test copy do), and none is told of the others", async ({ workerTenant }) => {
-    const site = await siteId(workerTenant);
-    const claimed = await admin.query<{ n: number }>("select count(*)::int as n from sites where custom_domain = 'www.apexclimateair.com' and custom_domain_status = 'configured'");
-    expect(claimed.rows[0].n).toBeGreaterThanOrEqual(2);
-    await must(workerTenant, (ctx) => connectCustomDomain(ctx, site, "www.apexclimateair.com"));
-    expect((await admin.query("select custom_domain_status from sites where id = $1", [site])).rows[0].custom_domain_status).toBe("pending_verification");
+  test("a name can be claimed once: a second claim of it, by the same Site or another of the business, is refused by the database", async ({ workerTenant }) => {
+    const first = await siteId(workerTenant);
+    const second = await must(workerTenant, (ctx) => createSite(ctx.tx, ctx.organizationId, { name: "Second site", slug: "second", platformSlug: `${workerTenant.platformSlug}-second` }));
+    const host = uniqueHost("dup");
+    await must(workerTenant, (ctx) => claimDomain(ctx, first, host, workerTenant.userId, TEST_HOST_CONFIG));
+    for (const site of [first, second]) {
+      const error = await operate(workerTenant, (ctx) => claimDomain(ctx, site, host.toUpperCase(), workerTenant.userId, TEST_HOST_CONFIG)).catch((thrown: unknown) => thrown);
+      expect(constraintOf(error)).toBe("site_domains_hostname_unique");
+    }
   });
 });
 
@@ -561,7 +568,7 @@ test.describe("the stored website is the approved one", () => {
   const read = async (email: string, slug: string): Promise<WebsiteState> => {
     const userId = (await admin.query<{ id: string }>("select id from auth_user where email = $1", [email])).rows[0].id;
     const organizationId = (await admin.query<{ id: string }>("select id from organizations where slug = $1", [slug])).rows[0].id;
-    return (await withTenant({ userId, organizationId }, (tx) => loadPrimaryWebsite(tx, organizationId)))!;
+    return (await withTenant({ userId, organizationId }, (tx) => loadPrimaryWebsite(tx, organizationId, NO_DOMAINS)))!;
   };
 
   test("Apex's primary Site is published, with exactly Home, Services, About, Contact and Booking, and its Draft is its Published version", async () => {
@@ -578,7 +585,7 @@ test.describe("the stored website is the approved one", () => {
     expect(canonicalContent(state.draft)).toBe(canonicalContent(state.live!));
     expect(canonicalContent(state.live!)).toBe(canonicalContent(versionOf(APEX_CONTENT, "published", 1)));
     expect(state.site.platformSlug).toBe("apexclimate");
-    expect(state.domain).toEqual({ custom: "www.apexclimateair.com", customStatus: "configured", primary: "climvia" });
+    expect(state.domain).toEqual({ domains: [], routingTarget: null });
   });
 
   test("Northstar's Site is its own: different words and colour, a hidden section, and no custom domain", async () => {
@@ -586,7 +593,7 @@ test.describe("the stored website is the approved one", () => {
     expect(canonicalContent(state.live!)).toBe(canonicalContent(versionOf(NORTHSTAR_CONTENT, "published", 1)));
     expect(canonicalContent(state.live!)).not.toBe(canonicalContent(versionOf(APEX_CONTENT, "published", 1)));
     expect(state.live?.theme.accent).toBe("#1F5FAF");
-    expect(state.domain).toEqual({ primary: "climvia" });
+    expect(state.domain).toEqual({ domains: [], routingTarget: null });
     expect(state.site.platformSlug).toBe("northstar");
     expect(JSON.stringify(state)).not.toContain("Apex");
   });

@@ -14,6 +14,8 @@ import { loadPrimaryWebsite } from "@/db/site-queries";
 import { getPeriodReport } from "@/db/reporting-queries";
 import { withTenant } from "@/db/tenant";
 import { monthTotalsOf, presetRange } from "@/lib/analytics-rules";
+import { hostConfig } from "@/lib/domain-config";
+import { can } from "@/lib/policy";
 import { requireWorkspaceContext, resolveWorkspace } from "./workspace";
 
 /**
@@ -39,7 +41,7 @@ import { requireWorkspaceContext, resolveWorkspace } from "./workspace";
 export const getCoreSnapshot = cache(async (): Promise<CoreSnapshot | null> => {
   const state = await resolveWorkspace();
   if (state.status !== "ready") return null;
-  const { userId, organizationId, organization, snapshot } = state.context;
+  const { userId, organizationId, organization, snapshot, role } = state.context;
   return withTenant({ userId, organizationId }, async (tx) => {
     const services = await loadServices(tx, organizationId);
     const team = await loadTeamData(tx, organizationId);
@@ -49,7 +51,8 @@ export const getCoreSnapshot = cache(async (): Promise<CoreSnapshot | null> => {
     const maintenance = await loadMaintenance(tx, organizationId);
     const reviews = await loadReviews(tx, organizationId, organization.timezone);
     const marketing = await loadMarketing(tx, organizationId, organization.timezone);
-    const website = await loadPrimaryWebsite(tx, organizationId);
+    // A domain's verification record goes only to the people who may manage the website.
+    const website = await loadPrimaryWebsite(tx, organizationId, { reveal: can(role, "website:manage"), routingTarget: hostConfig().customDomainTarget });
     const marketplace = await loadMarketplace(tx, organizationId, services);
     const adjustments = await loadReportingAdjustments(tx, organizationId);
     const month = monthTotalsOf(await getPeriodReport(tx, organizationId, presetRange("this-month", snapshot.clock.today)));

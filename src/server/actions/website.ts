@@ -2,29 +2,31 @@
 
 import type { WebsiteState } from "@/data/website";
 import { DEFAULT_TEMPLATE_KEY } from "@/db/default-template";
+import { activateDomain, claimDomain, disableDomain, removeDomain, setMainDomain } from "@/db/domain-queries";
+import { verifyDomainOwnership } from "@/db/domain-verification";
 import type { Tx } from "@/db/index";
 import {
-  connectCustomDomain,
   createDraftFromTemplate,
   findPrimarySite,
   loadWebsiteState,
   publishSite,
-  removeCustomDomain,
   replaceDraftWithTemplate,
   saveSiteDraft,
-  setPrimaryAddress,
   unpublishSite,
 } from "@/db/site-queries";
 import { withTenant } from "@/db/tenant";
 import { NOT_ALLOWED_WEBSITE, failure, ok, type ActionResult } from "@/lib/action-result";
+import { resolverFromEnv } from "@/lib/dns-resolver";
+import { hostConfig } from "@/lib/domain-config";
+import { DOMAIN_IN_USE, DOMAIN_STALE, type OwnershipOutcome } from "@/lib/domain-rules";
 import { Refusal, refuse } from "@/lib/refusal";
 import { isRecord } from "@/lib/validation";
 import { authorize } from "../authorize";
 import { constraintOf, isIntegrityViolation } from "../db-errors";
 
 /**
- * Website writes: create the website, save the Draft the Builder edited, replace it with a Template, publish, unpublish, and the domain
- * record. Each action:
+ * Website writes: create the website, save the Draft the Builder edited, replace it with a Template, publish, unpublish, and the custom
+ * domains (claim, verify, activate, disable, remove, choose the main one). Each action:
  *   1. resolves the caller and their active organization from the session and a verified membership,
  *   2. requires the "website:manage" capability (owner or admin),
  *   3. only then reads its arguments, and parses and validates them again (the screen's checks are a convenience, these are the
@@ -36,14 +38,21 @@ import { constraintOf, isIntegrityViolation } from "../db-errors";
  * here; the way to change what visitors see is to edit the Draft and publish it.
  */
 
-type Answer = { website: WebsiteState | null; versionNumber?: number };
+type Answer = { website: WebsiteState | null; versionNumber?: number; domainCheck?: OwnershipOutcome };
+
+/** The browser gets a domain's verification record only because the caller just passed the website:manage check. */
+const domains = () => ({ reveal: true, routingTarget: hostConfig().customDomainTarget });
 
 type Work = { tx: Tx; organizationId: string; siteId: string; userId: string };
 
 function translate(error: unknown): ReturnType<typeof failure> {
   if (error instanceof Refusal) return failure(error.message, error.fields);
   const constraint = constraintOf(error);
-  if (constraint === "sites_custom_domain_verified_unique") return failure("That domain can't be used for this website.", { domain: "That domain can't be used for this website." });
+  // A name that is already claimed (by anyone) is said in one sentence that reveals nothing about who holds it.
+  if (constraint === "site_domains_hostname_unique") return failure(DOMAIN_IN_USE, { domain: DOMAIN_IN_USE });
+  if (constraint === "site_domains_primary_unique" || constraint === "site_domains_transition" || constraint === "site_domains_removed_final" || constraint === "site_domains_verified_final") {
+    return failure(DOMAIN_STALE);
+  }
   if (constraint === "site_published_final") return failure("A published version can't be changed. Edit the draft and publish it again.");
   if (constraint === "site_versions_one_draft") return failure("This website already has a draft. Reload the page and try again.");
   if (isIntegrityViolation(error)) return failure("The change breaks a rule, so it was not saved. Reload the page and try again.");
@@ -62,7 +71,7 @@ async function mutate(change: (work: Work) => Promise<Partial<Answer> | void>): 
       if (!site) return refuse("This workspace has no website yet.");
       const extra = (await change({ tx, organizationId, siteId: site.id, userId })) ?? {};
       const fresh = await findPrimarySite(tx, organizationId);
-      return ok({ website: fresh ? await loadWebsiteState(tx, organizationId, fresh) : null, ...extra });
+      return ok({ website: fresh ? await loadWebsiteState(tx, organizationId, fresh, domains()) : null, ...extra });
     });
   } catch (error) {
     return translate(error);
@@ -136,27 +145,76 @@ export async function unpublishWebsiteAction(): Promise<ActionResult<Answer>> {
   });
 }
 
-/* ───────────────────────── the domain record ───────────────────────── */
+/* ───────────────────────── custom domains ───────────────────────── */
 
-/** Record a custom domain. Nothing is verified or routed; it is kept as pending verification. */
-export async function connectDomainAction(input: unknown): Promise<ActionResult<Answer>> {
-  return mutate(async ({ tx, organizationId, siteId }) => {
+/**
+ * Custom domains belong to a SITE; today the screen manages the business's primary site's, and nothing here names a site or an
+ * organization. Each action needs `website:manage`, takes the claim's id and the revision the screen showed (a screen that is behind is
+ * refused), and answers with the website as stored.
+ */
+const claimOf = (input: unknown) => (isRecord(input) ? { id: input.id, expectedRevision: input.expectedRevision } : { id: undefined, expectedRevision: undefined });
+
+/** Claim a domain: normalized, checked against the reserved and already-claimed names, stored as pending with a new token. Nothing is verified. */
+export async function addDomainAction(input: unknown): Promise<ActionResult<Answer>> {
+  return mutate(async ({ tx, organizationId, siteId, userId }) => {
     if (!isRecord(input)) return refuse("The domain was not understood.");
-    await connectCustomDomain({ tx, organizationId }, siteId, input.domain);
+    await claimDomain({ tx, organizationId }, siteId, input.domain, userId, hostConfig());
   });
 }
 
-/** Choose which address is the main one: the Climvia address, or the recorded custom domain. */
-export async function setPrimaryAddressAction(input: unknown): Promise<ActionResult<Answer>> {
+/**
+ * Look for the claim's TXT record. DNS is asked between two short transactions (never inside one), a failure to reach DNS changes
+ * nothing, and the answer says what was found so the screen can say what to do. Checks are rate limited by the claim's own `last_checked_at`.
+ */
+export async function verifyDomainAction(input: unknown): Promise<ActionResult<Answer>> {
+  const auth = await authorize("website:manage", NOT_ALLOWED_WEBSITE);
+  if (!auth.ok) return auth.result;
+  const { userId, organizationId } = auth.context;
+  const { id, expectedRevision } = claimOf(input);
+  try {
+    const identity = { userId, organizationId };
+    const site = await withTenant(identity, (tx) => findPrimarySite(tx, organizationId));
+    if (!site) return failure("This workspace has no website yet.");
+    const domainCheck = await verifyDomainOwnership(identity, site.id, id, expectedRevision, resolverFromEnv());
+    const website = await withTenant(identity, async (tx) => {
+      const fresh = await findPrimarySite(tx, organizationId);
+      return fresh ? loadWebsiteState(tx, organizationId, fresh, domains()) : null;
+    });
+    return ok({ website, domainCheck });
+  } catch (error) {
+    return translate(error);
+  }
+}
+
+/** Let the application serve the site for this verified domain. Active in Climvia is not "live": DNS and a certificate are separate. */
+export async function activateDomainAction(input: unknown): Promise<ActionResult<Answer>> {
+  const { id, expectedRevision } = claimOf(input);
   return mutate(async ({ tx, organizationId, siteId }) => {
-    if (!isRecord(input)) return refuse("The address was not understood.");
-    await setPrimaryAddress({ tx, organizationId }, siteId, input.primary);
+    await activateDomain({ tx, organizationId }, siteId, id, expectedRevision);
   });
 }
 
-/** Remove the recorded custom domain. The Climvia address is main again; content and publishing are untouched. */
-export async function removeDomainAction(): Promise<ActionResult<Answer>> {
+/** Stop serving the site through this domain. The claim is kept. */
+export async function disableDomainAction(input: unknown): Promise<ActionResult<Answer>> {
+  const { id, expectedRevision } = claimOf(input);
   return mutate(async ({ tx, organizationId, siteId }) => {
-    await removeCustomDomain({ tx, organizationId }, siteId);
+    await disableDomain({ tx, organizationId }, siteId, id, expectedRevision);
+  });
+}
+
+/** Release the domain. The claim stays as history, and the name can be claimed again with a new token. */
+export async function removeDomainAction(input: unknown): Promise<ActionResult<Answer>> {
+  const { id, expectedRevision } = claimOf(input);
+  return mutate(async ({ tx, organizationId, siteId }) => {
+    await removeDomain({ tx, organizationId }, siteId, id, expectedRevision);
+  });
+}
+
+/** Make an active domain the site's main address, or (`main: false`) make the Climvia address the main one again. */
+export async function setMainDomainAction(input: unknown): Promise<ActionResult<Answer>> {
+  const { id, expectedRevision } = claimOf(input);
+  const main = isRecord(input) && input.main === true;
+  return mutate(async ({ tx, organizationId, siteId }) => {
+    await setMainDomain({ tx, organizationId }, siteId, id, expectedRevision, main);
   });
 }

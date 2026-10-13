@@ -10,7 +10,7 @@ import type { SiteContent } from "../src/lib/site-template";
 /** The Draft of `siteId` as content, with the revision it is at. Reads inside the caller's transaction. */
 export async function readDraft(ctx: SiteContext, siteId: string): Promise<{ content: SiteContent; revision: number }> {
   const site = await findSite(ctx.tx, ctx.organizationId, siteId);
-  const website = site ? await loadWebsiteState(ctx.tx, ctx.organizationId, site) : null;
+  const website = site ? await loadWebsiteState(ctx.tx, ctx.organizationId, site, { reveal: false, routingTarget: null }) : null;
   if (!website) throw new Error("The site has no website state.");
   return { content: contentOf(website.draft), revision: website.draft.revision };
 }

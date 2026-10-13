@@ -52,7 +52,6 @@ export const APEX_SITES: SeedSite[] = [
     template: DEFAULT_TEMPLATE_KEY,
     draft: APEX_CONTENT,
     published: [APEX_CONTENT],
-    customDomain: { host: "www.apexclimateair.com", status: "configured", primary: false },
   },
   {
     name: "Apex Climate Heating & Air Commercial",

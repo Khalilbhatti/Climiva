@@ -26,6 +26,12 @@ process.env.BETTER_AUTH_URL = ORIGIN;
 // development one. The server and the workers must agree on it, so it is absolute and set here once.
 process.env.ASSET_STORAGE_DRIVER = "local";
 process.env.ASSET_LOCAL_DIR = resolve(process.env.TEST_ASSET_DIR ?? join(".data", "assets-test"));
+// Custom domains: the test server answers DNS questions from files the tests write (one per name), so no test depends on the internet. The
+// canonical scheme is http because the tests are served over http, and a routing target is set so the instructions can be checked.
+process.env.DOMAIN_DNS_RESOLVER = "fixture";
+process.env.DOMAIN_DNS_FIXTURE_DIR = resolve(process.env.TEST_DNS_DIR ?? join(".data", "dns-test"));
+process.env.CUSTOM_DOMAIN_URL_SCHEME = "http";
+process.env.CUSTOM_DOMAIN_TARGET = "sites.climvia.com";
 
 /**
  * Browser tests run against a production build, the same thing that ships.

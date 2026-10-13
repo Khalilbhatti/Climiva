@@ -74,7 +74,8 @@ export const AUTH_PAGES = ["/login", "/signup", "/onboarding"];
  * Pages that exist only to answer "not found" in the right place (the catch-all for an address that matches nothing, and the addresses under the public
  * prefixes that name no Site or listing page). They are checked on their own (states, route-inventory and public-boundary specs), not crawled for a 2xx.
  */
-export const NOT_FOUND_ONLY_PATTERNS = ["/[...unknown]", "/sites", "/listings", "/listings/[listingSlug]/[...rest]"] as const;
+// (/custom-site is where a customer's own domain is rewritten to; reached on a platform name it is "not found". domains-host.spec.ts crawls it by Host.)
+export const NOT_FOUND_ONLY_PATTERNS = ["/[...unknown]", "/sites", "/listings", "/listings/[listingSlug]/[...rest]", "/custom-site/[[...slug]]"] as const;
 
 export function pagePatterns(): { pattern: string; shell: boolean }[] {
   return pageFiles(APP_DIR)

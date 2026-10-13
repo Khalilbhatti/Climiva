@@ -272,13 +272,30 @@ test.describe("every Server Action authorizes its caller", () => {
     // Every Website write goes through the one helper that authorizes "website:manage" first, and every Marketplace write through the one that
     // authorizes "marketplace:manage" first. Neither names an organization or a site: both are found from the verified business.
     const website = read(join(SRC, "server", "actions", "website.ts"));
-    expect(website.match(/authorize\("website:manage"/g)?.length).toBe(1);
+    // Two places authorize, and nowhere else: the helper every change goes through, and the ownership check (it must not hold a transaction while DNS is asked).
+    expect(website.match(/authorize\("website:manage"/g)?.length).toBe(2);
     expect(website).not.toMatch(/requireMember\(/);
     const websiteActions = [...website.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)];
     expect(websiteActions.map(([, name]) => name).sort()).toEqual(
-      ["applyTemplateAction", "connectDomainAction", "createWebsiteAction", "publishWebsiteAction", "removeDomainAction", "saveDraftAction", "setPrimaryAddressAction", "unpublishWebsiteAction"].sort(),
+      [
+        "activateDomainAction",
+        "addDomainAction",
+        "applyTemplateAction",
+        "createWebsiteAction",
+        "disableDomainAction",
+        "publishWebsiteAction",
+        "removeDomainAction",
+        "saveDraftAction",
+        "setMainDomainAction",
+        "unpublishWebsiteAction",
+        "verifyDomainAction",
+      ].sort(),
     );
-    for (const [, name, body] of websiteActions) expect(/>\s\{\s+return mutate\(/.test(body), `${name} must start by handing everything to mutate()`).toBe(true);
+    // verifyDomainAction authorizes itself (above) because DNS is asked between two short transactions; every other action hands everything to mutate().
+    for (const [, name, body] of websiteActions) {
+      if (name === "verifyDomainAction") expect(body).toContain('authorize("website:manage"');
+      else expect(/>\s\{\s+(const [^\n]+\n\s+)*return mutate\(/.test(body), `${name} must hand everything to mutate()`).toBe(true);
+    }
     expect(website).not.toMatch(/organizationId:\s*(input|payload|body)|siteId:\s*(input|payload|body)/);
     expect(website).toContain("findPrimarySite(tx, organizationId)");
     const marketplace = read(join(SRC, "server", "actions", "marketplace.ts"));
@@ -413,10 +430,12 @@ test.describe("every module reads the database for the verified workspace", () =
   test("the published pages and the Draft previews are separate: a published page asks for no session and no business, a preview requires a verified one", () => {
     const pages = [join(SRC, "app", "(public)"), join(SRC, "app", "(signed-in)", "(preview)")].flatMap((dir) => walk(dir, (path) => /(page|layout)\.tsx$/.test(path))).filter((path) => !path.endsWith(join("(public)", "layout.tsx")));
     expect(pages.length).toBeGreaterThan(6);
-    const published = pages.filter((path) => /(\\|\/)(sites|listings)(\\|\/)/.test(path));
+    const published = pages.filter((path) => /(\\|\/)(sites|listings|custom-site)(\\|\/)/.test(path));
     const answersNotFound = (path: string) => /^\s*import \{ notFound \} from "next\/navigation";\s*[\s\S]*notFound\(\);\s*\}\s*$/.test(read(path)) && !/requireWorkspaceContext|@\/server|@\/db/.test(read(path));
     const previews = pages.filter((path) => !published.includes(path));
     expect(published.map(posix).sort()).toEqual([
+      // A customer's own domain: the one route its requests are rewritten to. It names the site through the Host (src/server/request-host).
+      "src/app/(public)/custom-site/[[...slug]]/page.tsx",
       "src/app/(public)/listings/[listingSlug]/[...rest]/page.tsx",
       "src/app/(public)/listings/[listingSlug]/page.tsx",
       "src/app/(public)/listings/page.tsx",
@@ -461,14 +480,14 @@ test.describe("database access", () => {
     expect(users).toEqual(["src/db/index.ts", "src/db/public-queries.ts", "src/db/tenant.ts", "src/lib/auth.ts"]);
   });
 
-  test("the visitor's door runs only the four public database functions: no table, no tenant context, no organization", () => {
+  test("the visitor's door runs only the six public database functions: no table, no tenant context, no organization", () => {
     const source = read(join(SRC, "db", "public-queries.ts")).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     const calls = [...source.matchAll(/select (app_\w+)\(/g)].map(([, name]) => name).sort();
-    expect(calls).toEqual(["app_public_asset", "app_public_create_booking", "app_public_listing", "app_public_site"]);
+    expect(calls).toEqual(["app_public_asset", "app_public_create_booking", "app_public_domain", "app_public_listing", "app_public_site", "app_public_site_domain"]);
     expect(source).not.toMatch(/@\/db\/schema|\.(select|insert|update|delete)\(|\.from\(|set_config|withTenant|runAsTenant|organization_?id/i);
-    // Only the server's public routes, the public logo route and the visitor's booking action import it.
+    // Only the server's public routes, the public logo route, the host resolver and the visitor's booking action import it.
     const importers = sourceFiles.filter((path) => importsOf(read(path)).some((specifier) => /public-queries$/.test(specifier))).map(posix).sort();
-    expect(importers).toEqual(["src/app/(public)/assets/[assetId]/route.ts", "src/server/actions/public-booking.ts", "src/server/public-site.ts"]);
+    expect(importers).toEqual(["src/app/(public)/assets/[assetId]/route.ts", "src/server/actions/public-booking.ts", "src/server/public-site.ts", "src/server/request-host.ts"]);
     // The owner credential is never reachable from a request handler (this file included).
     expect(source).not.toContain("DATABASE_ADMIN_URL");
   });
@@ -581,7 +600,8 @@ test.describe("the documentation covers the architecture", () => {
       /visual Website Builder/,
       /AWS topology/,
       /SaaS billing vs\. business-customer payments/,
-      /Future domain routing/,
+      /Domain routing/,
+      /Custom domains/,
       /Deferred domain migrations/,
     ];
     const headings = doc().split(/\r?\n/).filter((line) => /^## /.test(line));
@@ -609,7 +629,7 @@ test.describe("the documentation covers the architecture", () => {
       /tenant resolution/,
       /Marketplace listing/,
       /Authorization and tenant isolation/,
-      /Domain record/,
+      /Custom domains/,
       /Assets and uploaded files/,
       /Phase 16 changed/,
     ];

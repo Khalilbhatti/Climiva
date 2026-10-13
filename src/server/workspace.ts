@@ -5,13 +5,13 @@ import { redirect } from "next/navigation";
 import { and, asc, eq } from "drizzle-orm";
 import { PROTOTYPE_NOW } from "@/lib/prototype-clock";
 import type { SettingsData } from "@/data/settings";
+import { loadBranding } from "@/db/asset-queries";
 import { businessFromOrganization, preferencesFromOrganization, weeklyHoursFromRows } from "@/db/settings-mappers";
 import { organizationBusinessHours, organizationMemberships, organizations, profiles, type OrganizationRow } from "@/db/schema";
 import { withTenant, withUser } from "@/db/tenant";
 import { businessClock } from "@/lib/business-time";
 import { can, capabilitiesOf } from "@/lib/policy";
 import { ROLE_LABEL, SAMPLE_DATA_SET, type OrganizationRole, type WorkspaceSnapshot } from "@/lib/workspace-types";
-import { SAMPLE_WORKSPACE_BRANDING } from "./sample-workspace";
 import { getSessionUser, type SessionUser } from "./session";
 
 /**
@@ -71,19 +71,23 @@ export const resolveWorkspace = cache(async (): Promise<WorkspaceState> => {
   const active = memberships.find((membership) => membership.organization.id === preferred) ?? memberships[0];
   const role = active.role as OrganizationRole;
 
-  const [profile, hours] = await Promise.all([
+  const tenant = { userId: user.id, organizationId: active.organization.id };
+  // The hours and the Branding are read in ONE tenant transaction: a request needs no more connections for the business's identity than it did.
+  const [profile, { hours, branding }] = await Promise.all([
     loadProfile(user.id, user.name),
-    withTenant({ userId: user.id, organizationId: active.organization.id }, (tx) =>
-      tx.select().from(organizationBusinessHours).where(eq(organizationBusinessHours.organizationId, active.organization.id)),
-    ),
+    withTenant(tenant, async (tx) => ({
+      hours: await tx.select().from(organizationBusinessHours).where(eq(organizationBusinessHours.organizationId, active.organization.id)),
+      branding: await loadBranding(tx, active.organization.id),
+    })),
   ]);
 
   const hasSampleData = active.organization.fixtureSet === SAMPLE_DATA_SET;
   const settings: SettingsData = {
     business: businessFromOrganization(active.organization),
     hours: weeklyHoursFromRows(hours),
-    // Branding is not stored yet (it needs file storage). The sample workspace keeps its reference crest; others start plain.
-    branding: hasSampleData ? SAMPLE_WORKSPACE_BRANDING : { logo: null, accent: null },
+    // The business's own Branding, from its rows: its logo is one of its stored Assets (the sample workspace's too), and a business that has
+    // saved none has none.
+    branding,
     preferences: preferencesFromOrganization(active.organization),
     profile: { name: profile.fullName, role: active.jobTitle ?? ROLE_LABEL[role], photo: profile.avatarUrl ?? undefined },
   };

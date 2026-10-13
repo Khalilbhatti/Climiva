@@ -284,18 +284,21 @@ test.describe("switching between two workspaces", () => {
     expect(leaksIn(await page.content(), APEX_ONLY)).toEqual([]);
   });
 
-  test("a change kept only in the browser (the branding accent) does not follow the person into the other workspace", async ({ openAs }) => {
+  test("each workspace has its own Branding: Apex's logo and accent are Apex's, Northstar has none, and neither follows the person into the other", async ({ openAs }) => {
+    // Read-only on purpose: Branding is stored now, so this must not save anything into the standing businesses.
     const { page } = await openAs("casey");
     await page.goto("/settings/branding");
-    await page.locator("#brand-accent").fill("#8B3A1E");
-    await page.getByRole("button", { name: "Save branding", exact: true }).click();
-    await expect(page.getByRole("status")).toContainText("Branding saved");
+    await expect(page.getByText("apex-climate-crest-revised.svg")).toBeVisible();
+    await expect(page.locator("#brand-accent")).toHaveValue("#0D5C63");
     await switchWorkspace(page, new RegExp(NORTHSTAR.name));
     await page.goto("/settings/branding");
-    await expect(page.locator("#brand-accent")).not.toHaveValue(/8B3A1E/i);
+    await expect(page.getByText("No logo. The initials below are shown instead.")).toBeVisible();
+    await expect(page.getByText("apex-climate-crest-revised.svg")).toHaveCount(0);
+    await expect(page.locator("#brand-accent")).toHaveValue("");
     await switchWorkspace(page, new RegExp(business.name));
     await page.goto("/settings/branding");
-    await expect(page.locator("#brand-accent")).not.toHaveValue(/8B3A1E/i);
+    await expect(page.getByText("apex-climate-crest-revised.svg")).toBeVisible();
+    await expect(page.locator("#brand-accent")).toHaveValue("#0D5C63");
   });
 });
 

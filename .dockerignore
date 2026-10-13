@@ -4,6 +4,8 @@
 !.env.example
 
 node_modules
+# Uploaded files are runtime data (a mounted volume), never part of an image.
+.data
 .next
 out
 build

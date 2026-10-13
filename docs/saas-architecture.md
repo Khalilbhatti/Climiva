@@ -40,6 +40,7 @@ Read [production-handoff.md](production-handoff.md) for the front end, which thi
 30. [Route groups and the provider boundary](#30-route-groups-and-the-provider-boundary)
 31. [Website Templates](#31-website-templates)
 32. [Where a business's sample data may live](#32-where-a-businesss-sample-data-may-live)
+33. [Durable assets and Organization Branding](#33-durable-assets-and-organization-branding-phase-18a)
 
 ## 1. Status and scope
 
@@ -52,7 +53,7 @@ reload. Now:
 | Organizations, memberships, owner / admin / member roles | A UI to invite or remove members, or to change roles |
 | Many people ↔ many businesses; a workspace switcher | Billing for Climvia itself |
 | New-business onboarding in one transaction (the organization, its owner, its hours, a private primary Site with its Draft) | Delivering the Website's contact-form messages (no mail service) |
-| Business information, Business hours, Workspace preferences and the profile name stored in PostgreSQL | Logo / branding / avatar storage (needs object storage) |
+| Business information, Business hours, Workspace preferences, the profile name and the **Branding (logo and accent, §33)** stored | Avatar / profile photo storage, a media library, private files |
 | Customers, properties, equipment, Services, the team and its roles stored in PostgreSQL per organization (§13) | A flow to add or edit a customer, email invitations for team members |
 | Bookings, Jobs (with work details and photo metadata), the Schedule (derived) and blocked time stored per organization (§24) | Rescheduling a booking, file storage for photos, a public booking page for a business's own domain |
 | Quotes, invoices (with line items) and payments stored per organization, money in integer cents, balances derived, payments voided rather than deleted (§25) | A payment processor, bank or accounting connection, Climvia's own subscription billing |
@@ -491,6 +492,8 @@ Internet ── 443 ──> Caddy or nginx (TLS, sets X-Forwarded-For)
 > `docker build .` once on a machine with Docker before relying on them. The Phase 10 migrations (`0002_core_data.sql`, `0003_core_data_rls.sql`) were verified the same way, on PostgreSQL directly.
 > **Docker verification is still required before AWS deployment.**
 
+**Uploaded files (Phase 18A).** `ASSET_STORAGE_DRIVER` (`local` or `s3`, required in production), `ASSET_LOCAL_DIR`, `AWS_REGION` and `AWS_S3_BUCKET`; credentials come from the AWS default provider chain, an IAM role on the instance, never from configuration. The image mounts `/data/assets` for the local fallback. The bucket is private and is provisioned outside the application. Back the local directory up like the database. Details in §33; **Docker verification is required before AWS deployment.**
+
 ## 18. Backups
 
 Not implemented; this is the plan.
@@ -565,7 +568,7 @@ The Playwright suite runs against a **production build** and a **separate databa
 ## 23. Known limitations
 
 - Email verification, password reset, invitations and member management have no UI: they need a mail service and are the next SaaS work.
-- Branding, logo and avatar are session-only until object storage exists. **Object storage required for durable uploaded logos/assets**; no public page shows an uploaded logo (they show the business's initials), and there is no image upload or image binary column anywhere.
+- The business logo and accent are stored (§33). The profile photo is still session-only (a picture chosen for the visit), and there is no media library, no private Asset, no image variant and no collector for unreferenced files. Real S3 has not been exercised from the development machine.
 - Websites and the Marketplace (§28): the Website Builder (§29) edits pages, sections and the theme of the Draft, but there is no template gallery or choice of template (Phase 17), no Sites screen, no image or media library, and no way to roll back to an earlier version from a screen (the versions are kept; a rollback is a pointer change not yet exposed). The Website's contact form confirms and **delivers nothing** (no mail service). The platform address `<slug>.climvia.com` and any custom domain are only displayed or recorded; nothing resolves, verifies or routes them (§20), and the public pages are served at `/sites/<slug>` and `/listings/<slug>` on the application's host. The visitor-booking rate limiter is held in one server process (§28). The Draft preview's booking journey makes a real booking as the signed-in owner or admin. A business's uploaded logo is not shown on its Site or listing.
 - Maintenance plans and reviews (§26): no screen pauses, ends, renews or edits a plan (no flow was approved, so the application has no UPDATE on plans), a visit is rescheduled only by cancelling its booking and booking it again, a review request is a record and nothing is sent, and a customer has no public way to submit a review yet (the sample reviews are seeded). The Website and the Marketplace show no reviews.
 - Money (§25): there is no screen to write a quote or to edit, void or reissue an invoice (an invoice is made from an approved quote and is then fixed; a mistake in it is a new invoice for the quote's replacement), no refund or credit note, no tax model (an invoice shows Tax $0.00), no deposit or overpayment, no PDF, email or print, and no payment processor. The Overview's Total Invoiced and the Analytics quote and invoice-count aggregates cover more history than the stored records; the difference is held as explicit imported adjustments (§25, §27).
@@ -1144,9 +1147,9 @@ The Draft is for people signed in to the business. `/website/preview` and `/webs
 
 `custom_domain` and `custom_domain_status` (`configured | pending_verification | verified`) are a **record**: a domain the business wants to use. Recording one stores it as `pending_verification` (the Apex baseline's is `configured`); the main address is the platform address unless the owner chooses the recorded domain. **Nothing verifies, resolves or routes a custom domain, and no screen says otherwise.** A domain is a *claim* until it is verified: several businesses may record the same name and none learns of the others; only a **verified** domain belongs to exactly one Site (a partial unique index), and the runtime role cannot mark one verified or create a Site already verified (triggers), so only the platform (the owner role, in the domain-routing phase) can. No DNS, Route 53 or certificate work exists.
 
-### Assets and uploaded files (deferred)
+### Assets and uploaded files
 
-**Object storage required for durable uploaded logos/assets.** There is no image upload, no image library and no binary column anywhere: a cover is one of three CSS treatments, a section holds text only, and the Site's mark is the business's initials. Settings → Branding still lets a person choose a logo for the visit, but it is a browser object URL that dies with the session, so **no public page, Site or listing, ever shows one**. The future shape is a private S3 bucket per environment with the object key and metadata in a table and a signed read path (§17); the Builder's image library and the Branding logo both wait for it.
+**Done in Phase 18A (§33).** A business's logo is an Asset (a row in `assets`, its bytes in object storage: a local directory in development, a private S3 bucket in production) and its Branding is stored in `organization_branding`. The Site's mark is the logo when the business has one and its initials when it does not, read when the page is drawn, so it needs no Publish and a Template change does not reset it. There is still no image library, no image in a section, no binary column anywhere, and a cover is still one of three CSS treatments.
 
 ### What the tests prove
 
@@ -1303,7 +1306,7 @@ The existing Website specs keep their guarantees (the public pages, the Draft pr
 
 ### Limitations and what is deliberately deferred
 
-- No custom HTML, CSS or JavaScript, no freeform canvas, no image or media library, logo upload or S3 (**object storage is required for durable uploaded logos/assets**, §17).
+- No custom HTML, CSS or JavaScript, no freeform canvas, no image or media library (the business logo is stored since Phase 18A, §33).
 - No Sites screen, no rollback screen (the versions are kept; a rollback is a pointer change not yet exposed).
 - No custom domains, DNS, Route 53 or certificates (§20), no contact-form delivery, email or SMS, no scheduled Marketing worker, no billing, no analytics in the Builder.
 - No real-time collaboration: two people editing at once is handled by the revision (the second to save is told to reload), not by merging.
@@ -1468,3 +1471,121 @@ The database, the migrations, the seed's behaviour (Apex and Northstar seed exac
 public projection are unchanged and re-tested. **Remains:** `SAMPLE_DATA_SET` (`"apex-demo"`, in `lib/workspace-types.ts`) is the name of the sample data set, an application
 identifier stored on the organization row, not business data, and it is still in client code. `America/Chicago` is one entry in the shared list of time zones a business can choose.
 The crest stand-in above is temporary.
+
+## 33. Durable assets and Organization Branding (Phase 18A)
+
+Until this phase a business's logo existed only in the browser that chose it: an object URL that died with the session, so no public page ever drew it. Phase 18A gives a business **files that are its own and last** (today, its logo) and a **Branding** that is stored like the rest of Settings. It is the first production-infrastructure subsystem, and it is built so later Website media can use the same foundation, without a media library being built now.
+
+### Ownership
+
+```
+Organization -> many Assets        (a file a business owns; metadata in PostgreSQL, bytes in object storage)
+Organization -> one Branding       (organization_branding: its logo and its accent)
+Site Version -> its own Theme      (unchanged: design tokens, the Template's `look`, per Site)
+```
+
+**Organization Branding** is the business's central identity: its logo and its accent. **A Site's Theme** is that Site's presentation: its accent token, radius, density, fonts and design style. They coexist and neither is copied into the other.
+
+| | Organization Branding | Site Theme |
+| --- | --- | --- |
+| Owns | the logo (an Asset), the central brand accent | the Site Version's design tokens, including the Template's `look` and the Theme accent |
+| One per | organization | Site Version (two Sites of one business can differ) |
+| Changed in | Settings → Branding | the Builder's Theme panel, or a Template |
+| Needs Publish | **No.** It is read when a page is drawn | **Yes.** It is part of the Draft |
+| Reset by choosing a Template | **Never** | replaced with the Template's |
+
+Propagation, stated plainly. The **logo** is drawn wherever a design shows the business's mark: the header of the Standard, Precision and Comfort Templates (in place of the initials tile), a small mark before the Airflow wordmark when there is a logo (and nothing when there is not), the Marketplace listing's mark, the Builder's canvas, the signed-in preview and the Overview's picture. The **central accent** is stored now and is the base colour of the customer-facing frames inside the workspace (the Website picture, the Builder canvas, the previews, the listing preview); a Site's own Theme accent is drawn over it and is never replaced by it, and the published pages draw the Site's Theme only. Whether the central accent should reach the published pages is a design decision that is not made here.
+
+A logo change is therefore a **live identity change**: it shows on the published Site and the listing at once, with no Publish, and leaves the Draft, the Published version and the Template exactly as they were. Authored content (pages, sections, text, Theme) still needs Publish.
+
+### The data
+
+Migrations `0017` (tables) and `0018` (Row Level Security, grants, guards, the public function), applied from nothing by `db:migrate` / `db:test:prepare`; `drizzle-kit generate` reports no schema changes after them.
+
+| Table | Holds |
+| --- | --- |
+| `assets` | `id`, `organization_id`, `purpose` (`logo`), `storage_driver` (`local`/`s3`), `storage_key`, `original_filename`, `media_type` (`image/webp`, `image/png`, `image/jpeg`), `byte_size`, `width`, `height`, `checksum` (SHA-256), `status`, `created_by_user_id`, `created_at`, `ready_at`, `deleted_at`. **No bytes, no data URL, no encoded image: there is no column for one.** |
+| `organization_branding` | `organization_id` (primary key: one row per business), `logo_asset_id`, `accent`, `created_at`, `updated_at`. Created the first time a business saves its Branding; no row means no logo and no accent |
+
+Integrity the database enforces, independently of the application:
+
+- **The key is the row's own.** A CHECK makes `storage_key` equal `organizations/<organization_id>/assets/<id>/normalized`, so a key cannot point into another business's folder, another Asset's, or anywhere a filename could take it. The key is also unique.
+- **Lifecycle** `pending -> ready | failed`, `ready | failed -> deleted`; a trigger refuses any other move, and (for the runtime role) any change to an Asset's identity or content. The runtime role can only `UPDATE (status, ready_at, deleted_at)`. A new Asset can only be inserted as `pending`, by an owner or admin, as themselves. **Nobody can DELETE a row** (no grant, no policy): history stays.
+- **Branding can only reference its own Asset.** The composite foreign key `(organization_id, logo_asset_id) -> assets (organization_id, id)` makes another business's Asset impossible (PostgreSQL's referential checks run outside Row Level Security), and a guard trigger additionally requires it to be a **ready logo**. The foreign key is proven on its own with the guard switched off. An Asset that is a business's current logo cannot be marked deleted.
+- **Row Level Security** on both tables, from the same helpers as every other table: members of the active organization read; owners and admins write. With no context at all the runtime role sees no private row.
+- The old `organizations.logo_url` and `organizations.brand_accent` columns are **dropped** (nothing wrote them; any stored accent moved to `organization_branding`). A URL on the organization row would go stale and could point at someone else's file.
+
+### Storage
+
+`src/storage` is the seam. Business code calls `put`, `get`, `exists` and `delete` on an `AssetStorage` and never knows which driver it has. **Only `src/storage/s3.ts` imports the AWS SDK**, and no Client Component can reach this directory (the import-graph spec holds that).
+
+| Setting | Meaning |
+| --- | --- |
+| `ASSET_STORAGE_DRIVER` | `local` or `s3`: where **new** uploads go. Outside production the default is `local`, so development, the seed and the tests need no AWS account. **In production it must be set**; there is no silent default |
+| `ASSET_LOCAL_DIR` | the local driver's directory (default `.data/assets`, git-ignored, never under `public/`, never served by path) |
+| `AWS_REGION`, `AWS_S3_BUCKET` | the S3 driver |
+| (credentials) | **none in configuration**: the AWS default provider chain, which in production is an IAM role on the instance |
+
+An Asset records the driver it was stored with, and it is read back through that driver, so changing where new uploads go does not strand old ones, and the database never holds a bucket address (a public address is derived: `/assets/<id>`, built in one place, `assetUrl`). That permits a different bucket, a CDN or image variants later without rewriting any Site.
+
+**Keys** are built only by `assetKey(organizationId, assetId, variant)` from two lower-case UUIDs and a fixed variant, and parsed strictly by `parseAssetKey`; both drivers refuse anything else before touching a disk or a network. A browser filename is never part of a key, a path or a header; it is kept only as a display label, cleaned of paths, markup and control characters.
+
+**Local driver.** Files are written to a temporary name and renamed (a reader never sees half a file), once only (an existing key is refused), under `<root>/<organization id>/<asset id>/normalized`, with the resolved path checked to be inside the root. Durable across a restart of the application.
+
+**S3 driver.** A **private** bucket. It sets no ACL and no `public-read`, never lists, never creates a bucket, writes with `If-None-Match: *` (an object is never replaced under its id), reads only the keys the application generates, and takes the bucket and region from configuration, never from a request. The SDK loads on first use. Real S3 has **not** been exercised from the development machine: the driver is tested against a fake client (what it sends, how it reads, how it fails), and the bucket, its encryption, its public-access block and the role's policy are infrastructure for the deployment phase.
+
+### The upload
+
+`POST /api/branding` (multipart: `accent` required, `logo` or `removeLogo` optional; no field names an organization). The order is the defence:
+
+1. the request must come from this site's own pages (`Origin` equal to the site's host, and `Sec-Fetch-Site` same-origin where sent), because a Route Handler, unlike a Server Action, gets no framework check;
+2. the caller is the verified person in a verified active workspace and may `settings:manage` (an owner or admin; a member is refused with 403);
+3. **only then is the body read**, under a hard limit of 5 MB plus the form's framing, counted as it arrives (a lying or missing `Content-Length` is cut off), so nobody without the right to upload makes the server buffer anything;
+4. the file is judged by its **bytes**.
+
+**Validation and normalization** (`src/storage/logo-image.ts`). Nothing the browser says about a file is believed. Over 5 MB is refused first; the first bytes must be a PNG, JPEG or WebP signature, so **SVG, HTML, XML, GIF, PDF, executables and anything else, renamed or not, are never given to an image library**; SVG is refused on purpose, because it is a document that can carry script and sanitizing it is a separate problem. The header's dimensions are read without decoding: a side over 4096 px or more than 4096 x 4096 pixels is refused, so a few hundred KB that claim 144 million pixels never get a pixel buffer (tested with a real decompression bomb). The image is then decoded strictly (a warning is a failure, so a truncated or damaged file is refused, not half-shown), stood upright, scaled to fit 1024 x 1024 (never enlarged) and **re-encoded as WebP** (lossless for a PNG source, high quality for a photograph). Re-encoding removes every piece of metadata and anything that was not pixels. The SHA-256 of the stored bytes is recorded.
+
+User-facing failures are four, none of which names a bucket, a key, a path or a stack: not a PNG, JPG or WebP; too large (5 MB, 4096 x 4096); could not be read as an image; the upload failed.
+
+**Consistency.** The database and the object store cannot share a transaction, so the order matters (`src/server/branding.ts`): (1) normalize in memory; (2) write a `pending` row; (3) store the bytes (on failure, mark it `failed`: the Branding is untouched); (4) in **one transaction** make the Asset `ready` and point the Branding at it. The Branding therefore never points at a pending or failed Asset, and the switch from the old logo to the new is a single row update, never a gap; (5) if step 4 fails, mark it `failed` and delete the object, best effort.
+
+- **Replacing** uploads and validates the new Asset first and switches the reference atomically. The old Asset stays `ready` and unreferenced; its file is not deleted (nothing may risk removing what something still refers to) and it is no longer public.
+- **Removing** sets `logo_asset_id` to null. The row is kept; the public Site and listing fall back to the business's name and initials.
+- **Concurrency.** The Branding write is one upsert that takes the row's lock, so saves at the same moment are applied one after the other and the later wins. There is no revision on Branding (Settings has none): **a stale tab can overwrite a newer logo, last write wins**, and both files exist and are the business's own. No Asset is ever cross-linked.
+- **What can be left behind, and is unreachable:** an object whose Asset stayed `pending` or `failed` (the process died between steps 3 and 4, or the cleanup could not run), and replaced or removed logos. None is public and none is referenced. A later garbage collector can remove them by status and age; none is built.
+
+### Public delivery
+
+`GET /assets/<id>` is a public route: no session, no cookie, no workspace (the provider-boundary spec holds it). Whether an Asset may be served is decided in the database by `app_public_asset`, the **fourth public SQL function** (same rules as the other three: `SECURITY DEFINER`, fixed `search_path`, executable by the runtime role and nobody else, an answer built field by field): the Asset must be **ready**, a **logo**, and **the logo its business has currently chosen**. A pending or failed upload, a replaced or removed logo, every other Asset and an unknown id are the same plain `404`, with nothing in it that tells them apart. A logo is public because being the business's logo is its purpose; nothing else about a business becomes public.
+
+The address is an id and nothing else: a storage key is not a UUID, so it is a 404 before the database is asked, and no query parameter chooses another file. The response is the stored WebP with its recorded type, `X-Content-Type-Options: nosniff`, `Content-Disposition: inline` (no filename), `Content-Security-Policy: default-src 'none'; sandbox`, an `ETag` that is the checksum (a matching `If-None-Match` is a 304), and `Cache-Control: public, max-age=86400`. An Asset id never changes what it holds (a new logo is a new id), so it could be cached for a year; a day is chosen because a removed logo stops being served here at once and the day is how long a copy somewhere may outlive that. A CDN with purge-on-removal could lengthen it. Failures a visitor cannot act on are `503 Unavailable` (never a stack, a path or a bucket).
+
+Public projections carry the logo as an **Asset id** (`app_public_site` and `app_public_listing` gained one field, `organization.logo`); the address is built in one place. It is not copied into a Site Version.
+
+### The sample workspace and the seed
+
+The Phase 17 server-side stand-in (`sample-workspace.ts`, a filename with nothing behind it) is gone. The seed stores a real Asset for Apex: `scripts/db/seed-data/apex-crest.svg` (seed input only; an SVG is never accepted as an upload or served) is rasterized and passed through the **same normalization an upload takes**, stored through the storage seam, and recorded with a derived id, so it is deterministic. The object is written first and the row describes whatever is there, so the seed is idempotent (a second run changes nothing) and a rebuilt database never refers to a missing file. Northstar has no logo. Test workers' copies of Apex get their own; the suite uses its own asset directory, recreated with the test database (`db:test:prepare`), and `db:reset` clears the development directory beside the database (only inside `.data/`).
+
+### Configuration, Docker and the production intent
+
+`.env.example` documents both drivers and asks for no AWS key. The Dockerfile makes `/data/assets` a volume owned by the unprivileged user and sets `ASSET_LOCAL_DIR` to it, and deliberately does **not** set the driver; `docker-compose.yml` is unchanged (PostgreSQL only), and the Dockerfile's header shows the run command that keeps the files, `-v climvia-assets:/data/assets`. **Docker is not installed on the development machine, none of this has been run, and Docker verification is required before AWS deployment.**
+
+The intended production path: the application on EC2 with an **IAM role** (no keys), a **private S3 bucket**, and a public logo request going browser -> the application's `/assets/<id>` -> S3. CloudFront in front of that is a later optimization. **No CloudFront, no custom domain, no bucket provisioning and no AWS deployment exist yet.**
+
+### What the tests prove
+
+| Spec | Proves |
+| --- | --- |
+| `assets-database.spec.ts` | At the database, as `climvia_app`: every table's organization, the key constraint, the type/purpose/size/checksum/lifecycle constraints, cross-tenant SELECT/INSERT/UPDATE, no DELETE, no context sees nothing, owner/admin write and member cannot, the foreign key on its own with the guard off, a pending/failed/deleted Asset can never be a logo, status moves and immutability, an Asset in use cannot be deleted, `app_public_asset` for current/replaced/removed/pending/failed/unknown, and the two projections |
+| `assets-storage.spec.ts` | Keys (hostile inputs), the local driver (round trip, write-once, confinement, no traversal, durability across instances), the S3 driver against a fake client, driver selection, the configuration files, and that only `s3.ts` imports the SDK |
+| `assets-image.spec.ts` | The three accepted formats, transparency, scaling, orientation and no metadata, appended bytes dropped; SVG, HTML, XML, GIF, PDF and the rest refused; damaged and truncated files; the size limit; a real decompression bomb; the side limit |
+| `assets-upload.spec.ts` | The endpoint: what is stored and where, filenames as labels, every refusal and its leftovers (nothing), the body limit with no length, authorization (no session, member, foreign origin), forged ids and a forged workspace cookie, replacement, removal, accent, six saves at once, a storage failure |
+| `assets-public.spec.ts` | The route: headers, 304, no session needed, the same plain 404 for everything else, keys and traversals, a missing object, an unconfigured driver |
+| `branding-settings.spec.ts` | Settings: stored and reloaded, a new session and browser, replace/remove/accent, errors, discard, double Save, two tabs, a member who may only look, a person in two businesses |
+| `website-logo.spec.ts` | All four Templates with and without a logo, a new logo with no Publish, Template changes that leave it, the Builder, the preview, the listing, the Gallery |
+| `assets-durability.spec.ts` | A logo saved through the running server is given back by two **new server processes**; the file survived both |
+| `tenant-fixture-boundary.spec.ts`, `provider-boundary.spec.ts`, `public-boundary.spec.ts`, `server-boundaries.spec.ts` | No Client Component reaches storage, the AWS SDK or sharp; the client JavaScript holds no storage detail; the public path does not import the tenant module; a probe server whose role runs only the four public functions serves the logo; the three route handlers keep to their own lines |
+
+### What this does not change, and what is deferred
+
+Unchanged and re-tested: the Phase 16 provider split and the public projection, tenant isolation, the Draft/Published lifecycle, the Templates and the Builder, the Marketplace. **Deferred:** a media library or any other image use, private Assets, image variants and thumbnails, a garbage collector for unreferenced files, the profile photo (still session-only), SVG, CloudFront, bucket provisioning, and everything in the domain and deployment phases. The central accent reaching published pages is undecided. `SAMPLE_DATA_SET` (`"apex-demo"`) is still the sample set's name in client code, as before.

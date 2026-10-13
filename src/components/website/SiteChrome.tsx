@@ -5,7 +5,8 @@ import { ArrowUpRight, Phone } from "lucide-react";
 import { buttonClasses } from "@/components/ui/Button";
 import type { AppHref } from "@/config/routes";
 import { cn } from "@/lib/cn";
-import { formatCityStateZip, getInitials, toTelHref } from "@/lib/format";
+import { formatCityStateZip, toTelHref } from "@/lib/format";
+import { BrandMark } from "./BrandMark";
 import { looksOf } from "./site-look";
 import { pageHrefIn, typeHrefIn, type SiteView } from "./site-view";
 
@@ -29,9 +30,7 @@ function StandardHeader({ view }: Chrome) {
   return (
     <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-line bg-surface px-5 py-4 @xl:px-8">
       <Link href={homeHref(view)} className="flex items-center gap-2.5">
-        <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-btn bg-primary text-sm font-bold text-white">
-          {getInitials(view.business.name)}
-        </span>
+        <BrandMark name={view.business.name} logo={view.logo} tile="size-8 rounded-btn text-sm font-bold" image="h-8 max-w-32 rounded-btn" />
         <span className="text-sm leading-tight font-bold text-ink">{view.business.name}</span>
       </Link>
       <nav aria-label="Website" className="flex items-center gap-x-5 gap-y-2 text-sm font-medium text-ink-muted">
@@ -67,9 +66,7 @@ function PrecisionHeader({ view }: Chrome) {
       </div>
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-5 py-3.5 @xl:px-8">
         <Link href={homeHref(view)} className="flex items-center gap-2.5">
-          <span aria-hidden className="flex size-9 shrink-0 items-center justify-center rounded-btn bg-primary text-sm font-extrabold text-white">
-            {getInitials(view.business.name)}
-          </span>
+          <BrandMark name={view.business.name} logo={view.logo} tile="size-9 rounded-btn text-sm font-extrabold" image="h-9 max-w-36 rounded-btn" />
           <span className="text-base leading-tight font-extrabold tracking-tight text-ink">{view.business.name}</span>
         </Link>
         <nav aria-label="Website" className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-bold tracking-wider text-ink uppercase">
@@ -96,9 +93,7 @@ function ComfortHeader({ view }: Chrome) {
     <header className="border-b border-line bg-surface">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-5 py-4 @xl:px-8">
         <Link href={homeHref(view)} className="flex items-center gap-3">
-          <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-white">
-            {getInitials(view.business.name)}
-          </span>
+          <BrandMark name={view.business.name} logo={view.logo} tile="size-10 rounded-full text-sm font-semibold" image="h-10 max-w-40 rounded-md" />
           <span className="text-lg leading-tight font-semibold text-ink" style={{ fontFamily: "var(--site-font-heading)" }}>
             {view.business.name}
           </span>
@@ -125,7 +120,9 @@ function AirflowHeader({ view }: Chrome) {
   return (
     <header className="bg-surface">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-8 gap-y-4 px-5 py-6 @xl:px-10">
-        <Link href={homeHref(view)} className="text-sm font-medium tracking-[0.2em] text-ink uppercase">
+        <Link href={homeHref(view)} className="flex items-center gap-3 text-sm font-medium tracking-[0.2em] text-ink uppercase">
+          {/* This design is a wordmark, so with no logo there is no mark: its initials tile is never drawn. */}
+          {view.logo && <BrandMark name={view.business.name} logo={view.logo} tile="" image="h-7 max-w-28" />}
           {view.business.name}
         </Link>
         <nav aria-label="Website" className="flex flex-wrap items-center gap-x-8 gap-y-2 text-sm font-light text-ink-muted">

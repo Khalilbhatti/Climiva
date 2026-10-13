@@ -12,22 +12,26 @@ import {
   type WeeklyHours,
 } from "@/data/settings";
 import { DEFAULT_DISPLAY_PREFERENCES, setDisplayPreferences } from "@/lib/display-preferences";
-import { send } from "@/lib/send-action";
+import { UPLOAD_FAILURES } from "@/lib/asset-rules";
+import { send, UNREACHABLE } from "@/lib/send-action";
 import * as state from "@/lib/settings-state";
 import { saveBusinessAction, saveHoursAction, savePreferencesAction, saveProfileAction } from "@/server/actions/settings";
 
 /** What a save reports back to its form. A failure carries the words to show; the working copy is unchanged. */
 export type SaveResult = { ok: true } | { ok: false; error: string; fields?: Record<string, string> };
 
+/** What saving the Branding does to the logo: leaves it, takes it away, or replaces it with this file. */
+export type LogoChoice = { kind: "keep" } | { kind: "remove" } | { kind: "replace"; file: File };
+
 type SettingsContextValue = {
-  /** The working settings: what is stored for the active workspace (and, for branding, this session's edits). */
+  /** The working settings: what is stored for the active workspace. */
   settings: SettingsData;
   saveBusiness: (business: BusinessInfo) => Promise<SaveResult>;
   saveHours: (hours: WeeklyHours) => Promise<SaveResult>;
   savePreferences: (preferences: Preferences) => Promise<SaveResult>;
   saveProfile: (profile: Profile) => Promise<SaveResult>;
-  /** Branding is not stored yet (a logo needs file storage); it lasts for the session only. */
-  saveBranding: (branding: Branding) => void;
+  /** Save the Branding: the accent, and what happens to the logo. The file goes to the server, which stores it; only a stored logo is ever shown. */
+  saveBranding: (accent: string | null, logo: LogoChoice) => Promise<{ ok: true; branding: Branding } | { ok: false; error: string }>;
 };
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -91,7 +95,26 @@ export function SettingsProvider({ initial, children }: { initial: SettingsData;
         commit(state.saveProfile(latest.current, { ...profile, name: result.data.name }));
         return { ok: true };
       },
-      saveBranding: (branding) => commit(state.saveBranding(latest.current, branding)),
+      saveBranding: async (accent, logo) => {
+        const form = new FormData();
+        form.set("accent", accent ?? "");
+        if (logo.kind === "replace") form.set("logo", logo.file, logo.file.name);
+        if (logo.kind === "remove") form.set("removeLogo", "1");
+        let response: Response;
+        try {
+          response = await fetch("/api/branding", { method: "POST", body: form, credentials: "same-origin" });
+        } catch {
+          return { ok: false, error: UNREACHABLE };
+        }
+        const body: unknown = await response.json().catch(() => null);
+        const saved = typeof body === "object" && body !== null && "branding" in body ? readBranding(body.branding) : null;
+        if (response.ok && saved) {
+          commit(state.saveBranding(latest.current, saved));
+          return { ok: true, branding: saved };
+        }
+        const message = typeof body === "object" && body !== null && "error" in body && typeof body.error === "string" ? body.error : UPLOAD_FAILURES.failed;
+        return { ok: false, error: message };
+      },
     }),
     [settings, commit],
   );
@@ -101,6 +124,17 @@ export function SettingsProvider({ initial, children }: { initial: SettingsData;
       <Fragment key={styleEpoch}>{children}</Fragment>
     </SettingsContext>
   );
+}
+
+/** The Branding the server answered with, or null when it does not look like one. */
+function readBranding(value: unknown): Branding | null {
+  if (typeof value !== "object" || value === null || !("accent" in value) || !("logo" in value)) return null;
+  const { accent, logo } = value as { accent: unknown; logo: unknown };
+  if (accent !== null && typeof accent !== "string") return null;
+  if (logo === null) return { logo: null, accent };
+  if (typeof logo !== "object" || !("fileName" in logo) || !("src" in logo)) return null;
+  const { fileName, src } = logo as { fileName: unknown; src: unknown };
+  return typeof fileName === "string" && typeof src === "string" ? { logo: { fileName, src }, accent } : null;
 }
 
 export function useSettings(): SettingsContextValue {

@@ -194,9 +194,9 @@ test.describe("writing", () => {
 
 test.describe("creating a workspace", () => {
   const ORGANIZATION_COLUMNS = `id, name, slug, phone, email, address_line1, address_line2, city, state_region, postal_code, country,
-    timezone, currency, date_format, time_format, logo_url, brand_accent, fixture_set, onboarding_completed_at, created_at, updated_at`;
+    timezone, currency, date_format, time_format, fixture_set, onboarding_completed_at, created_at, updated_at`;
   const ORGANIZATION_VALUES = `$1, 'Shape Test Heating', 'shape-test-heating', '(303) 555-0100', 'a@b.test', '1 Main St', null, 'Denver', 'CO', '80203', 'US',
-    'America/Denver', 'USD', 'mdy-short', '12h', default, default, default, now(), default, default`;
+    'America/Denver', 'USD', 'mdy-short', '12h', default, now(), default, default`;
   const newId = () => crypto.randomUUID();
 
   test("accepts the exact statement the application sends: every column named, the unset ones as DEFAULT", async () => {

@@ -59,18 +59,22 @@ export const DEFAULT_OPEN_HOURS = { open: "09:00", close: "17:00" } as const;
 /* ───────────────────────── branding ───────────────────────── */
 
 /**
- * The business logo is a reference to one file: the baseline's is the crest the Stitch Branding screen names, drawn by
- * the app as a built-in mark (no `src`); a file chosen in this session is shown from a local object URL. There is no
- * asset library and nothing is uploaded anywhere.
+ * The business logo: one of the business's own stored files (an Asset, src/db/schema/assets), reached at `src`, its public address on this
+ * site. `fileName` is what the person called the file, shown in Settings. The picture itself is not here and is never a data URL or a browser
+ * object URL; a page that draws the logo asks the server, which reads the business's Branding when the page is drawn.
  */
-export type BrandLogo = { fileName: string; src?: string };
+export type BrandLogo = { fileName: string; src: string };
 
 export type Branding = {
   logo: BrandLogo | null;
-  /** "#RRGGBB", or null to keep the Climvia teal. Only customer-facing frames use it; the admin shell never changes. */
+  /**
+   * "#RRGGBB", or null to keep the Climvia teal. The base colour of the customer-facing frames inside the workspace (the Website picture, the
+   * Builder canvas, the previews); a Site's own Theme accent is drawn over it and is never replaced by it. The admin shell never changes.
+   */
   accent: string | null;
 };
 
+/** The limits of a profile photo (a session-only picture). A business logo's rules are lib/asset-rules. */
 export const MAX_LOGO_BYTES = 4 * 1024 * 1024;
 export const LOGO_TYPES = ["image/svg+xml", "image/png", "image/jpeg"] as const;
 /** The Climvia teal the whole product is already drawn in; saving it as the accent changes nothing visible. */

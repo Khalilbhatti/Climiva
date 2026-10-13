@@ -6,10 +6,10 @@
  * be split, or its ampersand escaped), the phone as shown and as digits, the email and its domain, the street, and a person.
  */
 import { APEX, NORTHSTAR } from "../scripts/db/seed-lib";
-import { apexSettings, business, currentUser } from "../scripts/db/seed-data/apex";
+import { APEX_CREST_FILE_NAME, business, currentUser } from "../scripts/db/seed-data/apex";
 import { NORTHSTAR_CUSTOMERS } from "../scripts/db/seed-data/northstar";
 
-export type Needle = { tenant: "Apex" | "Northstar"; what: string; value: string };
+export type Needle = { tenant: "Apex" | "Northstar" | "Infrastructure"; what: string; value: string };
 
 const firstWords = (name: string) => name.split(" ").slice(0, 2).join(" ");
 const digits = (phone: string) => phone.replace(/\D/g, "");
@@ -36,16 +36,36 @@ export const NORTHSTAR_VALUES: Needle[] = [
   { tenant: "Northstar", what: "customer", value: NORTHSTAR_CUSTOMERS[0].name },
 ];
 
-/** The reference crest the sample workspace shows (src/server/sample-workspace.ts). */
-export const APEX_CREST = apexSettings.branding.logo?.fileName ?? "";
+/** The name the Apex reference crest is shown under (the seed stores it as the Apex logo). */
+export const APEX_CREST = APEX_CREST_FILE_NAME;
 
-/** What the sample workspace shows beyond the record itself: the person's role and the reference crest. */
+/** What the sample workspace shows beyond the record itself: the person's role and the reference crest's name. */
 export const SAMPLE_WORKSPACE_VALUES: Needle[] = [
   { tenant: "Apex", what: "role", value: currentUser.role },
   { tenant: "Apex", what: "reference crest", value: APEX_CREST },
 ];
 
 export const BUSINESS_VALUES: Needle[] = [...APEX_VALUES, ...NORTHSTAR_VALUES];
+
+/**
+ * Where files are kept and how they are reached: names that belong to the server and the deployment, never to a browser. None of them may be in
+ * the client JavaScript (a bucket, a directory, a key, the storage and image libraries).
+ */
+export const INFRASTRUCTURE_VALUES: Needle[] = [
+  "ASSET_STORAGE_DRIVER",
+  "ASSET_LOCAL_DIR",
+  "AWS_S3_BUCKET",
+  "AWS_REGION",
+  "IfNoneMatch",
+  "S3Client",
+  "PutObjectCommand",
+  ".data/assets",
+  "app_public_asset",
+  "storage_key",
+  "storageKey",
+  "libvips",
+  "@aws-sdk",
+].map((value) => ({ tenant: "Infrastructure" as const, what: "storage detail", value }));
 
 /** The needles found in any of `texts`, each named by the business it identifies. */
 export const foundIn = (texts: readonly string[], needles: readonly Needle[]): string[] =>

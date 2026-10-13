@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import { useHoursRows, useBusiness } from "@/components/settings/SettingsProvider";
+import { useHoursRows, useBusiness, useSettings } from "@/components/settings/SettingsProvider";
 import { useServices } from "@/components/services/ServicesProvider";
 import { getPrimaryDomain, orderedPages, platformHost, type PageModel, type VersionModel, type WebsiteState } from "@/data/website";
 import type { ActionResult } from "@/lib/action-result";
@@ -106,11 +106,13 @@ export function usePlatformAddress(): string | null {
  */
 export function useSiteView(version: VersionModel, base: string): SiteView {
   const business = useBusiness();
+  const logo = useSettings().settings.branding.logo;
   const hours = useHoursRows();
   const { services } = useServices();
   return useMemo(
     () => ({
       business,
+      logo: logo ? { src: logo.src } : null,
       hours,
       services,
       display: version.settings.serviceDisplay,
@@ -121,7 +123,7 @@ export function useSiteView(version: VersionModel, base: string): SiteView {
         .map((page) => ({ key: page.key, title: page.title, slug: page.slug, type: page.type })),
       visitor: false,
     }),
-    [business, hours, services, version, base],
+    [business, logo, hours, services, version, base],
   );
 }
 

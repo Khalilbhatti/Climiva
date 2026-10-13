@@ -20,6 +20,8 @@ export type PublicPage = { key: string; title: string; slug: string; type: PageT
 export type PublicSite = {
   site: SiteIdentity;
   business: BusinessInfo;
+  /** The business's logo, as an address on this site (built from an Asset id; no storage detail), or null: its initials are drawn instead. */
+  logo: { src: string } | null;
   preferences: { timeZone: string; dateFormat: DateFormatId; timeFormat: TimeFormatId };
   hours: WeeklyHours;
   /** The sample business keeps the product's fixed day (its records are dated around it); every other business is at the real time. */
@@ -44,6 +46,8 @@ export type PublicListingData = {
   actions: PublicListingActions;
   /** Only what the listing shows: a detail the business turned off is an empty string here, not just hidden. */
   business: BusinessInfo;
+  /** The business's logo, as for a site. */
+  logo: { src: string } | null;
   hours: WeeklyHours;
   timeFormat: TimeFormatId;
   /** The business's primary site, only while it is published: where "Book service", "View website" and "Contact business" lead. */

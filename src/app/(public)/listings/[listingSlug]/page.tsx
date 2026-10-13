@@ -29,6 +29,7 @@ export default async function PublicListingPage({ params }: PageProps<"/listings
     contact: listing.contact,
     actions: listing.actions,
     business: listing.business,
+    logo: listing.logo,
     hours: summarizeHours(listing.hours, listing.timeFormat),
     services: listing.services,
     website: listing.siteSlug ? platformHost(listing.siteSlug) : null,

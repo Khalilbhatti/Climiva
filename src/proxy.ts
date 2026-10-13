@@ -12,11 +12,12 @@ import { NextResponse, type NextRequest } from "next/server";
  * Left alone on purpose: the auth endpoints, the Log in and Sign up pages (a cookie that no longer maps to a session must
  * still be able to reach them, or the person would be bounced between pages forever; the pages themselves send a truly
  * signed-in visitor on), and the PUBLISHED websites (/sites/<address>) and Marketplace listings (/listings/<address>), which must stay
- * reachable without a Climvia account. Those pages resolve the business from the public address on the server and show published
+ * reachable without a Climvia account, and the logos they draw (/assets/<id>, which serves only a logo a business has chosen: the route asks
+ * the database, not this file). Those pages resolve the business from the public address on the server and show published
  * content only. The signed-in previews of a Draft (/website/preview, /marketplace/preview) are NOT public: they need a session cookie
  * here and a verified membership in the page.
  */
-const PUBLIC_PREFIXES = ["/api/auth", "/sites", "/listings"];
+const PUBLIC_PREFIXES = ["/api/auth", "/sites", "/listings", "/assets"];
 const AUTH_PAGES = ["/login", "/signup"];
 
 export function proxy(request: NextRequest) {
@@ -26,6 +27,9 @@ export function proxy(request: NextRequest) {
   if (AUTH_PAGES.includes(pathname)) return NextResponse.next();
   if (PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) return NextResponse.next();
   if (hasSession) return NextResponse.next();
+
+  // A script calling the application's own endpoints (the Branding upload) is told it is signed out, not sent a login page to parse.
+  if (pathname.startsWith("/api/")) return NextResponse.json({ ok: false, error: "Your session has ended. Log in again." }, { status: 401, headers: { "Cache-Control": "no-store" } });
 
   const login = new URL("/login", request.url);
   // Remember where they were going, but only ever a path on this site.

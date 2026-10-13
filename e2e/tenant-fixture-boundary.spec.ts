@@ -14,7 +14,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "playwright/test";
 import { ROOT, SRC, chainOf, importsOf, posix, reachable, walk } from "./import-graph";
-import { BUSINESS_VALUES, SAMPLE_WORKSPACE_VALUES, foundIn } from "./tenant-values";
+import { BUSINESS_VALUES, INFRASTRUCTURE_VALUES, SAMPLE_WORKSPACE_VALUES, foundIn } from "./tenant-values";
 
 const read = (file: string) => readFileSync(file, "utf8");
 /** The code of a file: comments are not shipped, so they are not looked at. */
@@ -28,10 +28,10 @@ const clientFiles = sourceFiles.filter(isClientFile);
 const isServerAction = (file: string) => posix(file).startsWith("src/server/actions/");
 
 /**
- * What no Client Component may bring in, however far down: seed data and tests, the server (its actions aside), the sample workspace's
- * server-side branding, and the sample workspace's pinned clock (a browser is given the clock to use by the workspace, `useClock()`).
+ * What no Client Component may bring in, however far down: seed data and tests, the server (its actions aside), the storage layer (the
+ * drivers, the image library, the AWS SDK), and the sample workspace's pinned clock (a browser is given the clock to use by the workspace, `useClock()`).
  */
-const NOT_FOR_BROWSERS = [/^scripts\//, /^e2e\//, /^src\/server\/(?!actions\/)/, /^src\/lib\/prototype-clock\.ts$/, /^src\/data\/fixtures\.ts$/];
+const NOT_FOR_BROWSERS = [/^scripts\//, /^e2e\//, /^src\/server\/(?!actions\/)/, /^src\/storage\//, /^src\/lib\/prototype-clock\.ts$/, /^src\/data\/fixtures\.ts$/];
 
 test.describe("the import graph", () => {
   test("there are Client Components to hold to it, and the graph sees the edges that matter", () => {
@@ -46,7 +46,7 @@ test.describe("the import graph", () => {
     expect([...form.keys()].map(posix)).toEqual(expect.arrayContaining(["src/data/settings.ts", "src/lib/format.ts"]));
   });
 
-  test("nothing a Client Component imports, directly or through any chain, is seed, test, server-only or sample-workspace code", () => {
+  test("nothing a Client Component imports, directly or through any chain, is seed, test, server-only, storage or sample-workspace code", () => {
     const seen = reachable(clientFiles, (file) => !isServerAction(file));
     const offenders = [...seen.keys()].filter((file) => !isServerAction(file) && NOT_FOR_BROWSERS.some((pattern) => pattern.test(posix(file)))).map((file) => chainOf(seen, file));
     expect(offenders).toEqual([]);
@@ -57,10 +57,12 @@ test.describe("the import graph", () => {
     expect(offenders).toEqual([]);
   });
 
-  test("the sample records have their one home: the seed, beside Northstar's; the server's branding is marked server-only", () => {
+  test("the sample records have their one home: the seed, beside Northstar's; no server-side stand-in for the sample logo is left", () => {
     expect(existsSync(join(SRC, "data", "fixtures.ts"))).toBe(false);
     for (const file of ["apex.ts", "northstar.ts"]) expect(read(join(ROOT, "scripts", "db", "seed-data", file)), file).toMatch(/SEED AND TEST INFRASTRUCTURE ONLY \(nothing in src\/ imports this file/);
-    expect(read(join(SRC, "server", "sample-workspace.ts"))).toMatch(/^import "server-only";/);
+    // The sample business's logo is a real Asset the seed stores (scripts/db/seed-assets.ts), not a filename in the server's code.
+    expect(existsSync(join(SRC, "server", "sample-workspace.ts"))).toBe(false);
+    expect(existsSync(join(ROOT, "scripts", "db", "seed-assets.ts"))).toBe(true);
   });
 });
 
@@ -90,8 +92,8 @@ test.describe("the production client output", () => {
     expect(foundIn(files.map(read), [{ tenant: "Apex", what: "control", value: "Enter your business name." }])).toHaveLength(1);
   });
 
-  test("no client file contains a business's name, phone, email, street, person, role or the reference crest", () => {
-    const hits = scripts(STATIC).flatMap((file) => foundIn([read(file)], [...BUSINESS_VALUES, ...SAMPLE_WORKSPACE_VALUES]).map((hit) => `${posix(file)}: ${hit}`));
+  test("no client file contains a business's name, phone, email, street, person, role or the reference crest, or any detail of where files are kept", () => {
+    const hits = scripts(STATIC).flatMap((file) => foundIn([read(file)], [...BUSINESS_VALUES, ...SAMPLE_WORKSPACE_VALUES, ...INFRASTRUCTURE_VALUES]).map((hit) => `${posix(file)}: ${hit}`));
     expect(hits).toEqual([]);
   });
 });

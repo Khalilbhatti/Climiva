@@ -776,7 +776,8 @@ test.describe("the public paths, called with no session and no business", () => 
     expect(answer.pages.map((entry: { key: string }) => entry.key)).toEqual(["home", "services", "about", "contact", "booking"]);
     expect(answer.page?.key).toBe("home");
     expect(answer.page?.sections.map((entry: { key: string }) => entry.key)).toEqual(["hero", "services", "why", "hours", "contact", "bookingCta"]);
-    expect(Object.keys(answer.organization).sort()).toEqual(["city", "dateFormat", "email", "name", "phone", "postalCode", "state", "street", "timeFormat", "timeZone"]);
+    // `logo` is the business's logo as an Asset id (migration 0018), or null: never a storage key.
+    expect(Object.keys(answer.organization).sort()).toEqual(["city", "dateFormat", "email", "logo", "name", "phone", "postalCode", "state", "street", "timeFormat", "timeZone"]);
     expect(answer.services).toHaveLength(6);
     expect(Object.keys(answer.services[0]).sort()).toEqual(["bookingMethod", "category", "description", "displayOrder", "durationMinutes", "intake", "name", "priceAmount", "priceLabel", "pricingModel", "slug", "visibility"]);
     expect(answer.version.number).toBe(1);

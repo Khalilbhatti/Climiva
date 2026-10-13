@@ -54,7 +54,8 @@ export const businessHoursByWeekday: Readonly<Record<number, { open: string; clo
 /**
  * What Settings holds for the Apex business, built from the records above, so a test of the Settings rules starts from the same
  * business the database does. Test baseline only: the application builds each business's Settings from that business's own rows
- * (src/server/workspace.ts). The reference crest is the one the sample workspace shows (src/server/sample-workspace.ts).
+ * (src/server/workspace.ts). The logo is not part of it: it is an Asset (a row and a stored file) that the seed stores for Apex from
+ * APEX_CREST_FILE (seed-lib ensureSampleLogo), so a test of the Settings rules does not start from a file that may not exist.
  */
 export const apexSettings: SettingsData = {
   business: {
@@ -64,7 +65,7 @@ export const apexSettings: SettingsData = {
     address: { ...business.address },
   },
   hours: businessHoursByWeekday,
-  branding: { logo: { fileName: "apex-climate-crest-revised.svg" }, accent: DEFAULT_ACCENT },
+  branding: { logo: null, accent: DEFAULT_ACCENT },
   preferences: {
     timeZone: getTimeZone(BUSINESS_TIME_ZONE).id,
     currency: "USD",
@@ -73,3 +74,6 @@ export const apexSettings: SettingsData = {
   },
   profile: { name: currentUser.name, role: currentUser.role },
 };
+
+/** The name the Apex reference crest is shown under in Settings (the seed stores it as the Apex logo). */
+export const APEX_CREST_FILE_NAME = "apex-climate-crest-revised.svg";

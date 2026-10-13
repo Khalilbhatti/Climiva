@@ -66,26 +66,33 @@ test.describe("development leftovers", () => {
     const hits: string[] = [];
     // The server layer reports a failure it has handled with console.error (that is what an operator reads); nothing in the browser code does.
     const isServerSide = (file: string) => /src[\\/](server|db)[\\/]|src[\\/]lib[\\/]auth\.ts$/.test(file);
+    // The one exception is the Asset log (src/server/asset-log.ts): the single place that writes the upload lifecycle, in one format, and says
+    // nothing about bytes, names, keys or credentials. It may write information as well as errors; no other file may.
+    const isAssetLog = (file: string) => /src[\\/]server[\\/]asset-log\.ts$/.test(file);
     for (const file of sourceFiles("src")) {
       const raw = readFileSync(file, "utf8");
-      const consoleCall = isServerSide(file) ? /console\.(log|debug|info|warn|trace)\(|\bdebugger\b/ : /console\.(log|debug|info|warn|error|trace)\(|\bdebugger\b/;
+      const consoleCall = isAssetLog(file)
+        ? /console\.(log|debug|warn|trace)\(|\bdebugger\b/
+        : isServerSide(file)
+          ? /console\.(log|debug|info|warn|trace)\(|\bdebugger\b/
+          : /console\.(log|debug|info|warn|error|trace)\(|\bdebugger\b/;
       if (consoleCall.test(stripComments(raw))) hits.push(`${file}: console/debugger`);
       if (/\b(TODO|FIXME|HACK|XXX)\b/.test(raw)) hits.push(`${file}: work marker`);
     }
     expect(hits).toEqual([]);
   });
 
-  test("lint suppressions are the four justified ones: local object URLs shown with a plain <img>, and one remount after hydration", () => {
+  test("lint suppressions are the four justified ones: a stored logo (or a local preview) shown with a plain <img>, the avatar, and one remount after hydration", () => {
     const suppressions: string[] = [];
     for (const file of sourceFiles("src")) {
       const raw = readFileSync(file, "utf8");
       for (const match of raw.matchAll(/eslint-disable[^\n]*|@ts-(ignore|expect-error|nocheck)[^\n]*/g)) suppressions.push(`${file.replace(/\\/g, "/")}: ${match[0].replace(/\s*\*\/\}?\s*$/, "").trim()}`);
     }
     expect(suppressions.sort()).toEqual([
-      "src/components/settings/BrandMark.tsx: eslint-disable-next-line @next/next/no-img-element",
       "src/components/settings/BrandingForm.tsx: eslint-disable-next-line @next/next/no-img-element",
       "src/components/settings/SettingsProvider.tsx: eslint-disable-next-line react-hooks/set-state-in-effect -- the remount is the point: it re-renders every date in the saved style",
       "src/components/ui/Avatar.tsx: eslint-disable-next-line @next/next/no-img-element",
+      "src/components/website/BrandMark.tsx: eslint-disable-next-line @next/next/no-img-element",
     ]);
   });
 
@@ -185,9 +192,11 @@ test.describe("dependencies", () => {
     for (const script of ["dev", "build", "start", "lint", "typecheck", "test:e2e"]) expect(manifest.scripts[script], script).toBeTruthy();
   });
 
-  test("the SaaS stack is exactly PostgreSQL, Drizzle and Better Auth: no backend-as-a-service, other database client, payment, cloud or analytics SDK", () => {
+  test("the SaaS stack is exactly PostgreSQL, Drizzle and Better Auth, with one cloud SDK (the S3 client behind the storage seam) and the image library: no backend-as-a-service, other database client, payment or analytics SDK", () => {
     const names = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies });
-    for (const required of ["pg", "drizzle-orm", "drizzle-kit", "better-auth"]) expect(names, required).toContain(required);
-    expect(names.join(" ")).not.toMatch(/prisma|mongoose|mysql|sqlite|supabase|firebase|next-auth|clerk|auth0|stripe|paypal|sentry|segment|mixpanel|posthog|amplitude|axios|swr|react-query|redux|zustand|aws-sdk|@aws-sdk|redis|bullmq|ioredis/i);
+    for (const required of ["pg", "drizzle-orm", "drizzle-kit", "better-auth", "sharp", "@aws-sdk/client-s3"]) expect(names, required).toContain(required);
+    // The AWS SDK is allowed as exactly one package, and only src/storage/s3.ts imports it (assets-storage.spec.ts holds that).
+    expect(names.filter((name) => /aws-sdk/i.test(name))).toEqual(["@aws-sdk/client-s3"]);
+    expect(names.join(" ")).not.toMatch(/prisma|mongoose|mysql|sqlite|supabase|firebase|next-auth|clerk|auth0|stripe|paypal|sentry|segment|mixpanel|posthog|amplitude|axios|swr|react-query|redux|zustand|redis|bullmq|ioredis/i);
   });
 });

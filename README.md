@@ -27,8 +27,8 @@ workspace switching, and a PostgreSQL database that keeps businesses apart. Ever
 - **Not built:** email (so no verification, password reset or invitations by email), billing for Climvia itself, a payment
   processor, delivery of campaigns (a campaign is recorded as sent; no email or SMS provider exists) or of the Website's
   contact form, real domain connection (a custom domain is only a record; nothing resolves a `<site>.climvia.com` host yet),
-  file storage (logo and photo last for the session; **object storage is required for durable uploaded logos and assets**),
-  image uploads, deployment to AWS.
+  a profile photo that lasts beyond the visit, an image or media library, private files, a CDN, real S3 (the S3 driver is written
+  and tested against a fake client, never against AWS), deployment to AWS.
 
 Read [docs/saas-architecture.md](docs/saas-architecture.md) first: it explains the model, the isolation rules and what comes next.
 [docs/production-handoff.md](docs/production-handoff.md) covers the front end.
@@ -41,10 +41,11 @@ Read [docs/saas-architecture.md](docs/saas-architecture.md) first: it explains t
 | UI | Tailwind CSS 4, lucide-react icons, Inter (self-hosted) |
 | Database | PostgreSQL 17, Drizzle ORM + drizzle-kit migrations, `pg` |
 | Auth | Better Auth (email + password, sessions in PostgreSQL) |
+| Files | The business logo, behind a storage seam: a local directory in development, a private S3 bucket (`@aws-sdk/client-s3`) in production; `sharp` validates and re-encodes images |
 | Local services | Docker Compose (PostgreSQL only; the app runs on your machine) |
 | Tests | Playwright 1.63 (Chromium) against the production build and a dedicated test database |
 
-No UI kit, state library or analytics client. No Supabase, Firebase, Clerk or Auth0, and no cloud SDK.
+No UI kit, state library or analytics client. No Supabase, Firebase, Clerk or Auth0, and no cloud SDK but the S3 client behind the storage seam.
 
 ## Getting started
 
@@ -61,6 +62,19 @@ npm run dev                       # http://localhost:3000
 
 `docker compose down` stops the database and keeps its data; `docker compose down -v` deletes it.
 Set `BETTER_AUTH_URL` in `.env` to the origin you open in the browser (for example `http://localhost:3000`).
+
+### Uploaded files (the business logo)
+
+Settings → Branding stores the logo. In development and in the tests it is kept in a **local directory** and needs no AWS account:
+
+| | |
+| --- | --- |
+| `ASSET_STORAGE_DRIVER` | `local` (the default outside production) or `s3`. **Required in production.** |
+| `ASSET_LOCAL_DIR` | where the local driver writes. Default `.data/assets`: git-ignored, never under `public/`, never served by path (every file is reached through `/assets/<id>`). In a container it is a mounted volume (`/data/assets`). |
+| `TEST_ASSET_DIR` | the end-to-end tests' own directory (default `.data/assets-test`), recreated with the test database |
+| `AWS_REGION`, `AWS_S3_BUCKET` | the S3 driver (a **private** bucket). Credentials are the AWS default provider chain (an IAM role in production); never put keys in `.env` |
+
+The files are runtime data: back the directory up with the database, and `npm run db:reset` clears it with the database. `sharp` is a native dependency (installed by `npm install`).
 
 ### Database scripts
 
@@ -180,7 +194,7 @@ expiry, business set-up, workspace switching, tenant isolation (through the brow
 the restricted runtime role), Settings persistence, and source-level checks of the server boundaries. Each worker signs
 in as the owner of its own copy of the Apex workspace, restored before every test.
 
-At the last run all 3041 tests passed (92 spec files, about 13 minutes on four workers): the earlier front-end and SaaS tests, none skipped and adapted only where Settings, customers, Services, the team, bookings, jobs, quotes, invoices, payments, maintenance plans, reviews, marketing campaigns, Analytics, the Website and the Marketplace are stored or every page needs a sign-in, plus the operations specs (SQL as the restricted role, bookings, jobs, the schedule, the cross-module checks and the business-time conversions) and the financial specs (money in cents, the payment and invoice rules, SQL as the restricted role with the concurrency tests, the seed round trip, and the record-payment, void and create-invoice flows through the real application) and the maintenance and review specs (the pure rules and totals, SQL as the restricted role with the concurrency tests, the seed round trip, and the create-plan, schedule-visit, reply, edit-reply and request-review flows through the real application) and the marketing and analytics specs (the pure campaign and reporting rules, SQL as the restricted role with the campaign concurrency tests, the seed round trip, and the save-draft, schedule, send, cancel, duplicate, date-range and export flows through the real application) and the website and marketplace specs (the pure section, theme, template and booking rules, SQL as the restricted role and as nobody through the three public functions, publishing's atomicity and concurrency, more than one Site in a business, the Server Actions replayed as a member, as nobody, as another business and six at once, the public pages and what they never show, a visitor's booking, a new business, the built JavaScript, and the seed round trip) and the Website Builder specs (the editing core as pure functions, saving a Draft on PostgreSQL with its revision, stale-tab and concurrency tests, and the Builder in the browser: pages, sections, the theme, Undo and Redo, Publish, the preview sizes, leaving with unsaved work, the inert canvas and accessibility) and the website Template specs (the four definitions and the rows the migration wrote, the Gallery and the preview, choosing a Template with its confirmation and every way of cancelling, a tab that is behind, a member who may only look, the Server Action replayed as nobody, as a member, with forged arguments and as another business, each Template as a visitor gets it on every page at three widths, and the Builder working on each Template) and the tenant-fixture specs (no Client Component reaches a business's sample records through any chain of imports, no business's values are in the source or in the client JavaScript the production build emits, and Apex, Northstar, a business that has just been set up and a visitor to a Site each get only their own values in pages and scripts).
+At the last run all 3156 tests passed (100 spec files, about 13 minutes on four workers): the earlier front-end and SaaS tests, none skipped and adapted only where Settings, customers, Services, the team, bookings, jobs, quotes, invoices, payments, maintenance plans, reviews, marketing campaigns, Analytics, the Website and the Marketplace are stored or every page needs a sign-in, plus the operations specs (SQL as the restricted role, bookings, jobs, the schedule, the cross-module checks and the business-time conversions) and the financial specs (money in cents, the payment and invoice rules, SQL as the restricted role with the concurrency tests, the seed round trip, and the record-payment, void and create-invoice flows through the real application) and the maintenance and review specs (the pure rules and totals, SQL as the restricted role with the concurrency tests, the seed round trip, and the create-plan, schedule-visit, reply, edit-reply and request-review flows through the real application) and the marketing and analytics specs (the pure campaign and reporting rules, SQL as the restricted role with the campaign concurrency tests, the seed round trip, and the save-draft, schedule, send, cancel, duplicate, date-range and export flows through the real application) and the website and marketplace specs (the pure section, theme, template and booking rules, SQL as the restricted role and as nobody through the three public functions, publishing's atomicity and concurrency, more than one Site in a business, the Server Actions replayed as a member, as nobody, as another business and six at once, the public pages and what they never show, a visitor's booking, a new business, the built JavaScript, and the seed round trip) and the Website Builder specs (the editing core as pure functions, saving a Draft on PostgreSQL with its revision, stale-tab and concurrency tests, and the Builder in the browser: pages, sections, the theme, Undo and Redo, Publish, the preview sizes, leaving with unsaved work, the inert canvas and accessibility) and the website Template specs (the four definitions and the rows the migration wrote, the Gallery and the preview, choosing a Template with its confirmation and every way of cancelling, a tab that is behind, a member who may only look, the Server Action replayed as nobody, as a member, with forged arguments and as another business, each Template as a visitor gets it on every page at three widths, and the Builder working on each Template) and the tenant-fixture specs (no Client Component reaches a business's sample records through any chain of imports, no business's values are in the source or in the client JavaScript the production build emits, and Apex, Northstar, a business that has just been set up and a visitor to a Site each get only their own values in pages and scripts) and the asset and branding specs (the storage seam on a local directory and against a fake S3 client, the image checks, the upload endpoint, SQL as the restricted role with the concurrency tests, the public Asset route, Settings → Branding in the browser, the logo on each Template and in the Builder and the listing, and a restart of the server that keeps the logo).
 See [docs/production-handoff.md](docs/production-handoff.md#testing-status) for what each group covers.
 
 ## Deploying

@@ -4,13 +4,14 @@ import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import { CalendarCheck, Clock, Globe, Mail, MapPin, MessageSquare, Phone, Snowflake, type LucideIcon } from "lucide-react";
 import { buttonClasses } from "@/components/ui/Button";
+import { BrandMark } from "@/components/website/BrandMark";
 import { bookingHrefIn, typeHrefIn, type SiteView } from "@/components/website/site-view";
 import type { AppHref } from "@/config/routes";
 import type { ContactField, CoverId, ListingAction } from "@/data/marketplace";
 import { BOOKING_METHOD_ACTION, formatDuration, formatServicePrice, type Service } from "@/data/services";
 import type { BusinessInfo } from "@/data/settings";
 import { cn } from "@/lib/cn";
-import { formatCityStateZip, getInitials, toTelHref } from "@/lib/format";
+import { formatCityStateZip, toTelHref } from "@/lib/format";
 import type { HoursRow } from "@/lib/settings-state";
 
 const COVER_CLASS: Record<CoverId, string> = {
@@ -37,6 +38,8 @@ export type ListingViewData = {
   contact: Record<ContactField, boolean>;
   actions: Record<ListingAction, boolean>;
   business: BusinessInfo;
+  /** The business's logo, drawn in place of its initials; the same one its website draws (its Branding), or null. */
+  logo: { src: string } | null;
   hours: readonly HoursRow[];
   /** The Services the listing shows, in order. */
   services: readonly Service[];
@@ -139,9 +142,7 @@ export function ListingView({ data, variant, style, className }: ListingViewProp
       <CoverArt cover={data.cover} className={page ? "h-40 @2xl:h-56" : "h-28"} />
       <div className="space-y-5 p-5 @2xl:p-6">
         <header className="flex items-start gap-4">
-          <span aria-hidden className="flex size-12 shrink-0 items-center justify-center rounded-card bg-primary text-base font-bold text-white">
-            {getInitials(business.name)}
-          </span>
+          <BrandMark name={business.name} logo={data.logo} tile="size-12 rounded-card text-base font-bold" image="h-12 max-w-48 rounded-card" />
           <div className="min-w-0">
             <Name className="text-lg font-bold tracking-tight text-ink @2xl:text-xl">{business.name}</Name>
             {data.contact.address && (

@@ -16,6 +16,11 @@ import type { SiteTheme } from "@/lib/site-theme";
  */
 export type SiteView = {
   business: BusinessInfo;
+  /**
+   * The business's logo, as an address on this site, or null (its initials are drawn). It is the business's, read when the page is drawn: it is not
+   * part of the Site Version, so changing it needs no Publish and a Template does not reset it.
+   */
+  logo: { src: string } | null;
   hours: readonly HoursRow[];
   /** The business's Services that may be shown publicly; a section shows the ones the version's settings choose. */
   services: readonly Service[];

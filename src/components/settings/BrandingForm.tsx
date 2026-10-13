@@ -1,41 +1,41 @@
 "use client";
 
 import { useRef, useState, type ChangeEvent } from "react";
-import { Snowflake, Trash2, Upload } from "lucide-react";
+import { Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { fieldClasses } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
-import { ACCENT_SWATCHES, DEFAULT_ACCENT, LOGO_TYPES, MAX_LOGO_BYTES, type Branding, type BrandLogo } from "@/data/settings";
+import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
+import { ACCENT_SWATCHES, DEFAULT_ACCENT, type Branding, type BrandLogo } from "@/data/settings";
+import { checkLogoFile, LOGO_ACCEPT_ATTRIBUTE, UPLOAD_FAILURES } from "@/lib/asset-rules";
 import { cn } from "@/lib/cn";
 import { getInitials } from "@/lib/format";
 import { normalizeAccent, validateAccent } from "@/lib/settings-state";
 import { AsidePanel, SettingsForm, useSettingsDraft } from "./SettingsForm";
-import { useSettings } from "./SettingsProvider";
+import { useSettings, type LogoChoice } from "./SettingsProvider";
 
-const LOGO_ERROR = "Choose an SVG, PNG or JPG file up to 4 MB.";
+/**
+ * The accent is edited as text so a half-typed value is not rejected; it is read back as a colour on save. A logo the person has just chosen
+ * is a `file` and a local preview (`logo.src` is a browser object URL) until it is saved: the server stores it, and what the form shows after
+ * that is the stored logo. The `file` is what is sent; nothing in the draft is ever what a page of the website draws.
+ */
+type BrandingDraft = { logo: BrandLogo | null; file: File | null; accentInput: string };
 
-/** The accent is edited as text so a half-typed value is not rejected; it is read back as a colour on save. */
-type BrandingDraft = { logo: BrandLogo | null; accentInput: string };
-
-const toDraft = (branding: Branding): BrandingDraft => ({ logo: branding.logo, accentInput: branding.accent ?? "" });
+const toDraft = (branding: Branding): BrandingDraft => ({ logo: branding.logo, file: null, accentInput: branding.accent ?? "" });
 
 function isSameDraft(draft: BrandingDraft, saved: BrandingDraft): boolean {
   const accent = normalizeAccent(draft.accentInput);
   const sameAccent = accent === undefined ? draft.accentInput.trim() === saved.accentInput : accent === normalizeAccent(saved.accentInput);
-  return sameAccent && draft.logo?.fileName === saved.logo?.fileName && draft.logo?.src === saved.logo?.src;
+  return sameAccent && draft.file === null && draft.logo?.src === saved.logo?.src;
 }
 
-/** The logo as a tile: the file chosen in Settings, or the built-in crest the baseline names. */
+/** The logo as a tile. */
 function LogoTile({ logo, size }: { logo: BrandLogo; size: string }) {
-  return logo.src ? (
+  return (
     <span aria-hidden className={cn("flex items-center justify-center overflow-hidden rounded-card bg-surface ring-1 ring-line", size)}>
-      {/* A local object URL chosen in this session, so there is nothing for next/image to optimise. */}
+      {/* The stored logo (or, before it is saved, a local preview of the chosen file), so there is nothing for next/image to optimise. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={logo.src} alt="" className="size-full object-contain" />
-    </span>
-  ) : (
-    <span aria-hidden className={cn("flex items-center justify-center rounded-card bg-primary text-white", size)}>
-      <Snowflake className="size-1/2" />
     </span>
   );
 }
@@ -44,9 +44,10 @@ function LogoTile({ logo, size }: { logo: BrandLogo; size: string }) {
 export function BrandingForm() {
   const { settings, saveBranding } = useSettings();
   const { toast } = useToast();
+  const { canEditSettings } = useWorkspace();
   const saved = settings.branding;
   const businessName = settings.business.name;
-  const { draft, setDraft, dirty, showErrors, setShowErrors, guard, discard } = useSettingsDraft<BrandingDraft>(
+  const { draft, setDraft, dirty, showErrors, setShowErrors, problem, setProblem, guard, discard } = useSettingsDraft<BrandingDraft>(
     toDraft(saved),
     isSameDraft,
     "branding",
@@ -61,32 +62,44 @@ export function BrandingForm() {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    if (!(LOGO_TYPES as readonly string[]).includes(file.type) || file.size > MAX_LOGO_BYTES) {
-      setLogoError(LOGO_ERROR);
+    // A first look, so an obvious mistake is told at once. The server reads the file itself and decides.
+    const refused = checkLogoFile(file);
+    if (refused) {
+      setLogoError(UPLOAD_FAILURES[refused]);
       return;
     }
     setLogoError(undefined);
     releaseDraftLogo();
-    // An object URL lives only in this browser session: it is not a stored file. Object storage required for durable uploaded logos/assets,
-    // so no public page (the Website, the Marketplace listing) shows one; they show the business's initials.
-    setDraft({ ...draft, logo: { fileName: file.name, src: URL.createObjectURL(file) } });
+    // The preview is an object URL: it lives in this browser only, is never saved, and is never shown to a visitor.
+    setDraft({ ...draft, file, logo: { fileName: file.name, src: URL.createObjectURL(file) } });
   }
 
-  /** A file chosen but not saved has no other owner, so its object URL is released when it is replaced or discarded. */
+  /** A file chosen but not saved has no other owner, so its object URL is released when it is replaced, discarded or saved. */
   function releaseDraftLogo() {
-    if (draft.logo?.src && draft.logo.src !== saved.logo?.src) URL.revokeObjectURL(draft.logo.src);
+    if (draft.file && draft.logo?.src) URL.revokeObjectURL(draft.logo.src);
   }
 
-  function save() {
+  function logoChoice(): LogoChoice {
+    if (draft.file) return { kind: "replace", file: draft.file };
+    return draft.logo === null && saved.logo !== null ? { kind: "remove" } : { kind: "keep" };
+  }
+
+  async function save() {
+    setProblem(undefined);
     if (accentError) {
       setShowErrors(true);
       return false;
     }
-    const next: Branding = { logo: draft.logo, accent: accent ?? null };
-    saveBranding(next);
-    setDraft(toDraft(next));
+    const result = await saveBranding(accent ?? null, logoChoice());
+    if (!result.ok) {
+      setProblem(result.error);
+      return true;
+    }
+    releaseDraftLogo();
+    setLogoError(undefined);
+    setDraft(toDraft(result.branding));
     setShowErrors(false);
-    toast("Branding saved for this session. Reloading restores the standard branding.");
+    toast("Branding saved.");
     return true;
   }
 
@@ -98,6 +111,8 @@ export function BrandingForm() {
       dirty={dirty}
       saveLabel="Save branding"
       onSave={save}
+      problem={problem}
+      readOnly={!canEditSettings}
       onDiscard={() =>
         discard(() => {
           releaseDraftLogo();
@@ -112,7 +127,7 @@ export function BrandingForm() {
           <h3 id="logo-heading" className="text-base font-semibold text-ink">
             Business logo
           </h3>
-          <p className="mt-0.5 text-sm text-ink-muted">Recommended SVG or high-resolution PNG with transparent backing.</p>
+          <p className="mt-0.5 text-sm text-ink-muted">Recommended high-resolution PNG with transparent backing. PNG, JPG or WebP.</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="rounded-card bg-surface-low p-4">
@@ -142,7 +157,7 @@ export function BrandingForm() {
           <input
             ref={fileInput}
             type="file"
-            accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg"
+            accept={LOGO_ACCEPT_ATTRIBUTE}
             aria-label="Choose a logo file"
             className="sr-only"
             tabIndex={-1}
@@ -158,14 +173,14 @@ export function BrandingForm() {
               onClick={() => {
                 releaseDraftLogo();
                 setLogoError(undefined);
-                setDraft({ ...draft, logo: null });
+                setDraft({ ...draft, file: null, logo: null });
               }}
             >
               <Trash2 aria-hidden className="size-4" />
               Remove logo
             </Button>
           )}
-          <span className="ml-auto text-xs text-ink-muted">Max size: 4MB</span>
+          <span className="ml-auto text-xs text-ink-muted">Max size: 5MB</span>
         </div>
         {logoError && (
           <p role="alert" className="text-xs text-danger">

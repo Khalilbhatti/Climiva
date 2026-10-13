@@ -1,4 +1,5 @@
 import type { Page } from "playwright/test";
+import { picture } from "./assets-helpers";
 import { expect, test } from "./fixtures";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
@@ -377,10 +378,10 @@ test.describe("Branding", () => {
   test("opens on the baseline logo reference and brand accent", async ({ page }) => {
     await page.goto("/settings/branding");
     await expect(page.getByText("Manage the core business identity used across supported Climvia customer-facing experiences.")).toBeVisible();
-    await expect(page.getByText("Recommended SVG or high-resolution PNG with transparent backing.")).toBeVisible();
+    await expect(page.getByText("Recommended high-resolution PNG with transparent backing. PNG, JPG or WebP.")).toBeVisible();
     await expect(page.getByText("apex-climate-crest-revised.svg")).toBeVisible();
     await expect(page.getByText("Used when no business logo is available.")).toBeVisible();
-    await expect(page.getByText("Max size: 4MB")).toBeVisible();
+    await expect(page.getByText("Max size: 5MB")).toBeVisible();
     await expect(page.getByText("Optional", { exact: true })).toBeVisible();
     await expect(page.getByLabel("HEX")).toHaveValue("#0D5C63");
     const identity = page.getByRole("region", { name: "Brand identity" });
@@ -395,11 +396,11 @@ test.describe("Branding", () => {
 
   test("a chosen logo replaces the reference, can be saved, and Remove logo falls back to the initials", async ({ page }) => {
     await page.goto("/settings/branding");
-    await page.getByLabel("Choose a logo file").setInputFiles({ name: "new-crest.png", mimeType: "image/png", buffer: Buffer.from("not-a-real-image") });
+    await page.getByLabel("Choose a logo file").setInputFiles({ name: "new-crest.png", mimeType: "image/png", buffer: await picture("png", 120, 80) });
     await expect(page.getByText("new-crest.png")).toBeVisible();
     await expect(unsaved(page)).toContainText("You have unsaved changes to your branding.");
     await saveButton(page, "Save branding").click();
-    await expect(toast(page)).toContainText("Branding saved for this session.");
+    await expect(toast(page)).toContainText("Branding saved.");
     await expect(page.getByRole("region", { name: "Brand identity" })).toContainText("Logo: Active");
 
     await page.getByRole("button", { name: "Remove logo" }).click();
@@ -409,12 +410,15 @@ test.describe("Branding", () => {
     await expect(page.getByRole("button", { name: "Add logo" })).toBeVisible();
   });
 
-  test("only SVG, PNG or JPG up to 4 MB are accepted", async ({ page }) => {
+  test("only PNG, JPG or WebP up to 5 MB are accepted", async ({ page }) => {
     await page.goto("/settings/branding");
     await page.getByLabel("Choose a logo file").setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("x") });
-    await expect(page.getByRole("alert").filter({ hasText: "Choose an SVG, PNG or JPG file up to 4 MB." })).toBeVisible();
-    await page.getByLabel("Choose a logo file").setInputFiles({ name: "huge.png", mimeType: "image/png", buffer: Buffer.alloc(4 * 1024 * 1024 + 1) });
-    await expect(page.getByRole("alert").filter({ hasText: "Choose an SVG, PNG or JPG file up to 4 MB." })).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: "Choose a PNG, JPG or WebP image." })).toBeVisible();
+    // SVG is refused on purpose: it is a document that can carry script.
+    await page.getByLabel("Choose a logo file").setInputFiles({ name: "crest.svg", mimeType: "image/svg+xml", buffer: Buffer.from("<svg/>") });
+    await expect(page.getByRole("alert").filter({ hasText: "Choose a PNG, JPG or WebP image." })).toBeVisible();
+    await page.getByLabel("Choose a logo file").setInputFiles({ name: "huge.png", mimeType: "image/png", buffer: Buffer.alloc(5 * 1024 * 1024 + 1) });
+    await expect(page.getByRole("alert").filter({ hasText: "That image is too large. Use a file up to 5 MB, no larger than 4096 × 4096 pixels." })).toBeVisible();
     await expect(unsaved(page)).toHaveCount(0);
     await expect(page.getByText("apex-climate-crest-revised.svg")).toBeVisible();
   });
@@ -440,7 +444,7 @@ test.describe("Branding", () => {
     const shellColour = () => primaryNav(page).locator("a[aria-current='page']").evaluate((element) => getComputedStyle(element).backgroundColor);
     await page.goto("/settings/branding");
     await page.getByLabel("HEX").fill("#8B3A1E");
-    await saveButton(page, "Save branding").click();
+    await saveAndWait(page, "Save branding");
     const settingsShell = await shellColour();
     expect(settingsShell).toBe("rgb(13, 92, 99)"); // still the Climvia teal
 
@@ -460,11 +464,21 @@ test.describe("Branding", () => {
     expect(await shellColour()).toBe("rgb(13, 92, 99)");
   });
 
-  test("a saved logo stays in this session: the Website and the Marketplace listing show initials until object storage exists", async ({ page }) => {
+  test("a saved logo is the logo of the Website and of the Marketplace listing, drawn from the stored file", async ({ page }) => {
     await page.goto("/settings/branding");
-    await page.getByLabel("Choose a logo file").setInputFiles({ name: "new-crest.png", mimeType: "image/png", buffer: Buffer.from("not-a-real-image") });
-    await saveButton(page, "Save branding").click();
-    // Uploaded files have nowhere durable to live yet, so a public page never shows one: it shows the business's initials.
+    await page.getByLabel("Choose a logo file").setInputFiles({ name: "new-crest.png", mimeType: "image/png", buffer: await picture("png", 120, 80) });
+    await saveAndWait(page, "Save branding");
+    const stored = await page.locator("section[aria-labelledby='logo-heading'] img").getAttribute("src");
+    expect(stored).toMatch(/^\/assets\/[0-9a-f-]{36}$/);
+    // The Website (the signed-in preview) and the listing draw the same stored logo, not a local copy and not the business's initials.
+    await go(page, "/website/preview");
+    await expect(page.getByTestId("site-frame").locator("header img[data-site-logo]")).toHaveAttribute("src", stored!);
+    await go(page, "/marketplace/preview");
+    await expect(page.getByRole("article").locator("img[data-site-logo]")).toHaveAttribute("src", stored!);
+    // And with the logo removed they fall back to the initials.
+    await go(page, "/settings/branding");
+    await page.getByRole("button", { name: "Remove logo" }).click();
+    await saveAndWait(page, "Save branding");
     await go(page, "/website/preview");
     await expect(page.getByTestId("site-frame").locator("header img")).toHaveCount(0);
     await expect(page.getByTestId("site-frame").locator("header")).toContainText("AC");

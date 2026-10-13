@@ -348,9 +348,22 @@ test.describe("tenant data is never cached or prerendered", () => {
     }
   });
 
-  test("the app has exactly one API route: Better Auth's", () => {
+  test("the app has exactly three route handlers: Better Auth's, the Branding upload and the public logo, and each keeps to its own line", () => {
     const routes = walk(join(SRC, "app"), (path) => /route\.(ts|tsx)$/.test(path)).map(posix);
-    expect(routes).toEqual(["src/app/api/auth/[...all]/route.ts"]);
+    expect(routes).toEqual(["src/app/(public)/assets/[assetId]/route.ts", "src/app/api/auth/[...all]/route.ts", "src/app/api/branding/route.ts"]);
+
+    // The upload is the only one that takes a file, and it does everything that needs no body before it reads one: the request must come from
+    // this site's own pages, the caller is a verified member who may manage settings, and only then is the body read, under a byte limit.
+    const upload = read(join(SRC, "app", "api", "branding", "route.ts")).replace(/\/\*[\s\S]*?\*\//g, "");
+    const order = ["isSameOrigin(request)", "resolveWorkspace()", 'can(state.context.role, "settings:manage")', "readLimited(request, MAX_BODY)", "formData()"].map((needle) => upload.indexOf(needle));
+    expect(order.every((position) => position > 0), "every step is present").toBe(true);
+    expect([...order].sort((a, b) => a - b), "and they run in this order").toEqual(order);
+    expect(upload).not.toMatch(/organization_?id|organizationId\s*[:=]\s*(form|body|request)|searchParams/i);
+
+    // The public logo route reads no session, cookie, workspace or tenant context: it asks the database's public function and the store.
+    const logo = read(join(SRC, "app", "(public)", "assets", "[assetId]", "route.ts")).replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(logo).not.toMatch(/cookies\(|headers\(|getSessionUser|resolveWorkspace|withTenant|withUser|session/i);
+    expect(logo).toMatch(/loadPublicAsset\(/);
   });
 
   test("no module-level variable in src/server holds tenant rows between requests", () => {
@@ -448,14 +461,14 @@ test.describe("database access", () => {
     expect(users).toEqual(["src/db/index.ts", "src/db/public-queries.ts", "src/db/tenant.ts", "src/lib/auth.ts"]);
   });
 
-  test("the visitor's door runs only the three public database functions: no table, no tenant context, no organization", () => {
+  test("the visitor's door runs only the four public database functions: no table, no tenant context, no organization", () => {
     const source = read(join(SRC, "db", "public-queries.ts")).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     const calls = [...source.matchAll(/select (app_\w+)\(/g)].map(([, name]) => name).sort();
-    expect(calls).toEqual(["app_public_create_booking", "app_public_listing", "app_public_site"]);
+    expect(calls).toEqual(["app_public_asset", "app_public_create_booking", "app_public_listing", "app_public_site"]);
     expect(source).not.toMatch(/@\/db\/schema|\.(select|insert|update|delete)\(|\.from\(|set_config|withTenant|runAsTenant|organization_?id/i);
-    // Only the server's public routes and the visitor's booking action import it.
+    // Only the server's public routes, the public logo route and the visitor's booking action import it.
     const importers = sourceFiles.filter((path) => importsOf(read(path)).some((specifier) => /public-queries$/.test(specifier))).map(posix).sort();
-    expect(importers).toEqual(["src/server/actions/public-booking.ts", "src/server/public-site.ts"]);
+    expect(importers).toEqual(["src/app/(public)/assets/[assetId]/route.ts", "src/server/actions/public-booking.ts", "src/server/public-site.ts"]);
     // The owner credential is never reachable from a request handler (this file included).
     expect(source).not.toContain("DATABASE_ADMIN_URL");
   });
@@ -601,7 +614,7 @@ test.describe("the documentation covers the architecture", () => {
       /Phase 16 changed/,
     ];
     for (const topic of required) expect(headings.some((heading) => topic.test(heading)), String(topic)).toBe(true);
-    for (const expected of ["Object storage required for durable uploaded logos/assets", "SELECT … FOR UPDATE", "SECURITY DEFINER", "snapshot-versioned", "Docker verification is required before AWS deployment"]) {
+    for (const expected of ["Durable assets and Organization Branding", "private S3 bucket", "app_public_asset", "SELECT … FOR UPDATE", "SECURITY DEFINER", "snapshot-versioned", "Docker verification is required before AWS deployment"]) {
       expect(text, expected).toContain(expected);
     }
   });

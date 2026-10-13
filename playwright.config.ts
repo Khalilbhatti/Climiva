@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { defineConfig } from "playwright/test";
 
 // The tests need the same secrets the app does (the database, Better Auth). Node reads `.env` itself.
@@ -21,6 +22,10 @@ function inTestDatabase(variable: string): string {
 process.env.DATABASE_URL = inTestDatabase("DATABASE_URL");
 process.env.DATABASE_ADMIN_URL = inTestDatabase("DATABASE_ADMIN_URL");
 process.env.BETTER_AUTH_URL = ORIGIN;
+// Uploaded files go to a directory of the suite's own (recreated with the database by db:test:prepare, which uses the same one), never the
+// development one. The server and the workers must agree on it, so it is absolute and set here once.
+process.env.ASSET_STORAGE_DRIVER = "local";
+process.env.ASSET_LOCAL_DIR = resolve(process.env.TEST_ASSET_DIR ?? join(".data", "assets-test"));
 
 /**
  * Browser tests run against a production build, the same thing that ships.

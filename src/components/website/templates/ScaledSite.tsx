@@ -42,6 +42,8 @@ function useTemplateView(content: SiteContent, version: ReturnType<typeof versio
   return useMemo(
     () => ({
       business: DEMO_BUSINESS,
+      // A Template is drawn with a made-up business, which has no logo: the gallery shows the design, never any business's own mark.
+      logo: null,
       hours: DEMO_HOURS,
       services: DEMO_SERVICES,
       display: content.settings.serviceDisplay,

@@ -8,6 +8,9 @@
  * `fixture_set` is the transitional switch for modules that have not moved to PostgreSQL yet: only an organization
  * flagged with the sample dataset sees that sample content (see docs/saas-architecture.md, "Transitional fixtures").
  * It is not authorization and it is removed once those modules have real tables.
+ *
+ * A business's logo and brand accent are not columns here: they are its Branding (`organization_branding`, src/db/schema/assets), and the logo is
+ * an Asset, so there is no URL on this row to go stale or to point at someone else's file.
  */
 import { sql } from "drizzle-orm";
 import { check, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
@@ -32,9 +35,6 @@ export const organizations = pgTable(
     currency: text("currency").notNull().default("USD"),
     dateFormat: text("date_format").notNull().default("mdy-short"),
     timeFormat: text("time_format").notNull().default("12h"),
-    logoUrl: text("logo_url"),
-    /** "#RRGGBB" or null for the Climvia default. */
-    brandAccent: text("brand_accent"),
     fixtureSet: text("fixture_set"),
     onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -47,7 +47,6 @@ export const organizations = pgTable(
     check("organizations_currency_code", sql`${table.currency} ~ '^[A-Z]{3}$'`),
     check("organizations_date_format", sql`${table.dateFormat} in ('mdy-short', 'mdy-numeric', 'dmy-numeric', 'ymd-iso')`),
     check("organizations_time_format", sql`${table.timeFormat} in ('12h', '24h')`),
-    check("organizations_brand_accent", sql`${table.brandAccent} is null or ${table.brandAccent} ~ '^#[0-9A-F]{6}$'`),
   ],
 ).enableRLS();
 

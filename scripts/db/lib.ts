@@ -3,10 +3,26 @@
  * runtime role and seed data. The running application never uses it.
  */
 import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { join, relative, resolve, isAbsolute } from "node:path";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 import * as schema from "../../src/db/schema";
+
+/** Where the end-to-end tests keep the files their database refers to: their own directory, never the development one. */
+export const TEST_ASSET_DIR = process.env.TEST_ASSET_DIR ?? join(".data", "assets-test");
+
+/**
+ * Empty a LOCAL asset directory, because the database that referred to its files is being recreated (a rebuilt database must not find
+ * files that belong to rows it no longer has, and a seeded one must not refer to files that are missing). Refuses any directory outside
+ * the repository's `.data/`, so a stray setting can never point this at something else.
+ */
+export async function clearLocalAssetDirectory(directory: string): Promise<void> {
+  const inside = relative(resolve(".data"), resolve(directory));
+  if (inside === "" || inside.startsWith("..") || isAbsolute(inside)) throw new Error(`Refusing to clear ${directory}: only directories inside .data/ are cleared.`);
+  await rm(resolve(directory), { recursive: true, force: true });
+}
 
 /** The restricted runtime role's name is fixed: the migrations grant privileges to it by name. */
 export const APP_ROLE = "climvia_app";

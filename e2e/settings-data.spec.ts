@@ -86,7 +86,8 @@ test.describe("baseline: the canonical records, not a copy", () => {
   test("Preferences, Branding and My profile start from the approved values", () => {
     expect(apexSettings.preferences).toEqual({ timeZone: "America/Chicago", currency: "USD", dateFormat: "mdy-short", timeFormat: "12h" });
     expect(BUSINESS_TIME_ZONE).toBe("America/Chicago");
-    expect(apexSettings.branding).toEqual({ logo: { fileName: "apex-climate-crest-revised.svg" }, accent: "#0D5C63" });
+    // The logo is an Asset (a stored file the seed writes), not part of this pure baseline; the accent is the Climvia teal.
+    expect(apexSettings.branding).toEqual({ logo: null, accent: "#0D5C63" });
     expect(apexSettings.profile).toEqual({ name: "Alex Morgan", role: "Operations Lead" });
     expect(apexSettings.profile).toMatchObject(currentUser);
     // No email, password or sign-in fields exist on the profile.

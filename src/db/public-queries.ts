@@ -2,12 +2,13 @@
  * The PUBLIC read and write paths: what a visitor without a session can reach.
  *
  * A visitor has no session, no membership and no organization, so none of the tenant queries (which run inside `withTenant`, under Row
- * Level Security) apply to them. They go through three SQL functions (migration 0013), which are the only place a request with no
+ * Level Security) apply to them. They go through four SQL functions (migrations 0013 and 0018), which are the only place a request with no
  * membership touches tenant rows:
  *
  *   app_public_site(platform_slug, page_slug)   a PUBLISHED site as a visitor sees it
  *   app_public_listing(public_slug)             a PUBLISHED Marketplace listing, showing only what it switches on
  *   app_public_create_booking(...)              one booking of source "Website" for a Service the site's business offers online
+ *   app_public_asset(asset_id)                  where a business's CURRENT logo is stored (migration 0018), for the route that serves it
  *
  * The functions take a PUBLIC IDENTITY, find the owning organization themselves, and return a small projection built field by field. They
  * run as the runtime role with no tenant context: nothing here uses an organization id, and the runtime role has no more privilege than
@@ -18,6 +19,7 @@
  */
 import { sql } from "drizzle-orm";
 import type { PublicListingData, PublicNavPage, PublicPage, PublicSite } from "@/data/public-site";
+import { assetUrl } from "@/lib/asset-rules";
 import { SERVICE_CATEGORIES, type BookingMethod, type IntakeQuestion, type Service, type ServiceCategory, type ServicePricing, type ServiceVisibility } from "@/data/services";
 import type { BusinessInfo } from "@/data/settings";
 import { PAGE_TYPES, type PageType, type SectionModel, type VersionSettings } from "@/data/website";
@@ -28,6 +30,10 @@ import { getDb } from "./index";
 import { weeklyHoursFromRows } from "./settings-mappers";
 
 type Json = Record<string, unknown>;
+
+/** A UUID in the form the database writes it. (Not db/tenant's `isUuid`: nothing on the public path imports the tenant-transaction module.) */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (value: unknown): value is string => typeof value === "string" && UUID.test(value);
 
 const isJson = (value: unknown): value is Json => typeof value === "object" && value !== null && !Array.isArray(value);
 const str = (value: unknown, fallback = ""): string => (typeof value === "string" ? value : fallback);
@@ -105,6 +111,11 @@ function businessOf(raw: Json): BusinessInfo {
   };
 }
 
+/** The business's logo from a projection: its address on this site, or null. Only an id is in the projection; the address is built here. */
+function logoOf(raw: unknown): { src: string } | null {
+  return isJson(raw) && isUuid(raw.assetId) ? { src: assetUrl(raw.assetId) } : null;
+}
+
 function settingsOf(raw: unknown): VersionSettings {
   const display = isJson(raw) && isJson(raw.serviceDisplay) ? raw.serviceDisplay : {};
   const strings = (value: unknown) => list(value).filter((item): item is string => typeof item === "string");
@@ -168,6 +179,7 @@ export async function loadPublicSite(platformSlug: string, pageSlug: string): Pr
   return {
     site: { id: "", name: str(raw.site.name), platformSlug: str(raw.site.platformSlug) },
     business: businessOf(organization),
+    logo: logoOf(organization.logo),
     preferences: { timeZone: str(organization.timeZone), dateFormat, timeFormat },
     hours: hoursOf(raw.hours),
     fixedClock: raw.fixedClock === true,
@@ -200,12 +212,27 @@ export async function loadPublicListing(publicSlug: string): Promise<PublicListi
     contact: flags(listing.contact, ["phone", "email", "address", "hours", "website"]) as PublicListingData["contact"],
     actions: flags(listing.actions, ["book", "website", "contact"]) as PublicListingData["actions"],
     business: businessOf(raw.organization),
+    logo: logoOf(raw.organization.logo),
     hours: hoursOf(raw.hours),
     timeFormat: raw.organization.timeFormat === "24h" ? "24h" : "12h",
     siteSlug: typeof raw.siteSlug === "string" ? raw.siteSlug : null,
     sitePages: navOf(raw.sitePages),
     services: servicesOf(raw.services),
   };
+}
+
+/** Where the bytes of a public logo are and what they are: the answer of `app_public_asset`, which exists only for a ready logo that is a business's current one. */
+export type PublicAsset = { storageDriver: "local" | "s3"; storageKey: string; mediaType: string; byteSize: number; checksum: string };
+
+export async function loadPublicAsset(assetId: string): Promise<PublicAsset | null> {
+  if (!isUuid(assetId)) return null;
+  const result = await getDb().execute<{ asset: unknown }>(sql`select app_public_asset(${assetId}::uuid) as asset`);
+  const raw = result.rows[0]?.asset;
+  if (!isJson(raw)) return null;
+  const { storageDriver, storageKey, mediaType, byteSize, checksum } = raw;
+  if ((storageDriver !== "local" && storageDriver !== "s3") || typeof storageKey !== "string" || typeof mediaType !== "string") return null;
+  if (typeof byteSize !== "number" || typeof checksum !== "string") return null;
+  return { storageDriver, storageKey, mediaType, byteSize, checksum };
 }
 
 export type PublicBookingInput = {

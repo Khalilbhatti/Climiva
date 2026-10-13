@@ -297,16 +297,16 @@ test.describe("the server decides who may change what", () => {
   });
 });
 
-test.describe("branding is the one thing still not stored", () => {
-  test("a saved accent lasts for the visit and is gone after a reload, and the page says so", async ({ page }) => {
+test.describe("branding is stored like the rest of Settings", () => {
+  test("a saved accent is still there after a reload", async ({ page }) => {
     const problems = watchConsole(page);
     await page.goto("/settings/branding");
     await hydrated(page);
     await page.locator("#brand-accent").fill("#8B3A1E");
     await page.getByRole("button", { name: "Save branding", exact: true }).click();
-    await expect(toast(page)).toContainText("Branding saved for this session.");
+    await expect(toast(page)).toContainText("Branding saved.");
     await page.reload();
-    await expect(page.locator("#brand-accent")).not.toHaveValue(/8B3A1E/i);
+    await expect(page.locator("#brand-accent")).toHaveValue("#8B3A1E");
     expect(problems).toEqual([]);
   });
 });

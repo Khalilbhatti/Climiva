@@ -8,7 +8,7 @@
  *      copy and nothing of anyone's workspace (no person, organization, customer, team or financial data, no provider in the page's JavaScript),
  *      whichever business's public page the person opens.
  *
- *   2. On a second server whose database role can do exactly one thing: run the three public functions (it cannot read a single table).
+ *   2. On a second server whose database role can do exactly one thing: run the four public functions (it cannot read a single table).
  *      Every public page still serves, for a visitor and for each signed-in person alike, so a public request provably asks the database nothing
  *      but those functions: no session lookup, no workspace, no Draft. The same server cannot serve a workspace page, which shows the role really
  *      is restricted and the check is not vacuous.
@@ -31,7 +31,7 @@ const SIGNED_IN = VIEWERS.filter((viewer): viewer is Exclude<Viewer, "anonymous"
 type StorageState = Awaited<ReturnType<APIRequestContext["storageState"]>>;
 const states: Partial<Record<Viewer, StorageState>> = {};
 let admin: Pool;
-let ids: { organizations: string[]; users: string[]; northstarListing: string };
+let ids: { organizations: string[]; users: string[]; northstarListing: string; apexLogo: string };
 
 test.beforeAll(async ({ clientAddresses }) => {
   admin = new Pool({ connectionString: process.env.DATABASE_ADMIN_URL, max: 2 });
@@ -40,6 +40,7 @@ test.beforeAll(async ({ clientAddresses }) => {
     organizations: (await admin.query<{ id: string }>("select id from organizations")).rows.map((row) => row.id),
     users: (await admin.query<{ id: string }>("select id from auth_user")).rows.map((row) => row.id),
     northstarListing: (await admin.query<{ public_slug: string }>("select l.public_slug from marketplace_listings l join organizations o on o.id = l.organization_id where o.slug = 'northstar-heating-cooling'")).rows[0].public_slug,
+    apexLogo: (await admin.query<{ id: string }>("select b.logo_asset_id::text as id from organization_branding b join organizations o on o.id = b.organization_id where o.slug = 'apex-climate-heating-air'")).rows[0].id,
   };
 });
 test.afterAll(async () => {
@@ -73,7 +74,9 @@ const NOT_FOUND = ["/sites/nobody", "/sites/apexclimate/no-such-page", "/sites/a
 /** A Service the Site does not offer is its own page ("Service not found"), found at the Site's address. */
 const MISSING_SERVICE = ["/sites/apexclimate/booking/no-such-service"];
 const listings = () => ["/listings/apex-climate-heating-air", `/listings/${ids.northstarListing}`];
-const everyPublicPath = () => [...APEX_SITE, ...NORTHSTAR_SITE, ...listings(), ...MISSING_SERVICE, ...NOT_FOUND];
+/** The business's logo is public (it is drawn on its Site and its listing); any other address under /assets is a plain 404. */
+const assetPaths = () => [`/assets/${ids.apexLogo}`, "/assets/00000000-0000-4000-8000-000000000000", "/assets/not-an-id"];
+const everyPublicPath = () => [...APEX_SITE, ...NORTHSTAR_SITE, ...listings(), ...MISSING_SERVICE, ...NOT_FOUND, ...assetPaths()];
 
 /** What would show that a response carries someone's workspace: people, organizations, the business's own records and the shape of the workspace's data. */
 function workspaceMarkers(extra: string[] = []): { label: string; test: (body: string) => boolean }[] {
@@ -258,9 +261,9 @@ test.describe("a published Site or listing is the same page for a visitor and fo
   });
 });
 
-/* ───────────────────────── a server that can only run the three public functions ───────────────────────── */
+/* ───────────────────────── a server that can only run the four public functions ───────────────────────── */
 
-test.describe("a server whose database role can run the three public functions and nothing else", () => {
+test.describe("a server whose database role can run the four public functions and nothing else", () => {
   test.describe.configure({ mode: "serial", timeout: 120_000 });
 
   let role: string;
@@ -282,7 +285,7 @@ test.describe("a server whose database role can run the three public functions a
     await admin.query(`create role ${role} login password '${password}' nosuperuser nocreatedb nocreaterole nobypassrls`);
     await admin.query(`grant connect on database "${database}" to ${role}`);
     await admin.query(`grant usage on schema public to ${role}`);
-    await admin.query(`do $$ declare f record; begin for f in select oid::regprocedure as sig from pg_proc where proname in ('app_public_site', 'app_public_listing', 'app_public_create_booking') loop execute format('grant execute on function %s to ${role}', f.sig); end loop; end $$`);
+    await admin.query(`do $$ declare f record; begin for f in select oid::regprocedure as sig from pg_proc where proname in ('app_public_site', 'app_public_listing', 'app_public_create_booking', 'app_public_asset') loop execute format('grant execute on function %s to ${role}', f.sig); end loop; end $$`);
 
     const url = new URL(process.env.DATABASE_ADMIN_URL!);
     url.username = role;

@@ -51,6 +51,7 @@ import { clearReviews, insertReviews } from "../../src/db/review-queries";
 import { createAuth, type Auth } from "../../src/lib/auth";
 import { adminDb, adminUrl, appUrl, requireEnv } from "./lib";
 import { clearReporting, reconcileReporting } from "./reporting-seed";
+import { ensureSampleLogo, restoreSampleBranding } from "./seed-assets";
 import { CUSTOMERS, EQUIPMENT, PROPERTIES } from "./seed-data/customers";
 import { FINANCIALS } from "./seed-data/financials";
 import { MAINTENANCE } from "./seed-data/maintenance";
@@ -388,6 +389,8 @@ export async function seedDevelopmentData(database?: string): Promise<SeedResult
     await ensureCoreData(db, northstarId, NORTHSTAR.timezone, NORTHSTAR_CORE, loginIds(NORTHSTAR_CORE));
     await ensureWebsite(db, apexId, APEX.website);
     await ensureWebsite(db, northstarId, NORTHSTAR.website);
+    // The sample business shows a real logo (an Asset: a row and a stored file). Northstar has none, like a business that has set none.
+    await ensureSampleLogo(db, apexId);
     return { apexId, northstarId, users };
   } finally {
     await close();
@@ -421,6 +424,7 @@ export async function ensureTestTenant(
     await ensureMembership(db, { organizationId, userId, role: "owner", jobTitle: currentUser.role });
     await ensureCoreData(db, organizationId, APEX.timezone, APEX_CORE, { "alex-morgan": userId });
     await ensureWebsite(db, organizationId, APEX.website);
+    await ensureSampleLogo(db, organizationId);
     // The copy's public addresses: its primary site's, and its Marketplace listing's (the organization's own address).
     return { userId, organizationId, email, password, platformSlug: sitesOfCopy[0].platformSlug!, listingSlug: `apex-e2e-${index}` };
   } finally {
@@ -517,6 +521,9 @@ export async function resetTestTenant(db: AdminDb, tenant: { userId: string; org
       .set({ role: "owner", status: "active", jobTitle: currentUser.role })
       .where(and(eq(organizationMemberships.organizationId, tenant.organizationId), eq(organizationMemberships.userId, tenant.userId)));
   });
+
+  // The Branding too: a test may have uploaded or removed a logo. The sample logo itself was stored by ensureTestTenant and is never changed.
+  await restoreSampleBranding(db, tenant.organizationId);
 
   // Services, the team and the operations are stored too now. Put them back only when a test changed them. The first reset in a
   // worker always writes them: a worker that was replaced after a failing test finds the previous one's changes, and must not take

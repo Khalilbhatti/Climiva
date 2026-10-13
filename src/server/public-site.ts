@@ -22,6 +22,7 @@ export const getPublicListing = cache(async (publicSlug: string): Promise<Public
 export function publicViewOf(site: PublicSite): SiteView {
   return {
     business: site.business,
+    logo: site.logo,
     hours: summarizeHours(site.hours, site.preferences.timeFormat),
     services: site.services,
     display: site.version.settings.serviceDisplay,

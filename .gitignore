@@ -54,3 +54,6 @@ test-results/
 !.env.example
 AGENTS.md
 CLAUDE.md
+
+# uploaded files kept by the local asset storage driver (development, tests, a mounted volume): runtime data, never committed
+/.data/

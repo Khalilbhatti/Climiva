@@ -14,3 +14,4 @@ export * from "./reviews";
 export * from "./marketing";
 export * from "./reporting";
 export * from "./marketplace";
+export * from "./assets";

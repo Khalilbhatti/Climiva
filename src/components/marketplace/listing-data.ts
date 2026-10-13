@@ -3,7 +3,7 @@
 import { orderedPages, platformHost } from "@/data/website";
 import { getListingServices, type ListingConfig } from "@/data/marketplace";
 import { useServices } from "@/components/services/ServicesProvider";
-import { useBusiness, useHoursRows } from "@/components/settings/SettingsProvider";
+import { useBusiness, useHoursRows, useSettings } from "@/components/settings/SettingsProvider";
 import { PREVIEW_BASE } from "@/components/website/site-links";
 import { useWebsite } from "@/components/website/WebsiteProvider";
 import type { ListingViewData } from "./ListingView";
@@ -15,6 +15,7 @@ import type { ListingViewData } from "./ListingView";
  */
 export function useListingData(config: ListingConfig): ListingViewData {
   const business = useBusiness();
+  const logo = useSettings().settings.branding.logo;
   const hours = useHoursRows();
   const { services: catalog } = useServices();
   const { website } = useWebsite();
@@ -24,6 +25,7 @@ export function useListingData(config: ListingConfig): ListingViewData {
     contact: config.contact,
     actions: config.actions,
     business,
+    logo: logo ? { src: logo.src } : null,
     hours,
     services: getListingServices(config, catalog),
     website: website ? platformHost(website.site.platformSlug) : null,

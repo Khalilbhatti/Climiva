@@ -10,7 +10,9 @@
  *
  *   createSite                  a Site (an organization may have many); the first is its primary site
  *   createDraftFromTemplate     the Site's one Draft, from an application template: theme, settings, pages, sections
- *   replaceDraftWithTemplate    the same, over an existing Draft, only when the caller says the Draft may be replaced
+ *   listActiveTemplates         the application's Templates the runtime role may read, validated, in the order the Gallery shows them
+ *   replaceDraftWithTemplate    a Template's pages, sections and theme over the existing Draft, only when the caller says the Draft may be
+ *                               replaced and (from the Builder) only if the Draft is still the revision the caller looked at
  *   saveSiteDraft               save the whole Draft the Builder edited (theme, settings, pages, sections) in one transaction, against a revision
  *   publishSite                 validate the whole Draft, then copy it into a NEW immutable Published version and point the site at it
  *   unpublishSite               the site is private again; its versions are kept
@@ -35,6 +37,7 @@ import { validateContent, validateTemplateDefinition, type ContentPage, type Sit
 import { readTheme } from "@/lib/site-theme";
 import type { Tx } from "./index";
 import { siteTemplates, sitePages, siteSections, sites, siteVersions, type SitePageRow, type SiteRow, type SiteSectionRow, type SiteVersionRow } from "./schema";
+import { TEMPLATE_KEYS } from "./site-templates";
 import { stableId } from "./stable-id";
 
 export type SiteContext = { tx: Tx; organizationId: string };
@@ -87,7 +90,7 @@ function sectionModel(row: SiteSectionRow): SectionModel | undefined {
   };
 }
 
-function versionModel(version: SiteVersionRow, templateKey: string | null, pages: SitePageRow[], sectionRows: SiteSectionRow[]): VersionModel {
+function versionModel(version: SiteVersionRow, template: { key: string; name: string } | null, pages: SitePageRow[], sectionRows: SiteSectionRow[]): VersionModel {
   const byPage = new Map<string, SiteSectionRow[]>();
   for (const row of sectionRows) byPage.set(row.pageId, [...(byPage.get(row.pageId) ?? []), row]);
   return {
@@ -95,7 +98,8 @@ function versionModel(version: SiteVersionRow, templateKey: string | null, pages
     number: version.versionNumber,
     revision: version.revision,
     status: version.status as VersionModel["status"],
-    templateKey,
+    templateKey: template?.key ?? null,
+    templateName: template?.name ?? null,
     theme: readTheme(version.theme),
     settings: readSettings(version.settings),
     publishedAt: version.publishedAt ? version.publishedAt.toISOString() : null,
@@ -120,13 +124,13 @@ async function loadVersionModels(tx: Tx, organizationId: string, siteId: string,
   const [pages, sectionRows, templates] = await Promise.all([
     tx.select().from(sitePages).where(and(eq(sitePages.organizationId, organizationId), eq(sitePages.siteId, siteId), inArray(sitePages.siteVersionId, ids))),
     tx.select().from(siteSections).where(and(eq(siteSections.organizationId, organizationId), eq(siteSections.siteId, siteId), inArray(siteSections.siteVersionId, ids))),
-    tx.select({ id: siteTemplates.id, key: siteTemplates.key }).from(siteTemplates),
+    tx.select({ id: siteTemplates.id, key: siteTemplates.key, name: siteTemplates.name }).from(siteTemplates),
   ]);
-  const templateKey = new Map(templates.map((template) => [template.id, template.key]));
+  const templateById = new Map(templates.map((template) => [template.id, { key: template.key, name: template.name }]));
   return wanted.map((version) =>
     versionModel(
       version,
-      version.templateId ? (templateKey.get(version.templateId) ?? null) : null,
+      version.templateId ? (templateById.get(version.templateId) ?? null) : null,
       pages.filter((page) => page.siteVersionId === version.id),
       sectionRows.filter((section) => section.siteVersionId === version.id),
     ),
@@ -207,6 +211,32 @@ export async function loadTemplate(tx: Tx, key: string): Promise<{ id: string; k
   const { schema: _schema, ...content } = checked.definition;
   void _schema;
   return { id: row.id, key: row.key, definition: content };
+}
+
+export type ActiveTemplate = { id: string; key: string; name: string; category: string; description: string; definition: SiteContent };
+
+/**
+ * The ACTIVE application Templates, each validated, in the order the application lists them (never the database's own order). A row
+ * whose definition does not validate is left out and logged, never drawn: it would fail the same way if a business tried to use it.
+ */
+export async function listActiveTemplates(tx: Tx): Promise<ActiveTemplate[]> {
+  const rows = await tx.select().from(siteTemplates).where(eq(siteTemplates.isActive, true));
+  const templates: ActiveTemplate[] = [];
+  for (const row of rows) {
+    const checked = validateTemplateDefinition(row.definition);
+    if (!checked.ok) {
+      console.error("[sites] template does not validate:", row.key, JSON.stringify(checked.problems).slice(0, 500));
+      continue;
+    }
+    const { schema: _schema, ...definition } = checked.definition;
+    void _schema;
+    templates.push({ id: row.id, key: row.key, name: row.name, category: row.category, description: row.description ?? "", definition });
+  }
+  const rank = (key: string) => {
+    const index = TEMPLATE_KEYS.indexOf(key);
+    return index === -1 ? TEMPLATE_KEYS.length : index;
+  };
+  return templates.sort((a, b) => rank(a.key) - rank(b.key) || a.key.localeCompare(b.key));
 }
 
 async function insertContent(tx: Tx, organizationId: string, siteId: string, versionId: string, content: SiteContent, ids?: IdMaker): Promise<void> {
@@ -290,15 +320,27 @@ export async function createDraftFromTemplate(ctx: SiteContext, siteId: string, 
 }
 
 /**
- * Put a template's content over the site's Draft. This DESTROYS the Draft's pages and sections, so the caller must say so
- * (`confirmReplace: true`); a Published version is never touched.
+ * Put a template's pages, sections and theme over the site's Draft. This DESTROYS the Draft's pages and sections, so the caller must say so
+ * (`confirmReplace: true`); a Published version is never touched, so what visitors see changes only when the Draft is published.
+ *
+ * It is one step in the caller's transaction, after the Site is locked, so it is all or nothing:
+ *   - `expectedRevision` is the revision the Builder's Gallery was opened at. If the stored Draft has moved on (another tab saved), nothing is
+ *     written and the answer is STALE_DRAFT: a replacement made from a copy that is behind never destroys a newer one. (Omitted only by
+ *     code that is not an editor: the seed and the tests.)
+ *   - the Template is loaded and validated (an unknown, inactive or invalid Template is refused) before anything is deleted;
+ *   - the Draft's pages and sections are replaced, its theme and its Template are set, and the site's selected Template is recorded. The
+ *     revision moves (the database keeps it for every change to a Draft).
+ *   - which Services the site shows, hides and in what order (`settings`) is the business's choice, not part of a design, so it is KEPT: a
+ *     Service the business hid does not reappear on the website because the design changed.
+ * Returns the Draft's id.
  */
-export async function replaceDraftWithTemplate(ctx: SiteContext, siteId: string, templateKey: string, options: { confirmReplace: boolean }): Promise<string> {
+export async function replaceDraftWithTemplate(ctx: SiteContext, siteId: string, templateKey: string, options: { confirmReplace: boolean; expectedRevision?: number }): Promise<string> {
   const { tx, organizationId } = ctx;
   if (options.confirmReplace !== true) return refuse("Replacing the draft with a template discards its pages. Confirm to continue.");
   await lockSite(tx, organizationId, siteId);
   const draft = await findDraft(tx, organizationId, siteId);
   if (!draft) return refuse("This website has no draft to replace.");
+  if (options.expectedRevision !== undefined && draft.revision !== options.expectedRevision) return refuse(STALE_DRAFT);
   const template = await loadTemplate(tx, templateKey);
   const checked = validateContent(template.definition);
   if (!checked.ok) return refuse("That website template is not available.");
@@ -306,7 +348,7 @@ export async function replaceDraftWithTemplate(ctx: SiteContext, siteId: string,
   await tx.delete(sitePages).where(and(eq(sitePages.organizationId, organizationId), eq(sitePages.siteVersionId, draft.id)));
   await tx
     .update(siteVersions)
-    .set({ theme: checked.content.theme, settings: checked.content.settings, templateId: template.id })
+    .set({ theme: checked.content.theme, templateId: template.id })
     .where(and(eq(siteVersions.organizationId, organizationId), eq(siteVersions.id, draft.id)));
   await insertContent(tx, organizationId, siteId, draft.id, checked.content);
   await tx.update(sites).set({ selectedTemplateId: template.id }).where(and(eq(sites.organizationId, organizationId), eq(sites.id, siteId)));

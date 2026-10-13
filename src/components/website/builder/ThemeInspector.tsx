@@ -10,8 +10,13 @@ import {
   THEME_DENSITY_LABEL,
   THEME_FONTS,
   THEME_FONT_LABEL,
+  THEME_LOOKS,
+  THEME_LOOK_HINT,
+  THEME_LOOK_LABEL,
   THEME_RADII,
   THEME_RADIUS_LABEL,
+  lookOf,
+  type ThemeLook,
 } from "@/lib/site-theme";
 import { useBuilder } from "./BuilderProvider";
 import { Segmented } from "./FieldControl";
@@ -25,7 +30,7 @@ const DENSITY_OPTIONS = THEME_DENSITIES.map((value) => ({ value, label: THEME_DE
 
 /**
  * The site theme: the few design choices every page shares. Each is a named token the website's renderer understands (a colour, a corner
- * style, a spacing, two fonts from a fixed list), so nothing typed here can become CSS. Changes show in the canvas at once and are stored on Save.
+ * style, a spacing, two fonts from a fixed list, a design style), so nothing typed here can become CSS. Changes show in the canvas at once and are stored on Save.
  */
 export function ThemeInspector() {
   const b = useBuilder();
@@ -50,6 +55,18 @@ export function ThemeInspector() {
   return (
     <div className="space-y-5">
       <p className="text-xs text-ink-muted">These choices apply to every page of the website. Your business name, hours and Services are managed in Settings and Services.</p>
+
+      <div className="space-y-2">
+        {/* "Standard" is the absence of the key, so a site that goes back to it is exactly what it was before it chose a style. */}
+        <Select label="Design style" value={lookOf(theme)} disabled={b.readOnly} onChange={(event) => b.setTheme({ look: event.target.value === "standard" ? undefined : (event.target.value as ThemeLook) })}>
+          {THEME_LOOKS.map((look) => (
+            <option key={look} value={look}>
+              {THEME_LOOK_LABEL[look]}
+            </option>
+          ))}
+        </Select>
+        <p className="text-xs text-ink-muted">{THEME_LOOK_HINT[lookOf(theme)]} It sets how wide the pages are, how roomy, and how headings, cards, the header and the footer look.</p>
+      </div>
 
       <fieldset disabled={b.readOnly} className="space-y-2">
         <legend className="mb-1 text-xs font-medium text-ink">Accent colour</legend>

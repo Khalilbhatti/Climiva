@@ -23,6 +23,7 @@ export type AppHref =
   | `/maintenance-plans/${string}`
   | `/website/builder?page=${string}`
   | `/website/preview/${string}`
+  | `/website/templates/${string}`
   | `/sites/${string}`
   | `/listings/${string}`
   | `/reviews/${string}`

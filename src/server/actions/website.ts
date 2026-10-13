@@ -10,6 +10,7 @@ import {
   loadWebsiteState,
   publishSite,
   removeCustomDomain,
+  replaceDraftWithTemplate,
   saveSiteDraft,
   setPrimaryAddress,
   unpublishSite,
@@ -22,7 +23,8 @@ import { authorize } from "../authorize";
 import { constraintOf, isIntegrityViolation } from "../db-errors";
 
 /**
- * Website writes: create the website, save the Draft the Builder edited, publish, unpublish, and the domain record. Each action:
+ * Website writes: create the website, save the Draft the Builder edited, replace it with a Template, publish, unpublish, and the domain
+ * record. Each action:
  *   1. resolves the caller and their active organization from the session and a verified membership,
  *   2. requires the "website:manage" capability (owner or admin),
  *   3. only then reads its arguments, and parses and validates them again (the screen's checks are a convenience, these are the
@@ -89,6 +91,26 @@ export async function saveDraftAction(input: unknown): Promise<ActionResult<Answ
   return mutate(async ({ tx, organizationId, siteId }) => {
     if (!isRecord(input)) return refuse("The website was not understood.");
     await saveSiteDraft({ tx, organizationId }, siteId, { expectedRevision: input.expectedRevision, content: input.content });
+  });
+}
+
+/**
+ * Replace the Draft with one of the application's Templates: its pages, sections and theme. This discards the Draft's own pages and
+ * sections, so the request must say it is confirmed, and it must carry the revision of the Draft the person was looking at: a Draft that
+ * has moved on since (another tab saved) is refused whole, so a replacement never destroys work the person has not seen.
+ *
+ * The Published version is never touched: visitors keep seeing what was published until the Draft is published. The Template is named by
+ * its key and must be an active application Template; nothing in the request names an organization, a site or a database id, and a
+ * business cannot create or change a Template. The business's choice of which Services show (and in what order) is kept.
+ */
+export async function applyTemplateAction(input: unknown): Promise<ActionResult<Answer>> {
+  return mutate(async ({ tx, organizationId, siteId }) => {
+    if (!isRecord(input)) return refuse("The template was not understood.");
+    const { templateKey, expectedRevision, confirmReplace } = input;
+    if (typeof templateKey !== "string" || templateKey.length < 1 || templateKey.length > 60) return refuse("That website template is not available.");
+    if (confirmReplace !== true) return refuse("Replacing the draft with a template discards its pages. Confirm to continue.");
+    if (typeof expectedRevision !== "number" || !Number.isInteger(expectedRevision) || expectedRevision < 1) return refuse("The website was not understood.");
+    await replaceDraftWithTemplate({ tx, organizationId }, siteId, templateKey, { confirmReplace: true, expectedRevision });
   });
 }
 

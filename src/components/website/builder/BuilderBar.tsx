@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Eye, PanelLeft, PanelRight, Redo2, Rocket, RotateCcw, Save, SquareArrowOutUpRight, Undo2 } from "lucide-react";
+import { ArrowLeft, Eye, LayoutTemplate, PanelLeft, PanelRight, Redo2, Rocket, RotateCcw, Save, SquareArrowOutUpRight, Undo2 } from "lucide-react";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { findPage, getPrimaryDomain, hasUnpublishedChanges, pagePath } from "@/data/website";
@@ -106,6 +106,16 @@ export function BuilderBar() {
           <button type="button" className={cn(iconButton, "hidden xl:inline-flex")} aria-pressed={b.panels.inspector} aria-label="Inspector panel" title="Show or hide the inspector panel" onClick={() => b.togglePanel("inspector")}>
             <PanelRight aria-hidden className="size-4" />
           </button>
+        </div>
+        {/* The Template is a choice about the whole Draft, so it is here, in the bar, and not in a section's inspector. It is on the second row,
+            which has the room: the first row's height must not change with what the Draft says, or the panels under it move. It is a link:
+            leaving with unsaved changes asks first, like any other link out of the Builder. */}
+        <div className="flex items-center gap-1.5" data-testid="builder-template">
+          <span className="text-xs text-ink-muted">{website.draft.templateName ? `Based on: ${website.draft.templateName}` : "Custom design"}</span>
+          <ButtonLink href="/website/templates" variant="tertiary" size="sm">
+            <LayoutTemplate aria-hidden className="size-3.5" />
+            {b.readOnly ? "View templates" : "Change template"}
+          </ButtonLink>
         </div>
         <p className="ml-auto min-w-0 truncate font-mono text-xs text-ink-muted">
           {address}

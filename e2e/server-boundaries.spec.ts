@@ -276,7 +276,7 @@ test.describe("every Server Action authorizes its caller", () => {
     expect(website).not.toMatch(/requireMember\(/);
     const websiteActions = [...website.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)];
     expect(websiteActions.map(([, name]) => name).sort()).toEqual(
-      ["connectDomainAction", "createWebsiteAction", "publishWebsiteAction", "removeDomainAction", "saveDraftAction", "setPrimaryAddressAction", "unpublishWebsiteAction"].sort(),
+      ["applyTemplateAction", "connectDomainAction", "createWebsiteAction", "publishWebsiteAction", "removeDomainAction", "saveDraftAction", "setPrimaryAddressAction", "unpublishWebsiteAction"].sort(),
     );
     for (const [, name, body] of websiteActions) expect(/>\s\{\s+return mutate\(/.test(body), `${name} must start by handing everything to mutate()`).toBe(true);
     expect(website).not.toMatch(/organizationId:\s*(input|payload|body)|siteId:\s*(input|payload|body)/);

@@ -113,6 +113,13 @@
       "when": 1791827584048,
       "tag": "0015_site_draft_revision_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791893351270,
+      "tag": "0016_site_template_catalog",
+      "breakpoints": true
     }
   ]
 }

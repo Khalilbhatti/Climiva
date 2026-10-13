@@ -8,6 +8,7 @@ import type { ActionResult } from "@/lib/action-result";
 import type { SiteContent } from "@/lib/site-template";
 import { send } from "@/lib/send-action";
 import {
+  applyTemplateAction,
   connectDomainAction,
   createWebsiteAction,
   publishWebsiteAction,
@@ -26,6 +27,8 @@ type WebsiteContextValue = {
   createWebsite: () => Done;
   /** Save the whole Draft the Builder edited, against the revision it opened. */
   saveDraft: (content: SiteContent, expectedRevision: number) => Done;
+  /** Replace the Draft with an application Template, against the revision the person was looking at. The Published website is not touched. */
+  applyTemplate: (templateKey: string, expectedRevision: number) => Done;
   /** Publish the Draft. With a revision, only if the stored Draft is still that one (the Builder always sends it). */
   publish: (expectedRevision?: number) => Done;
   unpublish: () => Done;
@@ -56,6 +59,7 @@ export function WebsiteProvider({ initial, children }: { initial: WebsiteState |
       website,
       createWebsite: async () => adopt(await send(() => createWebsiteAction())),
       saveDraft: async (content, expectedRevision) => adopt(await send(() => saveDraftAction({ expectedRevision, content }))),
+      applyTemplate: async (templateKey, expectedRevision) => adopt(await send(() => applyTemplateAction({ templateKey, expectedRevision, confirmReplace: true }))),
       publish: async (expectedRevision) => adopt(await send(() => (expectedRevision === undefined ? publishWebsiteAction() : publishWebsiteAction({ expectedRevision })))),
       unpublish: async () => adopt(await send(() => unpublishWebsiteAction())),
       connectDomain: async (domain) => adopt(await send(() => connectDomainAction({ domain }))),

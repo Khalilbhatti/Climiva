@@ -5,6 +5,7 @@
  */
 import { readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { TEMPLATE_KEYS } from "../src/db/site-templates";
 import { CUSTOMERS, FINANCIALS, JOBS, MARKETING, PLANS, REVIEWS_DATA, ROLES, SERVICES, TEAM } from "./apex-data";
 
 export type InventoryRoute = {
@@ -38,6 +39,8 @@ const PARAMS: Record<string, readonly string[]> = {
   paymentId: FINANCIALS.payments.map((payment) => payment.id),
   planId: PLANS.map((plan) => plan.id),
   pageId: ["home", "services", "about", "contact", "booking"],
+  // The application's website Templates, by key (the Template Gallery's previews).
+  templateKey: [...TEMPLATE_KEYS],
   // The published sample sites and listings, by their public addresses (the standing sample business and Northstar).
   siteSlug: ["apexclimate"],
   listingSlug: ["apex-climate-heating-air"],

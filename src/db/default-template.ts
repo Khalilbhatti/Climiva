@@ -1,5 +1,6 @@
 /**
- * The one site template Phase 15 ships: the approved five-page Climvia website (Home, Services, About, Contact, Booking).
+ * The site template Phase 15 shipped and every new business still starts from: the approved five-page Climvia website (Home, Services,
+ * About, Contact, Booking). Phase 17 added three more Templates beside it (src/db/site-templates lists all four); this one is unchanged.
  *
  * This is the application's own definition. It is written into `site_templates` by a MIGRATION (0013), never by a tenant: the runtime
  * role can read an active template and nothing more. A test keeps this constant and that migrated row identical, so there is one
@@ -17,7 +18,7 @@ import { EMPTY_SERVICE_DISPLAY } from "@/data/website";
 import { TEMPLATE_SCHEMA, type TemplateDefinition } from "@/lib/site-template";
 
 export const DEFAULT_TEMPLATE_KEY = "climvia-starter";
-export const DEFAULT_TEMPLATE_NAME = "Climvia starter";
+export const DEFAULT_TEMPLATE_NAME = "Climvia Starter";
 export const DEFAULT_TEMPLATE_CATEGORY = "hvac";
 export const DEFAULT_TEMPLATE_DESCRIPTION = "A five-page website for an HVAC business: Home, Services, About, Contact and Booking.";
 

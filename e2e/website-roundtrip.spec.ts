@@ -12,6 +12,7 @@ import { Pool } from "pg";
 import { canonicalContent } from "../src/data/website";
 import { getEligibleServices } from "../src/data/marketplace";
 import { loadServices } from "../src/db/core-queries";
+import { TEMPLATE_KEYS } from "../src/db/site-templates";
 import { findListing, loadMarketplace, saveListing, setListingStatus, type ListingContext } from "../src/db/marketplace-queries";
 import { createSite, loadPrimaryWebsite, loadWebsiteState, listSites, stableSiteIds } from "../src/db/site-queries";
 import { withTenant } from "../src/db/tenant";
@@ -119,7 +120,7 @@ test.describe("identity and repeatability", () => {
         )
       ).rows[0];
     const before = await snapshot();
-    expect(before).toMatchObject({ sites: 3, versions: 5, pages: 25, sections: 110, listings: 2, selections: 7, templates: 1 });
+    expect(before).toMatchObject({ sites: 3, versions: 5, pages: 25, sections: 110, listings: 2, selections: 7, templates: TEMPLATE_KEYS.length });
     await seedDevelopmentData();
     expect(await snapshot()).toEqual(before);
   });

@@ -81,12 +81,27 @@ const featureLabels = (noun: string): Record<string, string> => {
 
 const HEADING_AND_TEXT: readonly FieldDef[] = [text("heading", "Heading", 60), area("supportingText", "Supporting text", 160)];
 
+/** A hero whose layout is fixed by its style, so it has no alignment choice. */
+const HERO_COPY: readonly FieldDef[] = [
+  text("headline", "Headline", 80),
+  area("supportingText", "Supporting text", 240),
+  text("primaryCta", "Primary button label", 24),
+  text("secondaryCta", "Secondary button label", 24),
+];
+
 export const SECTION_REGISTRY: Readonly<Record<SectionType, SectionTypeDef>> = {
   hero: {
     type: "hero",
     label: "Hero",
     summary: "Headline, supporting text and buttons",
-    variants: [{ id: "default" }],
+    // The first opens on a brand-colour banner; the others are the Templates' own openings: a headline beside the business's phone and
+    // hours, a warm welcome with a way to call, and a large editorial headline.
+    variants: [
+      { id: "default" },
+      { id: "split", connected: "business-info", fields: HERO_COPY },
+      { id: "welcome", connected: "business-info", fields: HERO_COPY },
+      { id: "editorial", fields: HERO_COPY },
+    ],
     fields: [
       text("headline", "Headline", 80),
       area("supportingText", "Supporting text", 240),
@@ -108,10 +123,18 @@ export const SECTION_REGISTRY: Readonly<Record<SectionType, SectionTypeDef>> = {
     summary: "Services from your catalog",
     // Which Services appear, and in what order, is set once for the whole site (the version's settings), not copied into a section.
     // Only the "cards" variant has a heading of its own; the catalog and the booking grid sit under the page's intro.
+    // Each presentation comes twice: with a heading of its own for a shortlist on the home page, and without for a full list that sits
+    // under a page's introduction (so the page keeps one heading outline).
     variants: [
       { id: "cards", connected: "services", fields: HEADING_AND_TEXT },
       { id: "catalog", connected: "services", fields: [] },
       { id: "booking", connected: "booking", fields: [] },
+      { id: "grid", connected: "services", fields: HEADING_AND_TEXT },
+      { id: "grid-catalog", connected: "services", fields: [] },
+      { id: "friendly", connected: "services", fields: HEADING_AND_TEXT },
+      { id: "friendly-catalog", connected: "services", fields: [] },
+      { id: "rows", connected: "services", fields: HEADING_AND_TEXT },
+      { id: "rows-catalog", connected: "services", fields: [] },
     ],
     fields: [],
   },
@@ -122,6 +145,9 @@ export const SECTION_REGISTRY: Readonly<Record<SectionType, SectionTypeDef>> = {
     variants: [
       { id: "icons", fieldLabels: featureLabels("reason"), fields: [text("heading", "Heading", 60), ...FEATURE_ITEMS] },
       { id: "plain", fieldLabels: featureLabels("standard"), fields: [text("heading", "Heading", 60), area("supportingText", "Supporting text", 160), ...FEATURE_ITEMS] },
+      { id: "strip", fieldLabels: featureLabels("point"), fields: [text("heading", "Heading", 60), ...FEATURE_ITEMS] },
+      { id: "numbered", fieldLabels: featureLabels("step"), fields: [text("heading", "Heading", 60), area("supportingText", "Supporting text", 160), ...FEATURE_ITEMS] },
+      { id: "reassure", fieldLabels: featureLabels("reason"), fields: [text("heading", "Heading", 60), area("supportingText", "Supporting text", 160), ...FEATURE_ITEMS] },
     ],
     fields: [],
   },
@@ -172,7 +198,8 @@ export const SECTION_REGISTRY: Readonly<Record<SectionType, SectionTypeDef>> = {
     type: "call_to_action",
     label: "Call to action",
     summary: "Closing call to action",
-    variants: [{ id: "default" }],
+    // The band and the panel also offer the business's phone number (read from Settings); the editorial one is a single large link.
+    variants: [{ id: "default" }, { id: "band", connected: "business-info" }, { id: "panel", connected: "business-info" }, { id: "editorial" }],
     fields: [text("heading", "Heading", 60), area("supportingText", "Supporting text", 160), text("buttonLabel", "Button label", 24)],
   },
 };
@@ -332,6 +359,39 @@ const VARIANT_META: Readonly<Record<SectionType, Readonly<Record<string, Variant
         alignment: "left",
       },
     },
+    split: {
+      label: "Opening with contact panel",
+      description: "A headline and two buttons beside a panel with your phone number and business hours, read from Settings.",
+      category: "hero",
+      defaults: {
+        headline: "A clear headline for your business",
+        supportingText: "Tell visitors what {{business.name}} does and how to get started.",
+        primaryCta: "Book service",
+        secondaryCta: "View services",
+      },
+    },
+    welcome: {
+      label: "Welcoming opening",
+      description: "A warm, friendly opening with a large headline, a booking button and a way to call you.",
+      category: "hero",
+      defaults: {
+        headline: "A clear headline for your business",
+        supportingText: "Tell visitors what {{business.name}} does and how to get started.",
+        primaryCta: "Book service",
+        secondaryCta: "View services",
+      },
+    },
+    editorial: {
+      label: "Editorial opening",
+      description: "A very large headline with plenty of white space and two simple links.",
+      category: "hero",
+      defaults: {
+        headline: "A clear headline for your business",
+        supportingText: "Tell visitors what {{business.name}} does and how to get started.",
+        primaryCta: "Book service",
+        secondaryCta: "View services",
+      },
+    },
   },
   page_intro: {
     default: {
@@ -360,6 +420,42 @@ const VARIANT_META: Readonly<Record<SectionType, Readonly<Record<string, Variant
       category: "booking",
       defaults: {},
     },
+    grid: {
+      label: "Service grid",
+      description: "Your Services in a crisp, ruled grid under a heading, with price and duration in plain view.",
+      category: "services",
+      defaults: { heading: "Our services", supportingText: "Choose a service to see its price, duration and booking options." },
+    },
+    "grid-catalog": {
+      label: "Service grid (full list)",
+      description: "Every Service you show, in a ruled grid, for a Services page.",
+      category: "services",
+      defaults: {},
+    },
+    friendly: {
+      label: "Friendly services",
+      description: "Your Services as roomy, rounded cards with an icon, the full description and a booking button.",
+      category: "services",
+      defaults: { heading: "Our services", supportingText: "Choose a service to see what it includes and how to book it." },
+    },
+    "friendly-catalog": {
+      label: "Friendly services (full list)",
+      description: "Every Service you show, as roomy rounded cards, for a Services page.",
+      category: "services",
+      defaults: {},
+    },
+    rows: {
+      label: "Service rows",
+      description: "Your Services as large, quiet rows under a heading, like an index.",
+      category: "services",
+      defaults: { heading: "Services", supportingText: "Choose a service to see what it includes." },
+    },
+    "rows-catalog": {
+      label: "Service rows (full list)",
+      description: "Every Service you show, as large quiet rows, for a Services page.",
+      category: "services",
+      defaults: {},
+    },
   },
   feature_list: {
     icons: {
@@ -373,6 +469,24 @@ const VARIANT_META: Readonly<Record<SectionType, Readonly<Record<string, Variant
       description: "A heading, an introduction and three short standards, without icons.",
       category: "content",
       defaults: { heading: "What you can expect", supportingText: "A few words on how {{business.name}} works.", ...FEATURE_DEFAULTS },
+    },
+    strip: {
+      label: "Trust strip",
+      description: "A heading above a compact band of three short points, each with a check mark.",
+      category: "content",
+      defaults: { heading: "What you can expect", ...FEATURE_DEFAULTS },
+    },
+    numbered: {
+      label: "Numbered steps",
+      description: "A heading, an introduction and three numbered steps, with no boxes around them.",
+      category: "content",
+      defaults: { heading: "How it works", supportingText: "A few words on how {{business.name}} works.", item1Title: "First step", item1Text: "Say what happens first.", item2Title: "Second step", item2Text: "Say what happens next.", item3Title: "Third step", item3Text: "Finish with what the customer gets." },
+    },
+    reassure: {
+      label: "Reassurance panel",
+      description: "A soft rounded panel with a heading, an introduction and three short reasons, each with a check mark.",
+      category: "content",
+      defaults: { heading: "What to expect", supportingText: "A few words on how {{business.name}} works.", ...FEATURE_DEFAULTS },
     },
   },
   rich_text: {
@@ -412,6 +526,24 @@ const VARIANT_META: Readonly<Record<SectionType, Readonly<Record<string, Variant
     default: {
       label: "Call to action",
       description: "A closing banner that leads visitors to book.",
+      category: "action",
+      defaults: { heading: "Ready to get started?", supportingText: "Pick a service and choose a time that suits you.", buttonLabel: "Book service" },
+    },
+    band: {
+      label: "Closing band",
+      description: "A ruled band with a heading, a booking button and your phone number, read from Settings.",
+      category: "action",
+      defaults: { heading: "Ready to get started?", supportingText: "Pick a service and choose a time that suits you.", buttonLabel: "Book service" },
+    },
+    panel: {
+      label: "Closing panel",
+      description: "A soft, centered panel with a heading, a booking button and your phone number, read from Settings.",
+      category: "action",
+      defaults: { heading: "Ready to get started?", supportingText: "Pick a service and choose a time that suits you.", buttonLabel: "Book service" },
+    },
+    editorial: {
+      label: "Closing statement",
+      description: "A large statement with one quiet booking link beneath it.",
       category: "action",
       defaults: { heading: "Ready to get started?", supportingText: "Pick a service and choose a time that suits you.", buttonLabel: "Book service" },
     },

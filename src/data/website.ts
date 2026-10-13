@@ -68,6 +68,8 @@ export type VersionModel = {
   revision: number;
   status: VersionStatus;
   templateKey: string | null;
+  /** The Template's display name ("Comfort"), for "Based on ...". Informational: a Draft is a copy and may have been edited far from it. */
+  templateName?: string | null;
   theme: SiteTheme;
   settings: VersionSettings;
   publishedAt: string | null;

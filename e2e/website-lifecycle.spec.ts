@@ -11,6 +11,7 @@ import { expect } from "playwright/test";
 import { Pool } from "pg";
 import { canonicalContent, orderedPages, type WebsiteState } from "../src/data/website";
 import { DEFAULT_TEMPLATE, DEFAULT_TEMPLATE_KEY } from "../src/db/default-template";
+import { TEMPLATE_KEYS } from "../src/db/site-templates";
 import { loadPublicSite } from "../src/db/public-queries";
 import {
   connectCustomDomain,
@@ -595,7 +596,8 @@ test.describe("the stored website is the approved one", () => {
     expect(row.rows).toHaveLength(1);
     expect(row.rows[0].definition).toEqual(JSON.parse(JSON.stringify(DEFAULT_TEMPLATE)));
     expect(row.rows[0]).toMatchObject({ schema_version: 1, is_active: true, category: "hvac" });
-    expect((await admin.query("select count(*)::int as n from site_templates")).rows[0].n).toBe(1);
+    // Phase 17 added three more application Templates beside it (website-templates.spec.ts holds all four to their definitions).
+    expect((await admin.query("select count(*)::int as n from site_templates")).rows[0].n).toBe(TEMPLATE_KEYS.length);
   });
 
   test("the approved Apex copy is preserved word for word", async () => {

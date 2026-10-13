@@ -13,6 +13,7 @@
 import { test, expect } from "playwright/test";
 import { Pool, type PoolClient } from "pg";
 import { DEFAULT_TEMPLATE } from "../src/db/default-template";
+import { TEMPLATE_KEYS, findTemplateRecord } from "../src/db/site-templates";
 
 const SEED = {
   alex: "alex.morgan@apex.test", // Apex owner
@@ -156,11 +157,14 @@ type PublicListingJson = {
 const TABLES = ["sites", "site_versions", "site_pages", "site_sections", "marketplace_listings", "marketplace_listing_services"] as const;
 
 test.describe("the application's templates", () => {
-  test("the runtime role reads the active template, which is the default template, and can change nothing", async () => {
+  test("the runtime role reads the active templates, which are the application's four Templates, and can change nothing", async () => {
     const read = await as(user.alex, apex, (client) => client.query<{ key: string; schema_version: number; definition: unknown; is_active: boolean }>("select key, schema_version, definition, is_active from site_templates"));
-    expect(read.value?.rows.map((row) => row.key)).toEqual(["climvia-starter"]);
-    expect(read.value?.rows[0].schema_version).toBe(1);
-    expect(read.value?.rows[0].definition).toEqual(JSON.parse(JSON.stringify(DEFAULT_TEMPLATE)));
+    expect(read.value?.rows.map((row) => row.key).sort()).toEqual([...TEMPLATE_KEYS].sort());
+    for (const row of read.value?.rows ?? []) {
+      expect(row.schema_version).toBe(1);
+      expect(row.definition).toEqual(JSON.parse(JSON.stringify(findTemplateRecord(row.key)?.definition)));
+    }
+    expect(read.value?.rows.find((row) => row.key === "climvia-starter")?.definition).toEqual(JSON.parse(JSON.stringify(DEFAULT_TEMPLATE)));
 
     const insert = await as(user.alex, apex, (client) => insertRow(client, "site_templates", { key: "mine", name: "Mine", category: "hvac", schema_version: 1, definition: JSON.stringify({ schema: 1 }) }));
     expect(insert.code).toBe(PERMISSION);
@@ -170,7 +174,7 @@ test.describe("the application's templates", () => {
     expect(remove.code).toBe(PERMISSION);
     // The template is application data, not tenant data: the same template is read in every business.
     const northstarRead = await as(user.taylor, northstar, (client) => count(client, "select 1 from site_templates"));
-    expect(northstarRead.value).toBe(1);
+    expect(northstarRead.value).toBe(TEMPLATE_KEYS.length);
   });
 
   test("a template carries no executable code: its definition is validated JSON of the registered shape, and a malformed one cannot be stored", async () => {

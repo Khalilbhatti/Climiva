@@ -19,14 +19,14 @@ import {
   getRecordedPaymentsCount,
   getTotalInvoiced,
 } from "../src/data/financials";
-import { BUSINESS_TIME_ZONE, PROTOTYPE_NOW, PROTOTYPE_TODAY, business, businessHoursByWeekday, currentUser } from "../src/data/fixtures";
+import { BUSINESS_TIME_ZONE, apexSettings, business, businessHoursByWeekday, currentUser } from "../scripts/db/seed-data/apex";
+import { PROTOTYPE_NOW, PROTOTYPE_TODAY } from "../src/lib/prototype-clock";
 import { COVERAGE, getCurrentPlanForCustomer, getPlanById, getPlanMetrics, getVisitState } from "../src/data/maintenance-plans";
 import { getCampaignMetrics } from "../src/data/marketing";
 import { getEligibleServices, getListingServices } from "../src/data/marketplace";
 import { getBookingById, getJobById } from "../src/data/operations";
 import { getReviewById, getReviewMetrics } from "../src/data/reviews";
 import { getPublicActiveServices } from "../src/data/services";
-import { initialSettings } from "../src/data/settings";
 import { getTeamMemberById } from "../src/data/team";
 import { getShownServices } from "../src/data/website";
 import { APEX_APPROVED, APEX_CONTENT, APEX_LISTING, BOOK, BOOKINGS, CUSTOMERS, FINANCIALS, INVOICES, JOBS, MARKETING, OPERATIONS, OVERVIEW_TOTALS, PLANS, PLANS_DATA, PLAN_ADJUSTMENT, REVIEWS, REVIEWS_DATA, REVIEW_ADJUSTMENT, ROLES, SCHEDULE_BLOCKS, SERVICES, STORED_INVOICED, TEAM, TEAM_DATA } from "./apex-data";
@@ -61,13 +61,13 @@ test.describe("the business", () => {
       { days: "Sun", hours: "Closed" },
     ]);
     expect(BUSINESS_TIME_ZONE).toBe("America/Chicago");
-    expect(initialSettings.preferences.currency).toBe("USD");
+    expect(apexSettings.preferences.currency).toBe("USD");
   });
 
   test("Settings starts as that record, and its structured hours are the same hours", () => {
-    expect(initialSettings.business).toEqual({ name: business.name, phone: business.phone, email: business.email, address: business.address });
-    expect(initialSettings.preferences.timeZone).toBe(BUSINESS_TIME_ZONE);
-    expect(initialSettings.hours).toEqual(businessHoursByWeekday);
+    expect(apexSettings.business).toEqual({ name: business.name, phone: business.phone, email: business.email, address: business.address });
+    expect(apexSettings.preferences.timeZone).toBe(BUSINESS_TIME_ZONE);
+    expect(apexSettings.hours).toEqual(businessHoursByWeekday);
     for (const day of [1, 2, 3, 4, 5]) expect(businessHoursByWeekday[day]).toEqual({ open: "07:30", close: "18:00" });
     expect(businessHoursByWeekday[6]).toEqual({ open: "08:00", close: "14:00" });
     expect(businessHoursByWeekday[0]).toBeNull();
@@ -75,7 +75,7 @@ test.describe("the business", () => {
 
   test("the current user is Alex Morgan, Operations Lead, with no invented email, and is a Team member", () => {
     expect(currentUser).toEqual({ name: "Alex Morgan", role: "Operations Lead" });
-    expect(initialSettings.profile).toEqual({ name: "Alex Morgan", role: "Operations Lead" });
+    expect(apexSettings.profile).toEqual({ name: "Alex Morgan", role: "Operations Lead" });
     const member = getTeamMemberById("alex-morgan", TEAM_DATA);
     expect(member).toMatchObject({ name: "Alex Morgan", role: "Operations Lead", roleId: "owner" });
     expect(member?.email).toBeUndefined();
@@ -87,14 +87,12 @@ test.describe("the business", () => {
     expect(new Date(`${PROTOTYPE_TODAY}T12:00:00Z`).getUTCDay()).toBe(5);
   });
 
-  test("the business facts are typed once: nothing else in the source repeats the phone, email or street", () => {
+  test("the business facts are typed once, in the seed: nothing in the source repeats the phone, email or street (the format examples use a made-up number)", () => {
     const repeats: string[] = [];
     for (const file of sourceFiles("src")) {
-      if (file.replace(/\\/g, "/").endsWith("src/data/fixtures.ts")) continue;
       const text = readFileSync(file, "utf8");
       for (const fact of [business.phone, business.email, business.address.street]) {
-        // The only other mention is the format example in a comment and a validation hint.
-        if (text.includes(fact) && !/settings-state\.ts$|format\.ts$/.test(file.replace(/\\/g, "/"))) repeats.push(`${file}: ${fact}`);
+        if (text.includes(fact)) repeats.push(`${file}: ${fact}`);
       }
     }
     expect(repeats).toEqual([]);

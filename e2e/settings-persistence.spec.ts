@@ -4,7 +4,7 @@
  * database. Every test here edits the worker's own copy of the Apex workspace, restored before each test.
  */
 import type { APIRequestContext, Page } from "playwright/test";
-import { business } from "../src/data/fixtures";
+import { business } from "../scripts/db/seed-data/apex";
 import { ensureTestTenant, resetTestTenant } from "../scripts/db/seed-lib";
 import { adminDb } from "../scripts/db/lib";
 import { expect, formAlert, hydrated, ORIGIN, test, toast, waitsForHydration, watchConsole } from "./saas";

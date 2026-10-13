@@ -6,7 +6,7 @@ import { useBusiness, useHoursRows } from "@/components/settings/SettingsProvide
 import { useServices } from "@/components/services/ServicesProvider";
 import { ButtonLink } from "@/components/ui/Button";
 import { cardClasses } from "@/components/ui/Card";
-import { formatCityStateZip } from "@/data/fixtures";
+import { formatCityStateZip } from "@/lib/format";
 import { getPageStatus, getPrimaryDomain, getShownServices, orderedPages, pagePath, type PageType } from "@/data/website";
 import { editorHref, previewHref } from "./site-links";
 import { PageStatusBadge } from "./site-ui";

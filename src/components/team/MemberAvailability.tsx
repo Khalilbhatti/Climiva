@@ -13,9 +13,8 @@ import { Modal } from "@/components/ui/Modal";
 import { OptionCard, OptionGroup } from "@/components/ui/OptionCard";
 import { Select } from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
-import { useCan } from "@/components/workspace/WorkspaceProvider";
+import { useCan, useClock } from "@/components/workspace/WorkspaceProvider";
 import { jobHref } from "@/config/routes";
-import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import { getScheduleEvents, type WorkEvent } from "@/data/operations";
 import {
   WEEKDAY_NAMES,
@@ -403,8 +402,9 @@ function AddUnavailableDialog({
 }) {
   const [title, setTitle] = useState("");
   const [reason, setReason] = useState<string>(REASONS[0]);
-  const [startDate, setStartDate] = useState(PROTOTYPE_TODAY);
-  const [endDate, setEndDate] = useState(PROTOTYPE_TODAY);
+  const { today } = useClock();
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
   const [partDay, setPartDay] = useState(false);
   const [startTime, setStartTime] = useState("08:00");
   const [endTime, setEndTime] = useState("12:00");

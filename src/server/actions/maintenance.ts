@@ -1,6 +1,6 @@
 "use server";
 
-import { PROTOTYPE_NOW } from "@/data/fixtures";
+import { PROTOTYPE_NOW } from "@/lib/prototype-clock";
 import type { MaintenancePlan, PlansData } from "@/data/maintenance-plans";
 import type { Booking, OperationsData } from "@/data/operations";
 import type { BookingWork } from "@/db/booking-create";

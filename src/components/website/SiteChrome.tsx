@@ -4,9 +4,8 @@ import Link from "next/link";
 import { ArrowUpRight, Phone } from "lucide-react";
 import { buttonClasses } from "@/components/ui/Button";
 import type { AppHref } from "@/config/routes";
-import { formatCityStateZip } from "@/data/fixtures";
 import { cn } from "@/lib/cn";
-import { getInitials, toTelHref } from "@/lib/format";
+import { formatCityStateZip, getInitials, toTelHref } from "@/lib/format";
 import { looksOf } from "./site-look";
 import { pageHrefIn, typeHrefIn, type SiteView } from "./site-view";
 

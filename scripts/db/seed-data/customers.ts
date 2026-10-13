@@ -9,7 +9,7 @@
  * Where those screens disagree, the dedicated screen wins. Sarah Mitchell has ONE property, Home, 1402 Kinney Ave
  * (the stale South Lamar address is not carried over). The customer is Elena RODRIGUEZ, never the stale spelling.
  */
-import { currentUser } from "@/data/fixtures";
+import { currentUser } from "./apex";
 import type { Customer, Equipment, Property } from "@/data/customers";
 
 export const PROPERTIES: readonly Property[] = [

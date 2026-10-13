@@ -9,7 +9,7 @@
  * The seed's Apex and Northstar rows are only ever read here; the specs that change Settings use a worker's own copy.
  */
 import type { Page } from "playwright/test";
-import { business } from "../src/data/fixtures";
+import { business } from "../scripts/db/seed-data/apex";
 import { expect, hydrated, ORIGIN, switchWorkspace, test, waitsForHydration, watchConsole } from "./saas";
 import { ROUTE_INVENTORY } from "./route-inventory";
 import { NORTHSTAR_CUSTOMERS, NORTHSTAR_ROLES, NORTHSTAR_SERVICES, NORTHSTAR_TEAM } from "../scripts/db/seed-data/northstar";

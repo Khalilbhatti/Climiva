@@ -20,7 +20,7 @@ import { formatClockParts, getDisplayPreferences, type TimeFormatId } from "./di
 
 export type BusinessErrors = Partial<Record<"name" | "phone" | "email" | "street" | "city" | "state" | "postalCode", string>>;
 
-/** "5553928100" or "+1 555 392 8100" → "(555) 392-8100"; undefined when it is not a ten-digit US number. */
+/** "5550100100" or "+1 555 010 0100" → "(555) 010-0100"; undefined when it is not a ten-digit US number. */
 export function normalizePhone(input: string): string | undefined {
   const digits = input.replace(/\D/g, "");
   const national = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
@@ -31,7 +31,7 @@ export function normalizePhone(input: string): string | undefined {
 export function validateBusiness(business: BusinessInfo): BusinessErrors {
   const errors: BusinessErrors = {};
   if (!business.name.trim()) errors.name = "Enter your business name.";
-  if (!normalizePhone(business.phone)) errors.phone = "Enter a ten-digit phone number, for example (555) 392-8100.";
+  if (!normalizePhone(business.phone)) errors.phone = "Enter a ten-digit phone number, for example (555) 010-0100.";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(business.email.trim())) errors.email = "Enter a valid email address.";
   if (!business.address.street.trim()) errors.street = "Enter a street address.";
   if (!business.address.city.trim()) errors.city = "Enter a city.";

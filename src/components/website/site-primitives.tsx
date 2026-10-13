@@ -9,9 +9,8 @@ import { Textarea } from "@/components/ui/Textarea";
 import type { AppHref } from "@/config/routes";
 import { BOOKING_METHOD_ACTION, BOOKING_METHOD_LABEL, formatDuration, formatServicePrice, type Service } from "@/data/services";
 import { getShownServices } from "@/data/website";
-import { formatCityStateZip } from "@/data/fixtures";
 import { cn } from "@/lib/cn";
-import { toTelHref } from "@/lib/format";
+import { formatCityStateZip, toTelHref } from "@/lib/format";
 import type { LookTokens } from "./site-look";
 import { bookingHrefIn, type SiteView } from "./site-view";
 

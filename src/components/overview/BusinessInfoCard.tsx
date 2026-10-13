@@ -5,8 +5,7 @@ import { ArrowRight, Globe, Mail, Phone, Store } from "lucide-react";
 import { useBusiness, useHoursRows } from "@/components/settings/SettingsProvider";
 import { cardClasses } from "@/components/ui/Card";
 import { useSiteAddress } from "@/components/website/WebsiteProvider";
-import { formatCityStateZip } from "@/data/fixtures";
-import { toTelHref } from "@/lib/format";
+import { formatCityStateZip, toTelHref } from "@/lib/format";
 
 const labelClasses = "text-xs font-medium tracking-wider text-ink-muted uppercase";
 

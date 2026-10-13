@@ -7,7 +7,7 @@
  *
  * None of them mutates its input.
  */
-import { PROTOTYPE_NOW } from "../src/data/fixtures";
+import { PROTOTYPE_NOW } from "../src/lib/prototype-clock";
 import type { Booking, OperationsData } from "../src/data/operations";
 
 const mapBooking = (data: OperationsData, id: string, change: (booking: Booking) => Booking): OperationsData => ({

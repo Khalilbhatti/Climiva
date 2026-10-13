@@ -14,7 +14,7 @@ import { StatusBadge, type StatusTone } from "@/components/ui/StatusBadge";
 import { publicListingHref } from "@/lib/site-domain";
 import { useToast } from "@/components/ui/Toast";
 import { useCan } from "@/components/workspace/WorkspaceProvider";
-import { formatCityStateZip } from "@/data/fixtures";
+import { formatCityStateZip } from "@/lib/format";
 import {
   LISTING_STATUS_LABEL,
   getEligibleServices,

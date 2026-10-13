@@ -3,7 +3,7 @@
  *
  * Two businesses, deliberately unlike each other so that any leak between them is visible:
  *
- *   Apex Climate Heating & Air   the approved canonical record (taken from src/data/fixtures, not retyped), Austin,
+ *   Apex Climate Heating & Air   the approved canonical record (taken from seed-data/apex, not retyped), Austin,
  *                                America/Chicago, 12-hour times, flagged with the sample dataset that the not-yet-migrated
  *                                modules (Customers, Jobs, Payments …) still show.
  *   Northstar Heating & Cooling  invented test data: Denver, America/Denver, ISO dates, 24-hour times, NO sample dataset.
@@ -25,7 +25,8 @@
 import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { business, businessHoursByWeekday, currentUser, BUSINESS_TIME_ZONE, PROTOTYPE_TODAY } from "../../src/data/fixtures";
+import { business, businessHoursByWeekday, currentUser, BUSINESS_TIME_ZONE } from "./seed-data/apex";
+import { PROTOTYPE_TODAY } from "../../src/lib/prototype-clock";
 import type { WeeklyHours } from "../../src/data/settings";
 import type { Database } from "../../src/db";
 import {
@@ -98,7 +99,7 @@ export type OrganizationSpec = {
   website?: WebsiteSeed;
 };
 
-/** The approved canonical business record, read from the existing fixtures. */
+/** The approved canonical business record, read from seed-data/apex. */
 export const APEX: OrganizationSpec = {
   name: business.name,
   slug: "apex-climate-heating-air",

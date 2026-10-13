@@ -5,7 +5,8 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "playwright/test";
-import { BUSINESS_TIME_ZONE, business, businessHoursByWeekday, currentUser } from "../src/data/fixtures";
+import { BUSINESS_TIME_ZONE, apexSettings, business, businessHoursByWeekday, currentUser } from "../scripts/db/seed-data/apex";
+import { PROTOTYPE_TODAY } from "../src/lib/prototype-clock";
 import {
   ACCENT_SWATCHES,
   DATE_FORMATS,
@@ -15,8 +16,9 @@ import {
   WEEK_ORDER,
   dateFormatExample,
   getTimeZone,
-  initialSettings,
+  type WeeklyHours,
 } from "../src/data/settings";
+import type { BookingMethod } from "../src/data/services";
 import { WEEK_ORDER as TEAM_WEEK_ORDER } from "../src/data/team";
 import { getSlotGroup } from "../src/lib/booking-slots";
 import { formatLongDate, formatMonthDay, formatTime, formatTimeRange, formatWeekRange, formatWeekdayDate } from "../src/lib/dates";
@@ -43,6 +45,10 @@ import {
   validateProfileName,
 } from "../src/lib/settings-state";
 
+/** `getSlotGroup` has no default hours or date: the tests name the Apex hours and the sample clock. */
+const slotGroupFor = (method: BookingMethod, date: string, durationMinutes: number, hours: WeeklyHours = businessHoursByWeekday) =>
+  getSlotGroup(method, date, durationMinutes, hours, PROTOTYPE_TODAY);
+
 /** Runs `body` with the given display style, and always puts the defaults back. */
 function withStyle(dateFormat: DateFormatId, timeFormat: TimeFormatId, body: () => void) {
   setDisplayPreferences({ dateFormat, timeFormat });
@@ -55,36 +61,36 @@ function withStyle(dateFormat: DateFormatId, timeFormat: TimeFormatId, body: () 
 
 test.describe("baseline: the canonical records, not a copy", () => {
   test("Business information is the Business fixture", () => {
-    expect(initialSettings.business).toEqual({
+    expect(apexSettings.business).toEqual({
       name: "Apex Climate Heating & Air",
       phone: "(555) 392-8100",
       email: "service@apexclimate.com",
       address: { street: "4820 East Riverside Dr, Suite 110", city: "Austin", state: "TX", postalCode: "78741" },
     });
-    expect(initialSettings.business.name).toBe(business.name);
-    expect(initialSettings.business.address).toEqual(business.address);
-    expect(Object.keys(initialSettings.business).sort()).toEqual(["address", "email", "name", "phone"]);
+    expect(apexSettings.business.name).toBe(business.name);
+    expect(apexSettings.business.address).toEqual(business.address);
+    expect(Object.keys(apexSettings.business).sort()).toEqual(["address", "email", "name", "phone"]);
   });
 
   test("Business hours are the weekly hours the scheduling code already reads", () => {
-    expect(initialSettings.hours).toBe(businessHoursByWeekday);
-    expect(summarizeHours(initialSettings.hours)).toEqual([
+    expect(apexSettings.hours).toBe(businessHoursByWeekday);
+    expect(summarizeHours(apexSettings.hours)).toEqual([
       { days: "Mon–Fri", hours: "7:30 AM–6:00 PM" },
       { days: "Sat", hours: "8:00 AM–2:00 PM" },
       { days: "Sun", hours: "Closed" },
     ]);
     // The display rows are derived, so they agree with the approved strings by construction.
-    expect(summarizeHours(initialSettings.hours).map((row) => ({ days: row.days, hours: row.hours }))).toEqual(business.hours.map((row) => ({ days: row.days, hours: row.hours })));
+    expect(summarizeHours(apexSettings.hours).map((row) => ({ days: row.days, hours: row.hours }))).toEqual(business.hours.map((row) => ({ days: row.days, hours: row.hours })));
   });
 
   test("Preferences, Branding and My profile start from the approved values", () => {
-    expect(initialSettings.preferences).toEqual({ timeZone: "America/Chicago", currency: "USD", dateFormat: "mdy-short", timeFormat: "12h" });
+    expect(apexSettings.preferences).toEqual({ timeZone: "America/Chicago", currency: "USD", dateFormat: "mdy-short", timeFormat: "12h" });
     expect(BUSINESS_TIME_ZONE).toBe("America/Chicago");
-    expect(initialSettings.branding).toEqual({ logo: { fileName: "apex-climate-crest-revised.svg" }, accent: "#0D5C63" });
-    expect(initialSettings.profile).toEqual({ name: "Alex Morgan", role: "Operations Lead" });
-    expect(initialSettings.profile).toMatchObject(currentUser);
+    expect(apexSettings.branding).toEqual({ logo: { fileName: "apex-climate-crest-revised.svg" }, accent: "#0D5C63" });
+    expect(apexSettings.profile).toEqual({ name: "Alex Morgan", role: "Operations Lead" });
+    expect(apexSettings.profile).toMatchObject(currentUser);
     // No email, password or sign-in fields exist on the profile.
-    expect(Object.keys(initialSettings.profile)).not.toContain("email");
+    expect(Object.keys(apexSettings.profile)).not.toContain("email");
   });
 
   test("the days of the week are defined once", () => {
@@ -100,7 +106,7 @@ test.describe("baseline: the canonical records, not a copy", () => {
 });
 
 test.describe("Business information rules", () => {
-  const valid = initialSettings.business;
+  const valid = apexSettings.business;
 
   test("a phone number is any ten-digit US number, stored in one format", () => {
     expect(normalizePhone("5553928100")).toBe("(555) 392-8100");
@@ -114,7 +120,7 @@ test.describe("Business information rules", () => {
     expect(validateBusiness(valid)).toEqual({});
     expect(validateBusiness({ ...valid, name: "  ", phone: "123", email: "nope", address: { street: "", city: "", state: "", postalCode: "123" } })).toEqual({
       name: "Enter your business name.",
-      phone: "Enter a ten-digit phone number, for example (555) 392-8100.",
+      phone: "Enter a ten-digit phone number, for example (555) 010-0100.",
       email: "Enter a valid email address.",
       street: "Enter a street address.",
       city: "Enter a city.",
@@ -133,11 +139,11 @@ test.describe("Business information rules", () => {
   });
 
   test("saving changes only Business information", () => {
-    const saved = saveBusiness(initialSettings, { ...valid, name: "New Name" });
+    const saved = saveBusiness(apexSettings, { ...valid, name: "New Name" });
     expect(saved.business.name).toBe("New Name");
-    expect(saved.hours).toBe(initialSettings.hours);
-    expect(saved.preferences).toBe(initialSettings.preferences);
-    expect(initialSettings.business.name).toBe("Apex Climate Heating & Air");
+    expect(saved.hours).toBe(apexSettings.hours);
+    expect(saved.preferences).toBe(apexSettings.preferences);
+    expect(apexSettings.business.name).toBe("Apex Climate Heating & Air");
   });
 });
 
@@ -180,7 +186,7 @@ test.describe("Business hours rules", () => {
     expect(copyMondayToWeekdays({ ...businessHoursByWeekday, 1: null })[3]).toBeNull();
     expect(isSameHours(businessHoursByWeekday, { ...businessHoursByWeekday })).toBe(true);
     expect(isSameHours(businessHoursByWeekday, copied)).toBe(false);
-    expect(saveHours(initialSettings, copied).hours).toBe(copied);
+    expect(saveHours(apexSettings, copied).hours).toBe(copied);
   });
 
   test("the editor offers half-hour steps from 5:00 AM to 11:00 PM, including every saved baseline time", () => {
@@ -193,14 +199,14 @@ test.describe("Business hours rules", () => {
   });
 
   test("the booking times offered follow the saved hours, and the baseline is unchanged", () => {
-    expect(getSlotGroup("request-appointment", "2024-10-26", 120).slots.filter((slot) => slot.available).map((slot) => slot.label)).toEqual(["Morning", "Midday"]);
+    expect(slotGroupFor("request-appointment", "2024-10-26", 120).slots.filter((slot) => slot.available).map((slot) => slot.label)).toEqual(["Morning", "Midday"]);
     const closedSaturday = { ...businessHoursByWeekday, 6: null };
-    expect(getSlotGroup("request-appointment", "2024-10-26", 120, closedSaturday).unavailableReason).toBe("The business is closed on Sats.");
+    expect(slotGroupFor("request-appointment", "2024-10-26", 120, closedSaturday).unavailableReason).toBe("The business is closed on Sats.");
     const opensSunday = { ...businessHoursByWeekday, 0: { open: "09:00", close: "17:00" } };
-    expect(getSlotGroup("instant", "2024-10-27", 60, opensSunday).slots.some((slot) => slot.available)).toBe(true);
-    expect(getSlotGroup("instant", "2024-10-27", 60).unavailableReason).toBe("The business is closed on Suns.");
+    expect(slotGroupFor("instant", "2024-10-27", 60, opensSunday).slots.some((slot) => slot.available)).toBe(true);
+    expect(slotGroupFor("instant", "2024-10-27", 60).unavailableReason).toBe("The business is closed on Suns.");
     const shorter = { ...businessHoursByWeekday, 5: { open: "09:00", close: "12:00" } };
-    expect(getSlotGroup("request-appointment", "2024-10-25", 120, shorter).slots.filter((slot) => slot.available).map((slot) => slot.label)).toEqual(["Midday"]);
+    expect(slotGroupFor("request-appointment", "2024-10-25", 120, shorter).slots.filter((slot) => slot.available).map((slot) => slot.label)).toEqual(["Midday"]);
   });
 });
 
@@ -224,9 +230,9 @@ test.describe("Branding rules", () => {
   });
 
   test("saving branding changes only branding", () => {
-    const saved = saveBranding(initialSettings, { logo: null, accent: "#8B3A1E" });
+    const saved = saveBranding(apexSettings, { logo: null, accent: "#8B3A1E" });
     expect(saved.branding).toEqual({ logo: null, accent: "#8B3A1E" });
-    expect(saved.business).toBe(initialSettings.business);
+    expect(saved.business).toBe(apexSettings.business);
   });
 });
 
@@ -238,10 +244,10 @@ test.describe("My profile rules", () => {
   });
 
   test("saving changes the name and photo, never the role", () => {
-    const saved = saveProfile(initialSettings, { name: "  Alex Q. Morgan ", role: "Owner", photo: "blob:x" });
+    const saved = saveProfile(apexSettings, { name: "  Alex Q. Morgan ", role: "Owner", photo: "blob:x" });
     expect(saved.profile).toEqual({ name: "Alex Q. Morgan", role: "Operations Lead", photo: "blob:x" });
-    expect(isSameProfile(initialSettings.profile, { ...initialSettings.profile })).toBe(true);
-    expect(isSameProfile(initialSettings.profile, { ...initialSettings.profile, name: "Other" })).toBe(false);
+    expect(isSameProfile(apexSettings.profile, { ...apexSettings.profile })).toBe(true);
+    expect(isSameProfile(apexSettings.profile, { ...apexSettings.profile, name: "Other" })).toBe(false);
   });
 });
 
@@ -302,9 +308,9 @@ test.describe("Workspace preferences: the saved style is read by the formatters"
   });
 
   test("saving preferences changes only preferences, and the currency cannot change", () => {
-    const saved = savePreferences(initialSettings, { ...initialSettings.preferences, timeZone: "America/New_York", timeFormat: "24h" });
+    const saved = savePreferences(apexSettings, { ...apexSettings.preferences, timeZone: "America/New_York", timeFormat: "24h" });
     expect(saved.preferences).toMatchObject({ timeZone: "America/New_York", timeFormat: "24h", currency: "USD" });
-    expect(saved.business).toBe(initialSettings.business);
+    expect(saved.business).toBe(apexSettings.business);
   });
 
   test("no formatter reads the system clock, Intl or the browser timezone", () => {
@@ -324,21 +330,21 @@ test.describe("one source of truth", () => {
     });
   }
 
-  test("no component or page reads the static business, hours, time zone or user records: they read Settings", () => {
+  test("no component or page reads the Apex business, hours, time zone or user records: they read Settings", () => {
     const hits: string[] = [];
     for (const file of [...sourceFiles("src/components"), ...sourceFiles("src/app")]) {
-      const text = readFileSync(file, "utf8");
-      for (const match of text.matchAll(/import\s*\{([^}]*)\}\s*from\s*"@\/data\/fixtures"/g)) {
-        for (const name of match[1].split(",").map((part) => part.trim().split(/\s+as\s+/)[0])) {
-          if (["business", "businessHoursByWeekday", "currentUser", "BUSINESS_TIME_ZONE"].includes(name)) hits.push(`${file}: ${name}`);
-        }
-      }
+      if (/seed-data\/apex["']/.test(readFileSync(file, "utf8"))) hits.push(file);
     }
     expect(hits).toEqual([]);
   });
 
-  test("the fixtures that do read the baseline are data modules, and Settings is the only editor of it", () => {
-    const readers = ["src/data/settings.ts", "src/lib/booking-slots.ts"];
-    for (const file of readers) expect(readFileSync(file, "utf8")).toMatch(/from "(@\/data\/|\.\/)fixtures"/);
+  test("the modules that apply Settings hold no business of their own: the hours, the date and the baseline are the caller's", () => {
+    // tenant-fixture-boundary.spec.ts holds the whole of src to this; these two are where the baseline used to be read.
+    for (const file of ["src/data/settings.ts", "src/lib/booking-slots.ts"]) {
+      // Code, not comments: a header may say where the Apex record now lives.
+      const text = readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+      expect(text, file).not.toMatch(/seed-data\/apex|data\/fixtures/);
+      expect(text, file).not.toContain(business.name);
+    }
   });
 });

@@ -8,7 +8,7 @@
  */
 import type { CustomerBook } from "../src/data/customers";
 import type { Directory } from "../src/data/directory";
-import { PROTOTYPE_TODAY } from "../src/data/fixtures";
+import { PROTOTYPE_TODAY } from "../src/lib/prototype-clock";
 import { getPlanContribution, type PlanAdjustment } from "../src/data/maintenance-plans";
 import { getReviewContribution, type ReviewAdjustment } from "../src/data/reviews";
 import type { TeamData } from "../src/data/team";

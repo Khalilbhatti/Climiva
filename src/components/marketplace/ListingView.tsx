@@ -6,12 +6,11 @@ import { CalendarCheck, Clock, Globe, Mail, MapPin, MessageSquare, Phone, Snowfl
 import { buttonClasses } from "@/components/ui/Button";
 import { bookingHrefIn, typeHrefIn, type SiteView } from "@/components/website/site-view";
 import type { AppHref } from "@/config/routes";
-import { formatCityStateZip } from "@/data/fixtures";
 import type { ContactField, CoverId, ListingAction } from "@/data/marketplace";
 import { BOOKING_METHOD_ACTION, formatDuration, formatServicePrice, type Service } from "@/data/services";
 import type { BusinessInfo } from "@/data/settings";
 import { cn } from "@/lib/cn";
-import { getInitials, toTelHref } from "@/lib/format";
+import { formatCityStateZip, getInitials, toTelHref } from "@/lib/format";
 import type { HoursRow } from "@/lib/settings-state";
 
 const COVER_CLASS: Record<CoverId, string> = {

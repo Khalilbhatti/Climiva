@@ -2,7 +2,7 @@ import "server-only";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { AppHref } from "@/config/routes";
-import { PROTOTYPE_NOW } from "@/data/fixtures";
+import { PROTOTYPE_NOW } from "@/lib/prototype-clock";
 import { getShownServices } from "@/data/website";
 import { PublicBooking } from "@/components/website/public/PublicBooking";
 import { SiteFooter, SiteHeader, SiteRenderer } from "@/components/website/SiteRenderer";

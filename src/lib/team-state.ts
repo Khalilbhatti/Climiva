@@ -7,7 +7,7 @@
  * Deactivating a member changes only the Team record. Jobs and bookings that name them are never rewritten, nothing is
  * reassigned automatically, and their Climvia login (if they have one) is not touched.
  */
-import { PROTOTYPE_NOW } from "@/data/fixtures";
+import { PROTOTYPE_NOW } from "./prototype-clock";
 import {
   getRoleById,
   summarizeWeek,

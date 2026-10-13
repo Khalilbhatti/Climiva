@@ -1,10 +1,11 @@
 /**
  * Settings: the editable business identity and workspace preferences.
  *
- * There is no second dataset. The baseline is built from the canonical Business and User records in data/fixtures
- * (name, phone, email, address, weekly hours, time zone, the signed-in user), so a screen that reads Settings and a
- * screen that reads those records can never disagree. Demo edits live in components/settings/SettingsProvider and
- * reset on reload; nothing here is mutated.
+ * There is no second dataset and no business in this file. Each business's Settings are built from that business's own rows
+ * (src/server/workspace.ts), so a screen that reads Settings and a screen that reads those rows can never disagree. Edits live in
+ * components/settings/SettingsProvider until they are saved; nothing here is mutated. This file holds the types and the
+ * application-owned lists (time zones, formats, swatches) that every business shares, and ships to the browser; the Apex
+ * business's values are seed and test data (scripts/db/seed-data/apex.ts) and are not part of it.
  *
  * Settings owns only what a business sets once for the whole workspace: Business information, Business hours,
  * Branding, Workspace preferences and My profile. It does not own Services (the catalog), Team (people, roles and
@@ -14,7 +15,6 @@
  */
 import type { DateFormatId, TimeFormatId } from "@/lib/display-preferences";
 import { formatDateParts } from "@/lib/display-preferences";
-import { BUSINESS_TIME_ZONE, business, businessHoursByWeekday, currentUser } from "./fixtures";
 
 /* ───────────────────────── business information ───────────────────────── */
 
@@ -129,22 +129,4 @@ export type SettingsData = {
   branding: Branding;
   preferences: Preferences;
   profile: Profile;
-};
-
-export const initialSettings: SettingsData = {
-  business: {
-    name: business.name,
-    phone: business.phone,
-    email: business.email,
-    address: { ...business.address },
-  },
-  hours: businessHoursByWeekday,
-  branding: { logo: { fileName: "apex-climate-crest-revised.svg" }, accent: DEFAULT_ACCENT },
-  preferences: {
-    timeZone: getTimeZone(BUSINESS_TIME_ZONE).id,
-    currency: "USD",
-    dateFormat: "mdy-short",
-    timeFormat: "12h",
-  },
-  profile: { name: currentUser.name, role: currentUser.role },
 };

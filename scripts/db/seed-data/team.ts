@@ -7,7 +7,7 @@
  *
  * Contact details are only the values the approved screens agree on. Alex Morgan has a phone number but no email.
  */
-import { currentUser } from "@/data/fixtures";
+import { businessHoursByWeekday, currentUser } from "./apex";
 import {
   SYSTEM_ROLES,
   buildPermissions,
@@ -17,7 +17,6 @@ import {
   type TeamMember,
   type WeeklyHours,
 } from "@/data/team";
-import { businessHoursByWeekday } from "@/data/fixtures";
 
 function customWeek(start: string, end: string, breakStart: string, breakEnd: string): WeeklyHours {
   return Object.fromEntries(

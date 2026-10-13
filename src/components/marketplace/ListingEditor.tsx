@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/Switch";
 import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/components/ui/Toast";
 import { useUnsavedGuard } from "@/components/ui/UnsavedGuard";
-import { formatCityStateZip } from "@/data/fixtures";
+import { formatCityStateZip } from "@/lib/format";
 import {
   CONTACT_FIELDS,
   COVERS,

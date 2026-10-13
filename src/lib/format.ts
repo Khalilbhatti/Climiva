@@ -55,7 +55,12 @@ export function getInitials(name: string): string {
     .join("");
 }
 
-/** toTelHref("(555) 392-8100") → "tel:5553928100" */
+/** formatCityStateZip({ city: "Austin", state: "TX", postalCode: "78741" }) → "Austin, TX 78741" */
+export function formatCityStateZip(address: { city: string; state: string; postalCode: string }): string {
+  return `${address.city}, ${address.state} ${address.postalCode}`;
+}
+
+/** toTelHref("(555) 010-0100") → "tel:5550100100" */
 export function toTelHref(phone: string): string {
   return `tel:${phone.replace(/\D/g, "")}`;
 }

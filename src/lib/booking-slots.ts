@@ -1,11 +1,10 @@
 /**
  * Time slots offered when creating a booking. What a slot looks like depends on the service's booking
  * method (the three approved behaviours); whether it is available depends only on the business hours and
- * "today" in the business's own time zone (callers pass the workspace clock; the sample business's is fixed, so its dates
- * stay put). The hours are the saved Settings hours (callers pass them); the baseline hours are the default. Existing
- * bookings are never moved when the hours change.
+ * "today" in the business's own time zone. Both are the caller's: the hours are the business's saved hours and "today" is the
+ * workspace clock (the sample business's is fixed, so its dates stay put). There is no default for either, so no business can be
+ * given another's hours or a stale date. Existing bookings are never moved when the hours change.
  */
-import { PROTOTYPE_TODAY, businessHoursByWeekday } from "@/data/fixtures";
 import type { BookingMethod } from "@/data/services";
 import type { WeeklyHours } from "@/data/settings";
 import { formatWeekday, minutesToTime, timeToMinutes, weekdayIndex } from "./dates";
@@ -50,8 +49,8 @@ export function getSlotGroup(
   method: BookingMethod,
   date: string,
   durationMinutes: number,
-  weeklyHours: WeeklyHours = businessHoursByWeekday,
-  today: string = PROTOTYPE_TODAY,
+  weeklyHours: WeeklyHours,
+  today: string,
 ): SlotGroup {
   const heading = HEADING[method];
   const hours = weeklyHours[weekdayIndex(date)];

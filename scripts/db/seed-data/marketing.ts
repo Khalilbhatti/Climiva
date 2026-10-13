@@ -16,7 +16,7 @@
  */
 import { DEFAULT_SUBJECT, FIRST_NAME_TOKEN, defaultEmailMessage, defaultSmsMessage } from "../../../src/data/marketing";
 import type { SeedCampaign, SeedMarketing, SeedRecipient } from "../../../src/db/marketing-queries";
-import { business } from "../../../src/data/fixtures";
+import { business } from "./apex";
 import { CUSTOMERS } from "./customers";
 
 const BUSINESS = business.name;

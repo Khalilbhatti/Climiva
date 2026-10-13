@@ -1,7 +1,7 @@
 import { expect, test } from "playwright/test";
 import { getJobById } from "../src/data/operations";
 import { CLASSIFICATION_LABEL, MODULE_IDS, buildPermissions, countAccessibleModules, describeAvailability, getAssignableMembers, getAssignedServiceIds, getClassification, getEffectivePermissions, getMemberById, getMembersForRole, getRoleById, getTeamMemberById, summarizeWeek, weeklyFromBusinessHours } from "../src/data/team";
-import { businessHoursByWeekday } from "../src/data/fixtures";
+import { businessHoursByWeekday } from "../scripts/db/seed-data/apex";
 import { formatTime } from "../src/lib/dates";
 import { summarizeHours } from "../src/lib/settings-state";
 import {

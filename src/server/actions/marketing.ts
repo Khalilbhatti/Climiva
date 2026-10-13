@@ -1,6 +1,6 @@
 "use server";
 
-import { PROTOTYPE_NOW } from "@/data/fixtures";
+import { PROTOTYPE_NOW } from "@/lib/prototype-clock";
 import type { CampaignStatus, MarketingData } from "@/data/marketing";
 import { cancelScheduleTx, duplicateTx, loadMarketing, saveDraftTx, scheduleTx, sendTx, type MarketingContext } from "@/db/marketing-queries";
 import { loadRefs } from "@/db/ops-queries";

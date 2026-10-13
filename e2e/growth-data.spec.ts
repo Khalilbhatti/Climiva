@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "playwright/test";
-import { PROTOTYPE_TODAY, business } from "../src/data/fixtures";
+import { business } from "../scripts/db/seed-data/apex";
+import { PROTOTYPE_TODAY } from "../src/lib/prototype-clock";
 import {
   AUDIENCES,
   FIRST_NAME_TOKEN,

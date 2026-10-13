@@ -118,7 +118,7 @@ test.describe("Business information", () => {
 
     for (const [label, message] of [
       ["Business name", "Enter your business name."],
-      ["Phone", "Enter a ten-digit phone number, for example (555) 392-8100."],
+      ["Phone", "Enter a ten-digit phone number, for example (555) 010-0100."],
       ["Email", "Enter a valid email address."],
       ["Street address", "Enter a street address."],
       ["City", "Enter a city."],

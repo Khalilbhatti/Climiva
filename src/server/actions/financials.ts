@@ -1,6 +1,6 @@
 "use server";
 
-import { PROTOTYPE_NOW } from "@/data/fixtures";
+import { PROTOTYPE_NOW } from "@/lib/prototype-clock";
 import type { FinancialData, Invoice, Payment, Quote } from "@/data/financials";
 import { createInvoiceFromQuoteTx, createQuoteTx, loadFinancials, loadFinRefs, recordPaymentTx, updateQuoteStatusTx, voidPaymentTx, type FinContext } from "@/db/fin-queries";
 import { withTenant } from "@/db/tenant";

@@ -15,8 +15,10 @@ import {
   getServiceNameFor,
   getUnassignedEvents,
 } from "../src/data/operations";
-import { PROTOTYPE_NOW, PROTOTYPE_TODAY, BUSINESS_TIME_ZONE, business, businessHoursByWeekday } from "../src/data/fixtures";
-import { getServiceById } from "../src/data/services";
+import { BUSINESS_TIME_ZONE, business, businessHoursByWeekday } from "../scripts/db/seed-data/apex";
+import { PROTOTYPE_NOW, PROTOTYPE_TODAY } from "../src/lib/prototype-clock";
+import { getServiceById, type BookingMethod } from "../src/data/services";
+import type { WeeklyHours } from "../src/data/settings";
 import { getTeamMemberById } from "../src/data/team";
 import { getSlotGroup } from "../src/lib/booking-slots";
 import { addDays, formatLongDate, formatTime, formatTimeRange, startOfWeek, weekDates, weekdayIndex } from "../src/lib/dates";
@@ -42,6 +44,10 @@ import {
   startJobError,
 } from "../src/lib/operations-rules";
 import { BOOK, BOOKINGS, CUSTOMERS, DIR, JOBS, OPERATIONS, OVERVIEW_TOTALS, SCHEDULE_BLOCKS, SERVICES, TEAM, TEAM_DATA } from "./apex-data";
+
+/** `getSlotGroup` has no default hours or date: the tests name the Apex hours and the sample clock. */
+const slotGroupFor = (method: BookingMethod, date: string, durationMinutes: number, hours: WeeklyHours = businessHoursByWeekday) =>
+  getSlotGroup(method, date, durationMinutes, hours, PROTOTYPE_TODAY);
 
 // Pure data/selector/rules tests: no browser needed.
 
@@ -234,26 +240,26 @@ test.describe("dates, times and timezone", () => {
 
   test("booking slots follow the booking method and the business hours", () => {
     // Fri Oct 25: instant booking → exact start times, all within 7:30–6:00.
-    const instant = getSlotGroup("instant", "2024-10-25", 60);
+    const instant = slotGroupFor("instant", "2024-10-25", 60);
     expect(instant.heading).toBe("Start time");
     expect(instant.slots.map((slot) => slot.start)).toEqual(["09:00", "11:30", "14:00", "16:00"]);
     expect(instant.slots.every((slot) => slot.available)).toBe(true);
 
     // Appointment request → 2-hour arrival windows.
-    const windows = getSlotGroup("request-appointment", "2024-10-25", 120);
+    const windows = slotGroupFor("request-appointment", "2024-10-25", 120);
     expect(windows.heading).toBe("Arrival window (2 hours)");
     expect(windows.slots.every((slot) => slot.available)).toBe(true);
 
     // Quote / assessment → consultation slots.
-    expect(getSlotGroup("request-quote", "2024-10-25", 60).heading).toBe("Consultation slot");
+    expect(slotGroupFor("request-quote", "2024-10-25", 60).heading).toBe("Consultation slot");
 
     // Saturday closes at 2 PM, so later windows are unavailable; Sunday is closed; the past is closed.
-    const saturday = getSlotGroup("request-appointment", "2024-10-26", 120);
+    const saturday = slotGroupFor("request-appointment", "2024-10-26", 120);
     expect(saturday.slots.filter((slot) => slot.available).map((slot) => slot.label)).toEqual(["Morning", "Midday"]);
-    const sunday = getSlotGroup("instant", "2024-10-27", 60);
+    const sunday = slotGroupFor("instant", "2024-10-27", 60);
     expect(sunday.slots).toEqual([]);
     expect(sunday.unavailableReason).toMatch(/closed on Sun/i);
-    expect(getSlotGroup("instant", "2024-10-24", 60).unavailableReason).toMatch(/already passed/i);
+    expect(slotGroupFor("instant", "2024-10-24", 60).unavailableReason).toMatch(/already passed/i);
   });
 });
 

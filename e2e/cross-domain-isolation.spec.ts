@@ -9,7 +9,7 @@
 import type { Page } from "playwright/test";
 import { NORTHSTAR_CUSTOMERS, NORTHSTAR_SERVICES, NORTHSTAR_TEAM } from "../scripts/db/seed-data/northstar";
 import { CUSTOMERS, SERVICES, TEAM } from "./apex-data";
-import { business } from "../src/data/fixtures";
+import { business } from "../scripts/db/seed-data/apex";
 import { expect, hydrated, ORIGIN, switchWorkspace, switcher, test } from "./saas";
 
 const NORTHSTAR = "Northstar Heating & Cooling";

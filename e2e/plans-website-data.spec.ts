@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "playwright/test";
 import { getPropertyById } from "../src/data/customers";
-import { business } from "../src/data/fixtures";
+import { business } from "../scripts/db/seed-data/apex";
 import {
   COVERAGE,
   COVERAGE_IDS,

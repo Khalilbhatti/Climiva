@@ -39,6 +39,7 @@ Read [production-handoff.md](production-handoff.md) for the front end, which thi
 29. [The visual Website Builder](#29-the-visual-website-builder)
 30. [Route groups and the provider boundary](#30-route-groups-and-the-provider-boundary)
 31. [Website Templates](#31-website-templates)
+32. [Where a business's sample data may live](#32-where-a-businesss-sample-data-may-live)
 
 ## 1. Status and scope
 
@@ -1417,3 +1418,53 @@ Unchanged and re-tested: the public Site and booking security, the Marketplace (
 | `website-templates-render.spec.ts` | Each Template as a visitor gets it, on every page at Desktop, Tablet and Mobile width: one level-1 heading, the landmarks, no horizontal overflow, named controls, the workspace's contrast standard, a navigation that fits a phone, a visible keyboard focus and a link to every Service; and the Builder working on each Template (edit, add, copy, restyle, remove, add a page, change the theme and design style, Undo, Save, Publish). |
 
 Existing specs that pinned "one Template" (the database, lifecycle and round-trip specs) now count four; the server-boundary spec lists the new action; the route inventory fills the new dynamic route; nothing was removed.
+
+## 32. Where a business's sample data may live
+
+Apex Climate Heating & Air and Northstar Heating & Cooling are seeded businesses. Before this correction the Apex business record (name, phone, email,
+address, hours, the signed-in person, the time zone) sat in `src/data/fixtures.ts` beside two generic helpers, and client code imported the helpers, so the whole
+module, Apex's name and phone included, was bundled into the JavaScript every visitor and every signed-in person downloads. `src/data/settings.ts` imported the
+same record to build a baseline (`initialSettings`) that only the server and the tests used. Nothing was leaking between businesses, but a business's values were
+reachable from client code, and "reachable from client code" is the property that has to be false before anything else is built on the platform.
+
+### The four kinds of data, and where each lives
+
+| Kind | What it is | Where it lives | May it reach a browser? |
+| --- | --- | --- | --- |
+| Application-owned constants | Lists every business shares (time zones, date and time formats, accent swatches, the Section registry, the four Templates), pure helpers (`formatCityStateZip` in `lib/format.ts`), the sample workspace's pinned clock (`lib/prototype-clock.ts`) | `src/` | Yes, except the clock: a browser is given the clock to use by the workspace (`useClock()`) |
+| Seed definitions | The Apex and Northstar organization records, hours, people and every canonical Apex record | `scripts/db/seed-lib.ts`, `scripts/db/seed-data/*` (Apex's business record is `apex.ts`, beside `northstar.ts`) | Never. Nothing under `src/` imports them |
+| Test fixtures | The expected values and the helpers that read them | `e2e/*` (`apex-data.ts`, `tenant-values.ts`) | Never |
+| Runtime tenant data | A business's name, phone, email, address, hours, Services, people, records | PostgreSQL rows, read on the server (`src/server/workspace.ts` for the signed-in business, `src/db/public-queries.ts` for a visitor) and handed to the browser as the page's data | Yes: its own, and only its own |
+
+The one server-side stand-in is the sample workspace's reference crest (`src/server/sample-workspace.ts`, marked `server-only`): Branding is not stored yet, so the sample
+business shows it and every other business starts plain. It goes away when logos are stored.
+
+Why the seed modules are not marked `server-only`: the seed and the tests run them under Node, where the marker throws (the same reason `src/db/*-queries.ts` says "no
+`server-only` import on purpose"). They are held by location and by the import-graph test instead. `server-only` is used where only the server runs the module.
+
+### What changed
+
+`src/data/fixtures.ts` is gone. `business`, `currentUser`, `businessHoursByWeekday` and `BUSINESS_TIME_ZONE` moved, unchanged, to `scripts/db/seed-data/apex.ts`, together with
+`apexSettings` (the Settings baseline the old `initialSettings` was, now a test baseline built from them). `formatCityStateZip` moved to `lib/format.ts` and the pinned
+clock to `lib/prototype-clock.ts`. `getSlotGroup` no longer defaults to Apex's hours or the pinned date: its callers (the booking modals, the public booking journey and
+the public-booking rules) already passed the business's own, and now cannot forget to. The two Team components that defaulted a date to the pinned day read the workspace
+clock, which is the same date for the sample business and the real one for every other. The phone-number example in the Settings validation message is a made-up number.
+
+### How it is held
+
+| Rule | Held by |
+| --- | --- |
+| No Client Component reaches a seed, test or server module, or the pinned clock, through any chain of imports (the walk stops at Server Actions, which a browser calls but never bundles) | `tenant-fixture-boundary.spec.ts` (import graph, with controls that prove the walker resolves the edges it is meant to see) |
+| No file under `src/` imports anything under `scripts/` or `e2e/` | the same |
+| No business's name, phone, email, street, person or Northstar value is written into any file under `src/` (comments excluded) | the same (the values are read from the seed, never retyped) |
+| The client JavaScript the production build emits contains none of them, nor the sample role or crest | the same: it reads `.next/static` after the build, so it sees what a copied string or an import nobody foresaw would put there |
+| Apex's, Northstar's and a just-created business's pages, and every script those pages load, carry the right business and no other; a visitor's Site likewise | `tenant-fixture-runtime.spec.ts` |
+
+Both parts were shown to fail: a client-reachable import of the Apex record fails the three graph and source checks, and a client use of its values fails the bundle check, naming the files and values.
+
+### What this does not change, and what remains
+
+The database, the migrations, the seed's behaviour (Apex and Northstar seed exactly as before) and the canonical Apex data are unchanged; the Phase 16 provider split and the
+public projection are unchanged and re-tested. **Remains:** `SAMPLE_DATA_SET` (`"apex-demo"`, in `lib/workspace-types.ts`) is the name of the sample data set, an application
+identifier stored on the organization row, not business data, and it is still in client code. `America/Chicago` is one entry in the shared list of time zones a business can choose.
+The crest stand-in above is temporary.

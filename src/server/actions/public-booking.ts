@@ -1,7 +1,7 @@
 "use server";
 
 import { headers } from "next/headers";
-import { PROTOTYPE_NOW } from "@/data/fixtures";
+import { PROTOTYPE_NOW } from "@/lib/prototype-clock";
 import { createPublicBooking, loadPublicSite } from "@/db/public-queries";
 import { failure, ok, type ActionResult } from "@/lib/action-result";
 import { businessClock, stampInstant } from "@/lib/business-time";

@@ -5,13 +5,13 @@ import Link from "next/link";
 import { ArrowRight, CalendarClock, ClipboardCheck, History, ShieldCheck, Wrench, type LucideIcon } from "lucide-react";
 import { cardClasses } from "@/components/ui/Card";
 import { jobHref, memberTabHref } from "@/config/routes";
-import { PROTOTYPE_TODAY } from "@/data/fixtures";
 import { ACTIVITY_CATEGORIES, getTeamMemberById, type ActivityCategory, type ActivityEntry } from "@/data/team";
 import { cn } from "@/lib/cn";
 import { addDays, formatMonthDay, formatTime } from "@/lib/dates";
 import { formatDate } from "@/lib/format";
 import { useMember } from "./MemberWorkspace";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useClock } from "@/components/workspace/WorkspaceProvider";
 
 const ICONS: Record<ActivityCategory, LucideIcon> = {
   access: ShieldCheck,
@@ -20,15 +20,16 @@ const ICONS: Record<ActivityCategory, LucideIcon> = {
   services: Wrench,
 };
 
-function dayLabel(date: string): string {
-  if (date === PROTOTYPE_TODAY) return `Today (${formatMonthDay(date)})`;
-  if (date === addDays(PROTOTYPE_TODAY, -1)) return `Yesterday (${formatMonthDay(date)})`;
+function dayLabel(date: string, today: string): string {
+  if (date === today) return `Today (${formatMonthDay(date)})`;
+  if (date === addDays(today, -1)) return `Yesterday (${formatMonthDay(date)})`;
   return formatDate(date);
 }
 
 /** A simple history of important changes to this person. It is a product view, not a security log. */
 export function MemberActivity() {
   const member = useMember();
+  const { today } = useClock();
   const [filter, setFilter] = useState<"all" | ActivityCategory>("all");
 
   const entries = [...member.activity].sort((a, b) => b.at.localeCompare(a.at));
@@ -80,7 +81,7 @@ export function MemberActivity() {
       ) : (
         days.map((day) => (
           <div key={day}>
-            <h3 className="mb-2 text-micro font-bold tracking-wider text-ink-muted uppercase">{dayLabel(day)}</h3>
+            <h3 className="mb-2 text-micro font-bold tracking-wider text-ink-muted uppercase">{dayLabel(day, today)}</h3>
             <ol className="space-y-2">
               {shown
                 .filter((entry) => entry.at.startsWith(day))

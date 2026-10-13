@@ -9,57 +9,10 @@
  * from each of those entry points and holds it to that, so the separation is a property of the code and not of what a page happens to show.
  * (public-boundary.spec.ts holds the same line at run time, against a server that is only able to run the three public database functions.)
  */
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test } from "playwright/test";
-
-const ROOT = process.cwd();
-const SRC = join(ROOT, "src");
-const posix = (path: string) => relative(ROOT, path).split(sep).join("/");
-
-function walk(dir: string): string[] {
-  return readdirSync(dir).flatMap((entry) => {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) return walk(path);
-    return /\.(ts|tsx)$/.test(path) ? [path] : [];
-  });
-}
-
-function resolveImport(from: string, specifier: string): string | undefined {
-  const base = specifier.startsWith("@/") ? join(SRC, specifier.slice(2)) : specifier.startsWith(".") ? resolve(dirname(from), specifier) : undefined;
-  if (!base) return undefined;
-  return [`${base}.ts`, `${base}.tsx`, join(base, "index.ts"), join(base, "index.tsx"), base].find((candidate) => existsSync(candidate) && statSync(candidate).isFile());
-}
-
-/** The modules a file brings in at run time (type-only imports are erased, so they bring in nothing). */
-function importsOf(file: string): string[] {
-  const code = readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
-  const specifiers: string[] = [];
-  for (const match of code.matchAll(/(?:^|\n)\s*(?:import|export)\s+(type\s+)?[^;]*?\sfrom\s+["']([^"']+)["']/g)) if (!match[1]) specifiers.push(match[2]);
-  for (const match of code.matchAll(/(?:^|\n)\s*import\s+["']([^"']+)["']/g)) specifiers.push(match[1]);
-  return specifiers.flatMap((specifier) => resolveImport(file, specifier) ?? []);
-}
-
-/** Every source file reachable from `entries`, each with the file that first brought it in (to say how a forbidden one got there). */
-function reachable(entries: string[]): Map<string, string | undefined> {
-  const seen = new Map<string, string | undefined>(entries.map((entry) => [entry, undefined]));
-  const queue = [...entries];
-  while (queue.length > 0) {
-    const file = queue.shift()!;
-    for (const next of importsOf(file)) {
-      if (seen.has(next)) continue;
-      seen.set(next, file);
-      queue.push(next);
-    }
-  }
-  return seen;
-}
-
-const chainOf = (seen: Map<string, string | undefined>, file: string): string => {
-  const chain: string[] = [];
-  for (let current: string | undefined = file; current; current = seen.get(current)) chain.unshift(posix(current));
-  return chain.join(" -> ");
-};
+import { ROOT, SRC, chainOf, posix, reachable, walk } from "./import-graph";
 
 const forbiddenIn = (entries: string[], forbidden: (path: string) => boolean): string[] => {
   const seen = reachable(entries);

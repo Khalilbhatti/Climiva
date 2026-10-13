@@ -1,7 +1,7 @@
 "use server";
 
 import { and, eq } from "drizzle-orm";
-import { PROTOTYPE_NOW } from "@/data/fixtures";
+import { PROTOTYPE_NOW } from "@/lib/prototype-clock";
 import type { Booking, Job, OperationsData } from "@/data/operations";
 import type { WeeklyHours } from "@/data/settings";
 import { findMember, insertBookingTx } from "@/db/booking-create";

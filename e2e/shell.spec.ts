@@ -1,4 +1,4 @@
-import { business, currentUser } from "../src/data/fixtures";
+import { business, currentUser } from "../scripts/db/seed-data/apex";
 import { OVERVIEW_TOTALS } from "./apex-data";
 import { NAV_GROUPS, NAV_UTILITY } from "../src/config/navigation";
 import { expect, test } from "./fixtures";

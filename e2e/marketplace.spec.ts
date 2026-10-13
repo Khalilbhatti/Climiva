@@ -1,5 +1,5 @@
 import type { Page } from "playwright/test";
-import { business } from "../src/data/fixtures";
+import { business } from "../scripts/db/seed-data/apex";
 import { expect, test } from "./fixtures";
 import { SERVICES } from "./apex-data";
 

@@ -5,7 +5,7 @@
  * module below simply reads the same record.
  */
 import type { Page } from "playwright/test";
-import { PROTOTYPE_NOW } from "../src/data/fixtures";
+import { PROTOTYPE_NOW } from "../src/lib/prototype-clock";
 import { getBookingById, getJobById } from "../src/data/operations";
 import { BOOKINGS, JOBS, OPERATIONS, OVERVIEW_TOTALS } from "./apex-data";
 import { expect, test } from "./fixtures";

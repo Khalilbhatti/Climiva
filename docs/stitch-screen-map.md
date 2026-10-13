@@ -323,7 +323,7 @@ only). Photo upload is local to the page session (file name and size only; nothi
    but the text is not yet derived.
 2. ~~Maintenance-plan names and prices for customers other than Sarah Mitchell remain unreconciled.~~ **Resolved (Phase 5, §10).**
 3. ~~Team members, contact details and permissions.~~ **Resolved in Phase 4** (§9): `src/data/team.ts` is now the Team module's dataset.
-   Settings will still own business hours and the timezone; until then `businessHoursByWeekday` in `src/data/fixtures.ts` stands in.
+   Settings will still own business hours and the timezone; until then `businessHoursByWeekday` (now `scripts/db/seed-data/apex.ts`, seed and test data) stood in.
 4. ~~The Overview's 24 bookings and 18 completed jobs, and the sidebar badges, remain fixed aggregates until Analytics defines how they are counted.~~ **Resolved (Phase 14):** they are the current month's totals of the Analytics report, the stored rows plus the sample business's imported adjustments ([saas-architecture.md §27](saas-architecture.md#27-marketing-and-analytics)).
 5. Several Stitch people have no Customers record (listed above). Whether they become customers on confirmation is a Customers / Bookings decision.
 
@@ -892,7 +892,7 @@ and links back to it; none can edit it, and Settings cannot edit them.
 
 - `e2e/shell.spec.ts` and `e2e/growth-regression.spec.ts`: Analytics and Settings are real pages; **Help is the one placeholder left**.
 - `lib/format.ts` and `lib/dates.ts` take the date and time style from `lib/display-preferences`; their output is byte-for-byte the old output at the defaults.
-- `data/fixtures.ts` is unchanged except `formatCityStateZip` accepts any address; `data/team.ts` re-exports the weekday constants from `data/settings.ts`, and
+- `formatCityStateZip` (then in `data/fixtures.ts`, now `lib/format.ts`) accepts any address; `data/team.ts` re-exports the weekday constants from `data/settings.ts`, and
   `describeAvailability` / `weeklyFromBusinessHours` take the saved hours as an optional argument; `getSlotGroup` takes the weekly hours as an optional argument.
 - `BusinessInfoCard`, `TopBar`, `ListingView`, the Website renderer and the other readers listed above became client components (or read the provider); two
   server-rendered dates on the Customers page use a small client `DisplayDate`.

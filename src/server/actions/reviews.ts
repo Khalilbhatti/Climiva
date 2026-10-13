@@ -1,6 +1,6 @@
 "use server";
 
-import { PROTOTYPE_NOW } from "@/data/fixtures";
+import { PROTOTYPE_NOW } from "@/lib/prototype-clock";
 import type { ReviewsData } from "@/data/reviews";
 import { loadRefs } from "@/db/ops-queries";
 import { createRequestTx, editReplyTx, loadReviews, postReplyTx, type ReviewContext } from "@/db/review-queries";

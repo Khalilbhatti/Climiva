@@ -15,7 +15,7 @@
 import { randomBytes } from "node:crypto";
 import { expect, test as base } from "playwright/test";
 import { Pool } from "pg";
-import { businessHoursByWeekday } from "../src/data/fixtures";
+import { businessHoursByWeekday } from "../scripts/db/seed-data/apex";
 import { VOID_REASONS } from "../src/data/financials";
 import type { Tx } from "../src/db";
 import { insertBookingTx } from "../src/db/booking-create";

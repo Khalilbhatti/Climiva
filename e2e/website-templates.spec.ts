@@ -434,7 +434,7 @@ test.describe("the documentation", () => {
       "ten", "fifteen variants", "`look`", "Design style", "optional and backward compatible", "never CSS",
       "demonstration business", "inert", "writes nothing", "applyTemplateAction", "replaceDraftWithTemplate", "expectedRevision", "FOR UPDATE", "one transaction",
       "published website is byte for byte", "survives", "settings.serviceDisplay", "Undo history starts empty", "website:manage", "forged", "`(signed-in)/(workspace)`",
-      "Docker verification is required before AWS deployment", "logo", "custom domains", "contact-form",
+      "Docker verification was required before AWS deployment", "logo", "custom domains", "contact-form",
     ]) {
       expect(section, term).toContain(term);
     }

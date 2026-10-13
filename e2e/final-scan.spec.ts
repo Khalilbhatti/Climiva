@@ -65,7 +65,8 @@ test.describe("development leftovers", () => {
   test("no console output, debugger statements or work markers in the source", () => {
     const hits: string[] = [];
     // The server layer reports a failure it has handled with console.error (that is what an operator reads); nothing in the browser code does.
-    const isServerSide = (file: string) => /src[\\/](server|db)[\\/]|src[\\/]lib[\\/]auth\.ts$/.test(file);
+    // (The start-up check in src/instrumentation-node.ts is server-side too: it prints why a bad production configuration stopped the process.)
+    const isServerSide = (file: string) => /src[\\/](server|db)[\\/]|src[\\/]lib[\\/]auth\.ts$|src[\\/]instrumentation-node\.ts$/.test(file);
     // The one exception is the Asset log (src/server/asset-log.ts): the single place that writes the upload lifecycle, in one format, and says
     // nothing about bytes, names, keys or credentials. It may write information as well as errors; no other file may.
     const isAssetLog = (file: string) => /src[\\/]server[\\/]asset-log\.ts$/.test(file);

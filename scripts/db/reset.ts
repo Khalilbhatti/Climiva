@@ -10,7 +10,7 @@ import { seedDevelopmentData } from "./seed-lib";
 
 async function main() {
   loadEnv();
-  if (process.env.NODE_ENV === "production") throw new Error("db:reset must never run in production.");
+  if (process.env.NODE_ENV === "production" || process.env.CLIMVIA_ENV === "production") throw new Error("db:reset must never run in production.");
   const name = databaseName(adminUrl());
   // A rebuilt database must not find files that belong to rows it no longer has. Only a local directory inside .data/ is cleared; an S3 bucket never is.
   if ((process.env.ASSET_STORAGE_DRIVER ?? "local") === "local") await clearLocalAssetDirectory(process.env.ASSET_LOCAL_DIR?.trim() || join(".data", "assets"));

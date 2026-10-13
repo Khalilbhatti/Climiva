@@ -1,0 +1,5 @@
+# Local trial of the stack: every certificate is issued by Caddy's OWN certificate authority, never a public one. A browser will not trust it
+# (no certificate is installed on the machine), which is fine for `curl --cacert` and for checking the mechanics. This proves that the proxy,
+# the permission question and the Host handling work; it proves nothing about public certificates.
+local_certs
+skip_install_trust

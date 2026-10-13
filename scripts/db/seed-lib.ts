@@ -368,6 +368,8 @@ export async function seedDevelopmentData(database?: string): Promise<SeedResult
   if (process.env.NODE_ENV === "production" && process.env.ALLOW_SEED !== "1") {
     throw new Error("Refusing to seed development data when NODE_ENV=production.");
   }
+  // A real deployment (the container images set CLIMVIA_ENV) is never seeded, whatever else is set: there is no override for this one.
+  if (process.env.CLIMVIA_ENV === "production") throw new Error("Refusing to seed development data in a production deployment.");
   const { pool, db } = adminDb(database ? adminUrl(database) : undefined);
   const { auth, close } = seedAuth(database);
   try {

@@ -52,8 +52,15 @@ playwright-report/
 test-results/
 .env*
 !.env.example
+!.env.production.example
 AGENTS.md
 CLAUDE.md
 
 # uploaded files kept by the local asset storage driver (development, tests, a mounted volume): runtime data, never committed
 /.data/
+
+# database dumps and asset archives written by deploy/scripts/backup*.sh: a business's data, never committed
+/backups/
+*.dump
+*.dump.sha256
+*.assets.tar.gz

@@ -26,8 +26,12 @@ import { hostConfig } from "@/lib/domain-config";
  * never reaches the workspace, the sign-in pages or any API: `/settings`, `/login` and `/api/branding` there are only pages the site does
  * not have. The one path passed through as it is is `/assets/<id>`, the public logo, which asks the database itself and ignores the host.
  * A Host that is not a name at all is refused.
+ *
+ * Also left alone on the platform's names: `/health/*` (the process answers "I am alive" and "I can serve": no session, no data) and
+ * `/internal/tls-allow` (the reverse proxy asks whether a certificate may be requested for a name; it is refused without its secret, and the proxy
+ * does not forward it to the public). On a customer's name neither exists: those paths take the rewrite above like any other.
  */
-const PUBLIC_PREFIXES = ["/api/auth", "/sites", "/listings", "/assets"];
+const PUBLIC_PREFIXES = ["/api/auth", "/sites", "/listings", "/assets", "/health", "/internal/tls-allow"];
 const AUTH_PAGES = ["/login", "/signup"];
 
 /** Where a customer's domain is served from. */

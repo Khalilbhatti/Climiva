@@ -8,7 +8,7 @@
  *      copy and nothing of anyone's workspace (no person, organization, customer, team or financial data, no provider in the page's JavaScript),
  *      whichever business's public page the person opens.
  *
- *   2. On a second server whose database role can do exactly one thing: run the six public functions (it cannot read a single table).
+ *   2. On a second server whose database role can do exactly one thing: run the seven public functions (it cannot read a single table).
  *      Every public page still serves, for a visitor and for each signed-in person alike, so a public request provably asks the database nothing
  *      but those functions: no session lookup, no workspace, no Draft. The same server cannot serve a workspace page, which shows the role really
  *      is restricted and the check is not vacuous.
@@ -269,9 +269,9 @@ test.describe("a published Site or listing is the same page for a visitor and fo
   });
 });
 
-/* ───────────────────────── a server that can only run the six public functions ───────────────────────── */
+/* ───────────────────────── a server that can only run the seven public functions ───────────────────────── */
 
-test.describe("a server whose database role can run the six public functions and nothing else", () => {
+test.describe("a server whose database role can run the seven public functions and nothing else", () => {
   test.describe.configure({ mode: "serial", timeout: 120_000 });
 
   let role: string;
@@ -293,7 +293,7 @@ test.describe("a server whose database role can run the six public functions and
     await admin.query(`create role ${role} login password '${password}' nosuperuser nocreatedb nocreaterole nobypassrls`);
     await admin.query(`grant connect on database "${database}" to ${role}`);
     await admin.query(`grant usage on schema public to ${role}`);
-    await admin.query(`do $$ declare f record; begin for f in select oid::regprocedure as sig from pg_proc where proname in ('app_public_site', 'app_public_listing', 'app_public_create_booking', 'app_public_asset', 'app_public_domain', 'app_public_site_domain') loop execute format('grant execute on function %s to ${role}', f.sig); end loop; end $$`);
+    await admin.query(`do $$ declare f record; begin for f in select oid::regprocedure as sig from pg_proc where proname in ('app_public_site', 'app_public_listing', 'app_public_create_booking', 'app_public_asset', 'app_public_domain', 'app_public_site_domain', 'app_tls_eligible') loop execute format('grant execute on function %s to ${role}', f.sig); end loop; end $$`);
 
     const url = new URL(process.env.DATABASE_ADMIN_URL!);
     url.username = role;

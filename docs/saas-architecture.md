@@ -448,56 +448,55 @@ Seed data: two businesses that differ in every setting the app shows, so any lea
 
 ## 17. Deployment and the future AWS topology
 
-Nothing is deployed in this phase. The app is built so that one Ubuntu EC2 instance can run it later.
+Nothing is deployed to AWS yet. The application runs as a production-shaped stack of four containers (reverse proxy, web app, PostgreSQL and the migration that runs before the app), built and **verified against real containers in Phase 18C1**: see §35 for the topology, the Host trust model, the on-demand certificate permission, health checks, backups and the restore drill, and `docs/deployment-runbook.md` for the commands. One Ubuntu EC2 instance can run it later.
 
-**Container.** `Dockerfile` (multi-stage) builds the Next.js standalone server and runs it as an unprivileged user; a second target (`tools`) runs the database scripts.
+**Container.** `Dockerfile` (multi-stage) builds the Next.js standalone server and runs it as an unprivileged user (uid 10001, read-only filesystem, no capabilities); a second target (`tools`) runs the database scripts. The stack is `docker-compose.production.yml`, started with `deploy/scripts/deploy.sh`.
 
 ```bash
-docker build -t climvia-web .                              # the app
-docker build --target tools -t climvia-tools .             # one-off database commands
+# The two images by hand (deploy.sh does this through compose):
+docker build -t climvia-web --build-arg APP_VERSION=$(git rev-parse --short HEAD) .
+docker build --target tools -t climvia-tools .
 
-docker run --rm --env-file .env.production climvia-tools   # apply migrations (npm run db:migrate)
-docker run -d --name climvia --restart unless-stopped \
-  --env-file .env.production -p 127.0.0.1:3000:3000 climvia-web
+cp .env.production.example .env.production                   # then replace every placeholder
+npm run config:check -- .env.production                      # fails with a list of what is wrong, before anything is built
+deploy/scripts/deploy.sh                                     # build, check, migrate, start, verify
 ```
 
-Secrets are never baked into an image (`.dockerignore` excludes every `.env*` except the example). Production environment, all required:
+Secrets are never baked into an image (`.dockerignore` excludes every `.env*`, and the build copies none). The settings live in one git-ignored `.env.production` (`.env.production.example` lists them with what each is for); the compose file hands each container only the names it needs, so the app never receives the owner's credential (§35). The application's own required settings, which it also refuses to start without:
 
 | Variable | Meaning |
 | --- | --- |
 | `DATABASE_URL` | the app's connection, as **`climvia_app`** |
-| `DATABASE_ADMIN_URL` | the owner's connection: used only by the `tools` container for migrations; never given to the app container |
-| `POSTGRES_APP_PASSWORD` | password `db:migrate` sets for `climvia_app` (≥ 12 chars) |
+| `DATABASE_ADMIN_URL`, `POSTGRES_OWNER_PASSWORD`, `POSTGRES_APP_PASSWORD` | the owner's connection and the two database passwords: used only by the migration and the database container; never given to the app container (the app refuses to start if it holds them) |
 | `BETTER_AUTH_SECRET` | ≥ 32 random characters |
-| `BETTER_AUTH_URL` | the public origin, e.g. `https://app.example.com` |
-| `AUTH_TRUSTED_PROXIES` | the reverse proxy's address / CIDR (see §3) |
+| `BETTER_AUTH_URL` | the public origin, `https://…` |
+| `AUTH_TRUSTED_PROXIES` | the reverse proxy's network (in the compose stack, the fixed `edge` subnet) (see §3) |
 | `AUTH_TRUSTED_ORIGINS` | optional extra allowed origins |
+| `TLS_ASK_TOKEN` | the secret the proxy sends when it asks whether a certificate may be requested for a name (§35) |
+| `CUSTOM_DOMAIN_TARGET`, `ASSET_STORAGE_DRIVER`, … | §33 and §34 |
 
-Do not run `db:seed` in production.
+Never run `db:seed` in production: it, `db:reset` and `db:test:prepare` refuse under the deployment marker `CLIMVIA_ENV=production` (set by the image), and the seed's data is not in the images at all.
 
 **Single-EC2 target** (design only):
 
 ```
-Internet ── 443 ──> Caddy or nginx (TLS, sets X-Forwarded-For)
-                       └─> 127.0.0.1:3000  Next.js container (climvia-web)
-                                   └─> PostgreSQL  (container with a persistent EBS volume, or RDS later)
+Internet ── 80/443 ──> Caddy container (TLS, sets X-Forwarded-For, keeps Host)         [edge network]
+                          └─> app:3000  Next.js container (climvia-web, read-only, uid 10001)   [edge + data]
+                                      └─> db:5432  PostgreSQL container, named volume on EBS   [data network, no way out]
 ```
 
 - Security group: 80/443 from anywhere, 22 from the operator only; PostgreSQL never public.
 - The app container and PostgreSQL share a private Docker network; the app holds only the `climvia_app` credentials.
-- Logs to stdout (collected by Docker / CloudWatch agent later). Health check: `GET /login` returns 200.
+- Logs to stdout, rotated by Docker (collected by a CloudWatch agent later). Health checks: `GET /health/live` (the process runs) and `GET /health/ready` (configuration, database and file storage are fit); §35.
 - Later, as needed and not before: S3 for logos / avatars / site assets, SES for mail (verification, reset, invitations), RDS for the database, CloudFront for static assets.
 
-> **Verification note.** Docker was not available in the environment this phase was developed in, so `docker-compose.yml`, the `Dockerfile` and `.dockerignore` were written to the documented behaviour of
-> Docker and Next.js but **not executed there**. PostgreSQL behaviour (migrations, roles, RLS) was verified on a real PostgreSQL 17 server, not through Docker. Run `docker compose up -d postgres` and
-> `docker build .` once on a machine with Docker before relying on them. The Phase 10 migrations (`0002_core_data.sql`, `0003_core_data_rls.sql`) were verified the same way, on PostgreSQL directly.
-> **Docker verification is still required before AWS deployment.**
+> **Verification.** Through Phase 18B no Docker image had been built or run; the files were written to the documented behaviour of Docker and Next.js. Phase 18C1 built both images and ran the whole stack for real (Docker 29, Compose 5, Caddy 2, PostgreSQL 17): see §35 for what was proved and what was not. The single-EC2 target above is the design for Phase 18C2; nothing in AWS exists yet.
 
-**Uploaded files (Phase 18A).** `ASSET_STORAGE_DRIVER` (`local` or `s3`, required in production), `ASSET_LOCAL_DIR`, `AWS_REGION` and `AWS_S3_BUCKET`; credentials come from the AWS default provider chain, an IAM role on the instance, never from configuration. The image mounts `/data/assets` for the local fallback. The bucket is private and is provisioned outside the application. Back the local directory up like the database. Details in §33; **Docker verification is required before AWS deployment.**
+**Uploaded files (Phase 18A).** `ASSET_STORAGE_DRIVER` (`local` or `s3`, required in production), `ASSET_LOCAL_DIR`, `AWS_REGION` and `AWS_S3_BUCKET`; credentials come from the AWS default provider chain, an IAM role on the instance, never from configuration. The image mounts `/data/assets` for the local fallback. The bucket is private and is provisioned outside the application. Back the local directory up like the database. Details in §33; **Docker verification was required before AWS deployment (done in Phase 18C1, §35).**
 
 ## 18. Backups
 
-Not implemented; this is the plan.
+**Implemented in Phase 18C1 (the commands, and a restore proved on real containers): `deploy/scripts/backup.sh`, `deploy/scripts/restore.sh`, `deploy/scripts/restore-drill.sh`, `deploy/scripts/backup-assets.sh`, `deploy/scripts/restore-assets.sh`; see §35 and `docs/deployment-runbook.md`.** What is *not* implemented is the schedule, the encryption, the off-host copy and the retention below: those are decisions for whoever runs the host and are Phase 18C2. The plan:
 
 - **Nightly logical backup:** `pg_dump --format=custom` of the database, taken by a cron job / systemd timer on the host (or a sidecar container), written to a local directory first.
 - **Off-host, encrypted:** the dump is encrypted (for example `age` or `gpg`, or S3 server-side encryption with a KMS key) and copied to a private S3 bucket (block all public access, versioning on,
@@ -696,7 +695,7 @@ Since Phase 15 the **published Site has a real public booking page** for a visit
 ### Not in this phase
 
 Quotes, invoices, payments, plan records, review records, marketing, the Website model, file storage, rescheduling, drag and drop, routing, notifications by email or SMS, and the Analytics aggregate facts. No Docker image was built or run for this phase: the Dockerfile and compose
-file are unchanged and compatible with the new migrations, and **Docker verification is required before AWS deployment** (§17).
+file are unchanged and compatible with the new migrations, and **Docker verification was required before AWS deployment (done in Phase 18C1, §35)** (§17).
 
 ## 25. Financials: quotes, invoices and payments
 
@@ -777,7 +776,7 @@ The server loads the active business's financials with the rest of its core data
 
 ### Not in this phase
 
-A payment processor, bank or accounting connection, Climvia's own billing, a Quote builder, invoice editing, refunds and credit notes, tax, PDFs and email, Maintenance Plans, Reviews records, Marketing, the Analytics aggregate facts, the Website model and Marketplace configuration (Maintenance Plans and Reviews followed in §26, Marketing and Analytics in §27). No Docker image was built or run for this phase: the Dockerfile and compose file are unchanged and compatible with the new migrations, and **Docker verification is required before AWS deployment** (§17).
+A payment processor, bank or accounting connection, Climvia's own billing, a Quote builder, invoice editing, refunds and credit notes, tax, PDFs and email, Maintenance Plans, Reviews records, Marketing, the Analytics aggregate facts, the Website model and Marketplace configuration (Maintenance Plans and Reviews followed in §26, Marketing and Analytics in §27). No Docker image was built or run for this phase: the Dockerfile and compose file are unchanged and compatible with the new migrations, and **Docker verification was required before AWS deployment (done in Phase 18C1, §35)** (§17).
 
 ## 26. Maintenance plans and reviews
 
@@ -854,7 +853,7 @@ The server loads the active business's plans and reviews with the rest of its co
 
 ### Not in this phase
 
-Pausing, ending or renewing a plan from a screen, editing a plan or its visits, rescheduling a visit other than by cancelling its booking and booking it again, automatic billing from a plan, sending a review request (email or SMS), a public way for a customer to submit a review, reviews on the Website or the Marketplace, Marketing, the Analytics aggregate facts, the Website model and Marketplace configuration. No Docker image was built or run for this phase: the Dockerfile and compose file are unchanged and compatible with the new migrations, and **Docker verification is required before AWS deployment** (§17).
+Pausing, ending or renewing a plan from a screen, editing a plan or its visits, rescheduling a visit other than by cancelling its booking and booking it again, automatic billing from a plan, sending a review request (email or SMS), a public way for a customer to submit a review, reviews on the Website or the Marketplace, Marketing, the Analytics aggregate facts, the Website model and Marketplace configuration. No Docker image was built or run for this phase: the Dockerfile and compose file are unchanged and compatible with the new migrations, and **Docker verification was required before AWS deployment (done in Phase 18C1, §35)** (§17).
 
 ## 27. Marketing and Analytics
 
@@ -985,7 +984,7 @@ The server reads the active business's campaigns with the rest of its core data 
 
 ### Not in this phase / what is left
 
-Sending any email or text message, any provider (SES, Twilio, SendGrid), external marketing automation, templates and a rich email builder, A/B tests and open or click analytics, Website pages and Marketplace configuration in PostgreSQL, SaaS billing, custom domains and S3. The migration roadmap that remains is the **Website** (pages, the booking page configuration and the public preview paths) and the **Marketplace** listing, then the object store for photos and branding. **Docker verification is required before AWS deployment** (§17): the new migrations were applied and tested on the PostgreSQL stand-in used for development, the Dockerfile and compose file are unchanged, and no image was built or run.
+Sending any email or text message, any provider (SES, Twilio, SendGrid), external marketing automation, templates and a rich email builder, A/B tests and open or click analytics, Website pages and Marketplace configuration in PostgreSQL, SaaS billing, custom domains and S3. The migration roadmap that remains is the **Website** (pages, the booking page configuration and the public preview paths) and the **Marketplace** listing, then the object store for photos and branding. **Docker verification was required before AWS deployment (done in Phase 18C1, §35)** (§17): the new migrations were applied and tested on the PostgreSQL stand-in used for development, the Dockerfile and compose file are unchanged, and no image was built or run.
 
 ## 28. Websites, Site Versions and the Marketplace
 
@@ -1157,7 +1156,7 @@ The server reads the active business's primary Site (its Draft, and the Publishe
 
 Phase 16 added the visual Website Builder (§29) on this model and **kept** all of it: the model above, the registry and server-side validation, the Draft/Published lifecycle and its guarantees, the policies and grants, the public functions, the preview's authentication, the rule that text is plain and styling is tokens. It changed three things here: `savePageAction` became `saveDraftAction` (the whole Draft, by key, against a revision), `site_versions` gained `revision` (maintained by triggers, migrations `0014`/`0015`), and `validateContent` gained the page rules the Builder shares with the server (reserved addresses, the Home and Booking pages, the Booking page's list of Services). **Not built, and needing no change to the schema above except where noted:** a Sites screen (choose, add, archive), an image/asset library (**needs object storage and a new assets table**), per-page SEO, a rollback screen, Host → Site routing and custom-domain verification (§20), a delivered contact-form message, email and SMS. A new section type is a new entry in the registry (code) and appears in the Builder with no other change; a richer template is a new migration row. Phase 17 did exactly that: three more Templates, fifteen more variants, the Template Gallery and a confirmed, revision-checked way to put a Template on a Draft (§31).
 
-No Docker image was built or run for Phase 15: the Dockerfile and compose file are unchanged and compatible with its migrations (`0012`, `0013`), which were applied and tested on the PostgreSQL stand-in used for development. **Docker verification is required before AWS deployment** (§17). An existing development database needs `npm run db:reset` to pick up the new tables and the seeded websites and listings.
+No Docker image was built or run for Phase 15: the Dockerfile and compose file are unchanged and compatible with its migrations (`0012`, `0013`), which were applied and tested on the PostgreSQL stand-in used for development. **Docker verification was required before AWS deployment (done in Phase 18C1, §35)** (§17). An existing development database needs `npm run db:reset` to pick up the new tables and the seeded websites and listings.
 
 ## 29. The visual Website Builder
 
@@ -1306,7 +1305,7 @@ The existing Website specs keep their guarantees (the public pages, the Draft pr
 - No real-time collaboration: two people editing at once is handled by the revision (the second to save is told to reload), not by merging.
 - A page holds at most 40 sections and a site at most 12 pages; the working copy is the whole Draft in browser memory (tested at the limits).
 - The canvas scales the 1024 / 768 / 390 frame by `transform` to fit the area; it is a viewport simulation, not a device emulator.
-- No Docker image was built or run for this phase: the Dockerfile and compose file are unchanged and compatible with the new migrations (`0014`, `0015`), which were applied and tested on the PostgreSQL stand-in used for development. **Docker verification is required before AWS deployment** (§17). An existing development database needs `npm run db:reset` to pick up the revision column and its triggers.
+- No Docker image was built or run for this phase: the Dockerfile and compose file are unchanged and compatible with the new migrations (`0014`, `0015`), which were applied and tested on the PostgreSQL stand-in used for development. **Docker verification was required before AWS deployment (done in Phase 18C1, §35)** (§17). An existing development database needs `npm run db:reset` to pick up the revision column and its triggers.
 
 ## 30. Route groups and the provider boundary
 
@@ -1403,7 +1402,7 @@ Gallery or preview → **Use this template** → a confirmation → the Draft is
 
 ### What this does not change, and what is not built
 
-Unchanged and re-tested: the public Site and booking security, the Marketplace (independent of Templates), public routes carrying no workspace providers, the Builder's every function, the revision rule, publishing. **Not built, by design:** durable logo and image upload (object storage is required, §17: the Templates use the structured theme tokens and the existing session-only branding), custom domains and DNS (§20), a delivered contact-form message, a Template marketplace or tenant-editable Templates, a Draft rollback screen, collaborative editing. **Docker verification is required before AWS deployment** (§17); no Docker image was built or run for this phase.
+Unchanged and re-tested: the public Site and booking security, the Marketplace (independent of Templates), public routes carrying no workspace providers, the Builder's every function, the revision rule, publishing. **Not built, by design:** durable logo and image upload (object storage is required, §17: the Templates use the structured theme tokens and the existing session-only branding), custom domains and DNS (§20), a delivered contact-form message, a Template marketplace or tenant-editable Templates, a Draft rollback screen, collaborative editing. **Docker verification was required before AWS deployment (done in Phase 18C1, §35)** (§17); no Docker image was built or run for this phase.
 
 ### Proof
 
@@ -1532,7 +1531,7 @@ An Asset records the driver it was stored with, and it is read back through that
 
 `POST /api/branding` (multipart: `accent` required, `logo` or `removeLogo` optional; no field names an organization). The order is the defence:
 
-1. the request must come from this site's own pages (`Origin` equal to the site's host, and `Sec-Fetch-Site` same-origin where sent), because a Route Handler, unlike a Server Action, gets no framework check;
+1. the request must come from this site's own pages (`Origin` equal to the request's own `Host`, the configured public origin or a listed trusted origin, and `Sec-Fetch-Site` same-origin where sent; `Forwarded` and `X-Forwarded-Host` are **not** consulted, §35), because a Route Handler, unlike a Server Action, gets no framework check;
 2. the caller is the verified person in a verified active workspace and may `settings:manage` (an owner or admin; a member is refused with 403);
 3. **only then is the body read**, under a hard limit of 5 MB plus the form's framing, counted as it arrives (a lying or missing `Content-Length` is cut off), so nobody without the right to upload makes the server buffer anything;
 4. the file is judged by its **bytes**.
@@ -1562,7 +1561,7 @@ The Phase 17 server-side stand-in (`sample-workspace.ts`, a filename with nothin
 
 ### Configuration, Docker and the production intent
 
-`.env.example` documents both drivers and asks for no AWS key. The Dockerfile makes `/data/assets` a volume owned by the unprivileged user and sets `ASSET_LOCAL_DIR` to it, and deliberately does **not** set the driver; `docker-compose.yml` is unchanged (PostgreSQL only), and the Dockerfile's header shows the run command that keeps the files, `-v climvia-assets:/data/assets`. **Docker is not installed on the development machine, none of this has been run, and Docker verification is required before AWS deployment.**
+`.env.example` documents both drivers and asks for no AWS key. The Dockerfile creates `/data/assets` owned by the unprivileged user and sets `ASSET_LOCAL_DIR` to it, and deliberately does **not** set the driver; `docker-compose.yml` is unchanged (PostgreSQL only), and `docker-compose.production.yml` mounts the named volume `assets` there. **Run for real in Phase 18C1 (§35):** an upload re-encoded by `sharp` inside the read-only production container lands on that volume, survives restarts, `down`/`up` and a rebuilt image, and `deploy/scripts/backup-assets.sh` archives it (it is not in the database dump). Docker verification was required before AWS deployment (done in Phase 18C1, §35).
 
 The intended production path: the application on EC2 with an **IAM role** (no keys), a **private S3 bucket**, and a public logo request going browser -> the application's `/assets/<id>` -> S3. CloudFront in front of that is a later optimization. **No CloudFront, no custom domain, no bucket provisioning and no AWS deployment exist yet.**
 
@@ -1647,12 +1646,91 @@ Members of the active organization read `site_domains`; owners and admins (`webs
 
 ### The Phase 18C seam
 
-The application supplies **verified, active hostnames** and **safe Host → Site resolution**. Infrastructure must supply the Internet DNS target, the reverse proxy or load balancer, certificate issuance and renewal, any trusted-proxy setting (and then the one place a forwarded host may be read), health checks and deployment. Nothing here locks the choice between a load balancer and a proxy such as Caddy, and **Docker verification is required before AWS deployment**.
+The application supplies **verified, active hostnames** and **safe Host → Site resolution**. Infrastructure must supply the Internet DNS target, the reverse proxy or load balancer, certificate issuance and renewal, health checks and deployment. Phase 18C1 supplied the proxy, the certificate permission and the health checks for a single host (§35); **no forwarded host is read anywhere** (the one place that did, the upload's same-origin check, now uses the request's own `Host`). DNS and public certificates remain Phase 18C2. Nothing here locks the choice between a load balancer and a proxy such as Caddy, and **Docker verification was required before AWS deployment (done in Phase 18C1, §35)**.
 
 ### Tests
 
-`domain-rules.spec.ts` (the normalizer, reserved names, Host classification, the state machine, TXT matching, routing advice, the resolver), `domains-database.spec.ts` (SQL as `climvia_app`: who reads and writes, the transition guard, constraints, uniqueness, the public function, races), `domains-claims.spec.ts` (the lifecycle on a test copy with fixture DNS: claims, verification, cooldown, activation, main, stale screens, handing a name to another Site, independence from Templates, Branding and publishing), `domains-host.spec.ts` (requests by Host against the running server: every page, private routes, unknown and non-active names, forged headers, two businesses, two Sites, Templates, logo, canonical, booking through a browser), `domains-ui.spec.ts` (the Domain Manager) and `domains-boundary.spec.ts` (the import graph, the client bundle, header trust, no DNS writes or outbound fetches), plus the public-boundary probe: a server whose database role can run only the six public functions also serves a customer's name.
+`domain-rules.spec.ts` (the normalizer, reserved names, Host classification, the state machine, TXT matching, routing advice, the resolver), `domains-database.spec.ts` (SQL as `climvia_app`: who reads and writes, the transition guard, constraints, uniqueness, the public function, races), `domains-claims.spec.ts` (the lifecycle on a test copy with fixture DNS: claims, verification, cooldown, activation, main, stale screens, handing a name to another Site, independence from Templates, Branding and publishing), `domains-host.spec.ts` (requests by Host against the running server: every page, private routes, unknown and non-active names, forged headers, two businesses, two Sites, Templates, logo, canonical, booking through a browser), `domains-ui.spec.ts` (the Domain Manager) and `domains-boundary.spec.ts` (the import graph, the client bundle, header trust, no DNS writes or outbound fetches), plus the public-boundary probe: a server whose database role can run only the public functions (six when this was written, seven since Phase 18C1 added `app_tls_eligible`, §35) also serves a customer's name.
 
 ### What this does not do
 
 Real internet DNS and TLS are not exercised (the DNS client is tested against the fixture and a never-answering address only). `<slug>.climvia.com` is still not a routed hostname (platform requests to it are the platform's). The Marketplace listing's "View website" still leads to the platform path. Docker, AWS, Route 53, CloudFront and certificates are untouched.
+
+## 35. The production container runtime (Phase 18C1)
+
+Phase 18C1 turned the container files from "written to the documentation" into a stack that was **built and run for real** (Docker 29.8, Compose 5.6, Node 24 on Alpine, Caddy 2, PostgreSQL 17), and fixed what running it found. It adds no feature and no AWS resource. This section says what the stack is, what each part guarantees, and what was and was not proved.
+
+### The stack
+
+```
+Internet ── 80/443 ──> proxy (Caddy 2)                                   edge network (fixed subnet)
+                          │  Host kept · X-Forwarded-For set by Caddy · /internal blocked · bodies ≤ 8 MB
+                          └─> app:3000 (climvia-web, uid 10001, read-only, no capabilities)      edge + data
+                                  │  assets volume (uploaded logos)          · tmpfs for /tmp and .next/cache
+                                  └─> db:5432 (PostgreSQL 17, pgdata volume)      data network: internal, no route out
+migrate (climvia-tools): runs once per deploy, before the app; exits
+```
+
+`docker-compose.production.yml` (the development file, `docker-compose.yml`, is unchanged and still PostgreSQL only). Only the proxy publishes ports (80 and 443, host ports configurable for a trial). The app and the database have **no `ports:`**; from the proxy the name `db` does not resolve, and the database cannot reach the Internet. Each container gets an explicit allow-list of settings, not `env_file`: the app receives exactly `APP_ENVIRONMENT` (`scripts/deploy/rules.ts`; a test compares it with the compose file), the migration gets the owner's connection and the app password, the database gets its own three, the proxy gets three. The app therefore never holds the owner's credential, and refuses to start if it did. App and migration run `read_only`, `cap_drop: ALL`, `no-new-privileges`, with a tmpfs for `/tmp` and `.next/cache`; nothing mounts the Docker socket; the app uses `init: true` and a 30 s grace period. Start-up order is enforced by health: database healthy → migration exits 0 → app ready → proxy.
+
+Volumes: `pgdata` (the database), `assets` (uploaded logos when `ASSET_STORAGE_DRIVER=local`), `caddy-data` (certificates and the ACME account), `caddy-config`. None is removed by any script. A volume is not a backup (below).
+
+### The images
+
+`Dockerfile`: `base` → `deps` (`npm ci`) → `build` (`next build`, standalone) → `tools` and `runner`. `runner` is the standalone server plus `scripts/graceful-shutdown.cjs`, as numeric user 10001, with `CLIMVIA_ENV=production`, `APP_VERSION` (the git commit, shown by the health endpoints and the image label) and a healthcheck on `/health/ready`. `tools` holds the migration, status, roles, fingerprint and config-check scripts and `src/`, `drizzle/`; **not** the seed, its data, `e2e/`, or any test artifact. Both images were exported and scanned after the build: no `.env`, key, dump, upload or test artifact; none of the 14 secret values from the development and trial env files; no Apex or Northstar string, no seeded person; no secret in `docker history`. The runtime image is 325 MB.
+
+Three things the run found and the files now do differently:
+
+- **No `VOLUME` instruction.** It gave a container started without a mount an anonymous volume, which looked healthy and loses its files when the container is removed. The directory exists, owned by 10001, so a new named volume takes that ownership; without a mount, on a read-only filesystem, `/health/ready` reports storage `fail`.
+- **Graceful stop.** The standalone server does not handle SIGTERM: `docker stop` ended it at once with exit 143, cutting off a request in progress. `graceful-shutdown.cjs` (preloaded with `node --require`) stops accepting connections, lets requests in progress finish and exits 0, with a 25 s deadline inside the 30 s grace period. Proved with a slow upload that was half-sent when the stop was asked for: it was answered, then the container exited 0, never killed.
+- **A build context must not contain files that import ignored files.** `playwright.docker.config.ts` imported a directory `.dockerignore` excludes, so `next build` (which type-checks everything it sees) failed inside the image. Both Playwright configs are now ignored too.
+
+### The deployment marker and the configuration
+
+`CLIMVIA_ENV=production` is set by the runtime image and by nothing else (not the build, not the tools, not the host Playwright server, which also runs a production *build* with a test DNS resolver and an http address, so `NODE_ENV` cannot be the marker). When it is set, `productionConfigProblems` (`src/lib/deployment.ts`, pure) lists every way the environment is unfit: a missing, short or placeholder `BETTER_AUTH_SECRET` or `TLS_ASK_TOKEN`; a `DATABASE_URL` that is not the restricted role with a real password; the owner's credential, the database passwords or any AWS access key in the app's environment; a non-https address; no trusted proxy; no routing target; an unknown storage driver, a relative or test asset directory, or S3 without region and bucket; and any test-only setting (the DNS fixture resolver and directory, the test directories, `ALLOW_SEED`, `SEED_PASSWORD`). `src/instrumentation.ts` runs it before the first request and **exits the process** with the list (names and rules, never values). Throwing was not enough: Next.js logged an unhandled rejection and the server kept running half-prepared; the exit was verified (`exit=1`).
+
+`npm run config:check -- <env-file>` applies the same rules to exactly what the app container would receive, plus `scripts/deploy/rules.ts` to the rest of the file (password strength and URL-safety; the two connection strings must name `db`, the right database, role and password; `PUBLIC_HOST` equals the host of `BETTER_AUTH_URL`; `AUTH_TRUSTED_PROXIES` lists the proxy network; no AWS key). `deploy.sh` runs it first, inside the tools image, with the file mounted read-only. A deliberately spoiled file was rejected naming the settings and printing none of their values.
+
+### Migrations, and production never seeds
+
+`deploy/scripts/deploy.sh`: build → config check → start the database → **run the migration on its own** → `up --wait` → verify. The migration runs before the app is replaced because Compose, given a changed app image and a `service_completed_successfully` dependency, replaces the app container first and starts it only after the migration, so a failing migration left the app *down* (observed). Run on its own, a failing migration (checked with a wrong owner password) stops the deploy at that step, the old app container is untouched and still ready (same container id). The consequence is documented: a migration must work for the version still running for a few seconds, so add in one release and remove in a later one.
+
+`db:migrate` waits for the database with retries (`DB_WAIT_SECONDS`), treats an authentication failure as final, creates the database if missing, provisions `climvia_app` (its password follows `POSTGRES_APP_PASSWORD` on every run) and applies the migrations. It never seeds. `db:seed`, `db:reset` and `db:test:prepare` refuse under `CLIMVIA_ENV=production` (the seed had an `ALLOW_SEED` override for `NODE_ENV`; there is none for this), the seed's data is not in the images, and nothing in the compose file, the Dockerfile or the scripts names them. A new stack's database held 22 migrations, the four Website Templates and **no organization, user, customer, booking, site, domain or asset** (every public table was checked, not a list).
+
+### The proxy and the Host
+
+The application tells a customer's domain from the platform's own names by the request's `Host`, and by nothing a client can add. `deploy/caddy/Caddyfile` keeps it that way: Caddy passes `Host` through untouched, replaces `X-Forwarded-For`, `-Host` and `-Proto` with its own (it trusts no proxy in front of it, so a client cannot name its address), and deletes `Forwarded`, `X-Original-Host`, `X-Host` and `X-Forwarded-Server`. Checked against an echo upstream behind the real Caddyfile with every one of those forged. **`same-origin.ts` no longer reads `X-Forwarded-Host`**: it compares `Origin` with the request's own `Host`, the configured public origin and the listed trusted origins, so no source reads a forwarded host any more (the previous exemption in the boundary test is gone), and a forged one is refused (403) in both a source test and a request through the proxy.
+
+Other proxy rules: `/internal` is answered 404 on every name, case-insensitively and for encoded and doubled slashes; request bodies above 8 MB (the logo limit is 5 MB) are refused by the proxy; header, body, write and idle timeouts are set; the access log is JSON on stdout with no body, no `Cookie`, no `Authorization`, no `Set-Cookie` (0 session tokens in the log after the session tests); HSTS and `nosniff` are added only when the application did not set them, and the logo route's own `Content-Security-Policy` reaches the browser unchanged. (Caddy applies the "only if absent" test to a whole `header { }` block, so each default is its own directive: found when HSTS vanished from the logo response.) Plain http is redirected to https; a customer's name is served at the root of its host, never under the platform's `/sites` paths.
+
+Platform subdomains (`<site>.climvia.com`) are **not served**: they need DNS that does not exist and a wildcard certificate (DNS validation). The block is in the Caddyfile commented out. A name *beneath* the application's own host is the platform's by design (nobody may claim it), so it is never given a certificate on demand either.
+
+### On-demand TLS authorization
+
+Before Caddy obtains a certificate for a name it has not served, it asks `GET http://app:3000/internal/tls-allow?token=<TLS_ASK_TOKEN>&domain=<name>`. The answer is the status and nothing else: **200** for the exact normalized name of an **active** `site_domains` row whose Site is **published**; the same bare **404**, with no body, for everything else (wrong or missing token, a name that is not a name, unknown, pending, verified, disabled, removed, a private Site, a database that cannot be asked). One indexed query through a new `SECURITY DEFINER` function, `app_tls_eligible` (migration `0021`, the seventh public function, executable by `climvia_app` and no one else, fixed search path, `STABLE`); no DNS is asked, nothing is written, no tenant, site or token leaves. The secret is compared in constant time before the name is looked at. The endpoint is reachable from the proxy over the internal network, answered 404 by the proxy to the Internet and unknown on a customer's name.
+
+Proved with real TLS handshakes against Caddy: the active name got a certificate and pending, verified, disabled, removed, unknown and platform-beneath names got no handshake at all; Caddy's certificate store held the application's name and the one active domain, all from the local authority, and no request to a public CA was logged. Disabling the domain made the name 404 at once and the permission question "no"; enabling it again restored it. **Local certificates prove the mechanics** (the question, the obedience, the kept Host); they prove nothing about Let's Encrypt, DNS or the Internet.
+
+### Health
+
+`/health/live` (the process runs; no database) and `/health/ready` (configuration, database through a public function so a database that is up but not migrated is not ready, and storage). The answer is `ready`/`unavailable`, the build, and three words; never an error, path, address or tenant; the reason goes to the log once per change. 503 when not ready, `no-store`, 404 on a customer's name. Proved: with the database stopped the app stayed alive, reported `database: fail`, served no partial page, and **recovered by itself** when the database returned (same container, no restart); an app container without its file volume was alive and not ready.
+
+### Logging
+
+Everything is on stdout/stderr and rotated by Docker. `[assets]` lines and `[health]` changes carry no secret; the config failure lists names only. **"The destination stream closed early"** is not an application error: it is React's server renderer (`react-dom`'s `pipe`) cancelling an in-flight page render because the HTTP response closed first, i.e. the browser or the proxy hung up (a navigation, a closed tab, an upload cut off by the proxy's size limit shows the related `aborted`/`ECONNRESET`). A real write failure uses a different message ("errored while writing data"). It was seen in the Docker run only alongside browser navigation, could not be provoked by synthetic aborts of fast pages, never accompanied a 5xx, and left the app ready. It is not suppressed: hiding it would need patching Next's logging and would hide the real ones. Treat it as noise unless it comes with error responses.
+
+### Persistence and the lifecycle
+
+All against the real containers, with the same rows, files and certificate compared before and after: app restart; database restart; database stopped and started; proxy restart (**the same certificate**, from `caddy-data`); full `down` and `up` without removing a volume; a rebuilt image with a new version recreating the app; a graceful stop; sign-in after each. An image given a bad configuration exits 1 listing names and printing no value (a sentinel secret was not in the output). Sign-in is rate limited per client address through the proxy (three attempts, then 429): seven attempts each claiming a different `X-Forwarded-For` were counted against one address, which is also what shows `AUTH_TRUSTED_PROXIES` names the right network.
+
+### Backups and the restore drill
+
+`deploy/scripts/backup.sh`: `pg_dump --format=custom` inside the database container (no password anywhere), written as a partial file, checked non-empty and readable by `pg_restore`, then renamed with a checksum and a description (`created_utc`, versions, migrations applied, size, sha256); it never deletes an older backup. `restore.sh` verifies the checksum, provisions `climvia_app` (roles are not in a dump), restores in **one transaction, stopping at the first error**, only into a database that is empty or absent, and never overwrites. `restore-drill.sh` takes a backup, restores it beside the real database, and compares every table (row count and an md5 of all rows) with `db:fingerprint --compare`, then drops the copy. Results: the live drill matched **50/50 tables, 0 differences**. A richer, **cross-server** drill (the Apex and Northstar sample data, every module, two domain claims, a logo and branding, dumped on one PostgreSQL 17 server and restored into the stack's) matched **50/50 tables**; on the restored copy the catalogue was identical (110 policies, 42 functions, 106 grants), the public functions worked, and row-level security held as the restricted role (Apex's owner saw Apex's 5 customers, 9 invoices, 8 payments, 14 bookings and none of Northstar's; naming the other business, or having no membership, returned nothing). `backup-assets.sh`/`restore-assets.sh` archive and restore the logo volume with a checksum, to an empty volume only; the restored files were byte-identical and owned by 10001. In S3 mode the bucket holds the files; S3's durability is not a backup (versioning and a copy are). An EBS snapshot protects the instance's disk but is not by itself a database backup (it captures a database mid-write); keep dumps off the instance.
+
+### Tests
+
+`e2e/deployment-config.spec.ts` (the configuration rules), `e2e/runtime-endpoints.spec.ts` (health, readiness with the database unreachable or storage unconfigured, fail-fast on a bad production configuration, the permission endpoint's every answer, the function's ACL), `e2e/container-config.spec.ts` (the Dockerfile, compose file, Caddyfile, env example and scripts held to the rules above, with no Docker needed), a forged-header upload test in `assets-upload.spec.ts`, and the boundary specs updated for the seventh public function and the removed forwarded-host exemption. The Docker suite, `npm run test:docker` (`playwright.docker.config.ts`, `e2e-docker/`, a stack started from an env file, **not** part of `npm run test:e2e`): `01` a fresh database and the stack's guarantees, `02` a first user, onboarding, a Service, every workspace module, PNG/JPEG/WebP logos through `sharp` in the container, publishing, `03` custom domains through real handshakes and a booking on a customer's name, `04` the lifecycle above. Run it against a stack whose database is new.
+
+### What this does not do, and what Phase 18C2 still has to
+
+Nothing was created in AWS, no public certificate was requested, no DNS exists, and no S3 bucket was used (S3 mode is configuration- and unit-tested only). A single instance is **not highly available**: the host, the Docker daemon, the one database and the one proxy are each a single point of failure, and a deploy is a few seconds of replacement. Remaining for 18C2: the instance and its IAM role (IMDSv2, S3 access without keys), the security group (80/443 only, no public 5432, no public SSH if possible), DNS for the application's name, the routing target and the platform wildcard, real certificate issuance (which the permission endpoint only authorizes), secrets from Secrets Manager/SSM onto the instance, EBS and off-instance backups, log collection, and a CI/CD path (prefer OIDC to long-lived keys). A first deployment must also test the public mode of the proxy (`mode.public.caddy`) for the first time.

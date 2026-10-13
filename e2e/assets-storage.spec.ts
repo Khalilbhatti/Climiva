@@ -313,15 +313,17 @@ test.describe("what the source allows", () => {
 
     const dockerfile = readFileSync("Dockerfile", "utf8");
     const instructions = dockerfile.replace(/^\s*#.*$/gm, "");
-    expect(instructions).toContain("ENV ASSET_LOCAL_DIR=/data/assets");
-    expect(instructions).toContain('VOLUME ["/data/assets"]');
+    expect(instructions).toMatch(/ASSET_LOCAL_DIR=\/data\/assets/);
+    // The directory exists for the unprivileged user, and the production compose file mounts a NAMED volume over it. (There is deliberately no VOLUME
+    // instruction: a container started without a mount would get an anonymous volume and look healthy; container-config.spec.ts holds that.)
+    expect(instructions).toMatch(/mkdir -p \/data\/assets && chown 10001:10001 \/data\/assets/);
+    expect(readFileSync("docker-compose.production.yml", "utf8")).toContain("- assets:/data/assets");
     // The driver is deliberately not baked in (a comment may mention it): production has to choose.
     expect(instructions).not.toMatch(/ASSET_STORAGE_DRIVER/);
     expect(instructions).not.toMatch(/AWS_ACCESS_KEY|AWS_SECRET/);
-    // And the run command that keeps the files documents the mount, with the standing Docker warning.
-    expect(dockerfile).toContain("-v climvia-assets:/data/assets");
-    expect(dockerfile).toContain("Docker verification is required before AWS deployment");
-    // Compose stays PostgreSQL only (server-boundaries.spec.ts holds that); the app container is run from the Dockerfile.
+    // And the files are kept on a named volume, which the production compose file declares.
+    expect(readFileSync("docker-compose.production.yml", "utf8")).toMatch(/\n {2}assets:\n/);
+    // The development compose file stays PostgreSQL only (server-boundaries.spec.ts holds that).
     expect(readFileSync("docker-compose.yml", "utf8")).not.toMatch(/AWS_ACCESS_KEY|AWS_SECRET|ASSET_/);
 
     expect(readFileSync(".dockerignore", "utf8")).toMatch(/^\.data$/m);
@@ -331,6 +333,8 @@ test.describe("what the source allows", () => {
   test("nothing under src names a bucket, a credential or an S3 address", () => {
     for (const file of sources) {
       if (file.path === "src/storage/s3.ts") continue;
+      // The production configuration rules NAME the AWS key variables, to refuse a deployment that sets them (the instance's role supplies credentials).
+      if (file.path === "src/lib/deployment.ts") continue;
       expect(file.text, file.path).not.toMatch(/s3\.amazonaws\.com|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|\.s3\./);
     }
   });

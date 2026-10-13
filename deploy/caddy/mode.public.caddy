@@ -1,0 +1,2 @@
+# Certificates from the public ACME certificate authority (Let's Encrypt): Caddy's default, so nothing to add.
+# The name in PUBLIC_HOST must resolve to this server on the Internet, and ports 80 and 443 must reach it, or issuance fails.

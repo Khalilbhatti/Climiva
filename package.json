@@ -10,11 +10,16 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/db/migrate.ts",
+    "db:status": "tsx scripts/db/status.ts",
+    "db:roles": "tsx scripts/db/roles.ts",
+    "db:fingerprint": "tsx scripts/db/fingerprint.ts",
+    "config:check": "tsx scripts/check-config.ts",
     "db:seed": "tsx scripts/db/seed.ts",
     "db:reset": "tsx scripts/db/reset.ts",
     "db:studio": "drizzle-kit studio",
     "db:test:prepare": "tsx scripts/db/prepare-test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:docker": "playwright test -c playwright.docker.config.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1150.0",

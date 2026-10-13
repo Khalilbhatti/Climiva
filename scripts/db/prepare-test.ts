@@ -12,7 +12,7 @@ export const TEST_DATABASE = process.env.TEST_DATABASE_NAME ?? "climvia_test";
 
 async function main() {
   loadEnv();
-  if (process.env.NODE_ENV === "production") throw new Error("db:test:prepare must never run in production.");
+  if (process.env.NODE_ENV === "production" || process.env.CLIMVIA_ENV === "production") throw new Error("db:test:prepare must never run in production.");
   // The test database and the files it refers to are made together: the seed stores its sample logo here, and the test server reads it from here.
   process.env.ASSET_STORAGE_DRIVER = "local";
   process.env.ASSET_LOCAL_DIR = TEST_ASSET_DIR;

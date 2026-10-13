@@ -32,6 +32,8 @@ process.env.DOMAIN_DNS_RESOLVER = "fixture";
 process.env.DOMAIN_DNS_FIXTURE_DIR = resolve(process.env.TEST_DNS_DIR ?? join(".data", "dns-test"));
 process.env.CUSTOM_DOMAIN_URL_SCHEME = "http";
 process.env.CUSTOM_DOMAIN_TARGET = "sites.climvia.com";
+// The certificate-authorization endpoint (/internal/tls-allow) answers only a caller that holds this secret; the specs that ask it read it from here.
+process.env.TLS_ASK_TOKEN = "test-tls-ask-token-0123456789abcdef0123456789abcdef";
 
 /**
  * Browser tests run against a production build, the same thing that ships.

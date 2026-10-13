@@ -1,0 +1,178 @@
+/**
+ * Docker side, part 2: a real first user on the empty production database, through the proxy.
+ *
+ *   - the first person signs up and sets a business up (the onboarding writes the organization, owner, hours and first Site in one transaction);
+ *   - a Service is added, the workspace's modules read the database as the restricted role, the Builder opens;
+ *   - a logo is uploaded as PNG, JPEG and WebP: `sharp`, inside the read-only production container, re-encodes each, the files land on the persistent
+ *     volume, and the public route serves them with the asset's own Content-Security-Policy;
+ *   - the Site is published and is served on the platform's address.
+ *
+ * The state this leaves (one business, one owner, three logos, a published Site) is what the lifecycle tests (04) restart, recreate and restore.
+ */
+import { mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import sharp from "sharp";
+import { expect, test, type BrowserContext, type Page } from "playwright/test";
+import { completeOnboarding, PASSWORD, signUp, waitsForHydration } from "../e2e/saas";
+import { compose, cookieHeader, get, multipart, one, sql, stack } from "./stack";
+
+test.describe.configure({ mode: "serial" });
+
+/** A request to the stack as the signed-in person (their cookie, this site's own Origin), made from Node straight to the proxy. */
+async function asPerson(path: string, init: { json?: unknown; form?: ReturnType<typeof multipart>; headers?: Record<string, string> } = {}) {
+  const type: Record<string, string> = init.json !== undefined ? { "content-type": "application/json" } : init.form ? { "content-type": init.form.contentType } : {};
+  return get(stack.publicHost, path, {
+    method: "POST",
+    headers: { cookie: await cookieHeader(context), origin: stack.origin, ...type, ...init.headers },
+    body: init.json !== undefined ? JSON.stringify(init.json) : init.form?.body,
+  });
+}
+
+const BUSINESS = "Docker Heating & Air";
+const SLUG = "docker-heating-air";
+
+let context: BrowserContext;
+let page: Page;
+let email = "";
+
+test.beforeAll(async ({ browser }) => {
+  context = await browser.newContext({ baseURL: stack.origin, ignoreHTTPSErrors: true, viewport: { width: 1440, height: 900 } });
+  page = waitsForHydration(await context.newPage());
+});
+test.afterAll(async () => {
+  await context.close();
+});
+
+test("the first person signs up and sets up a business on the empty database", async () => {
+  expect(Number(one("select count(*) from organizations"))).toBe(0);
+  email = await signUp(page, { name: "Dana Owner" });
+  await completeOnboarding(page, { name: BUSINESS });
+  expect(sql("select name, slug from organizations")).toEqual([[BUSINESS, SLUG]]);
+  expect(sql("select role from organization_memberships m join auth_user u on u.id = m.user_id where u.email = '" + email + "'")).toEqual([["owner"]]);
+  expect(sql("select slug, platform_slug, status from sites")).toEqual([["main", SLUG, "draft"]]);
+  expect(Number(one("select count(*) from organization_business_hours"))).toBe(7);
+  // The next steps (and the lifecycle tests) sign in as this person again.
+  mkdirSync(".data", { recursive: true });
+  writeFileSync(".data/docker-state.json", JSON.stringify({ email, password: PASSWORD, business: BUSINESS, slug: SLUG }));
+});
+
+test("signing in again works: sessions are kept in the database", async () => {
+  const before = Number(one("select count(*) from auth_session"));
+  const response = await asPerson("/api/auth/sign-in/email", { json: { email, password: PASSWORD } });
+  expect(response.status).toBe(200);
+  expect(Number(one("select count(*) from auth_session"))).toBeGreaterThan(before);
+  // A wrong password is refused, and the answer does not say which part was wrong.
+  const wrong = await asPerson("/api/auth/sign-in/email", { json: { email, password: "Wrong-horse-9" } });
+  expect(wrong.status).toBeGreaterThanOrEqual(400);
+  expect(wrong.status).toBeLessThan(500);
+  expect(wrong.body).not.toMatch(/password is (wrong|incorrect)|no such (user|email)|user not found/i);
+});
+
+test("a Service is added through the wizard and the Website shows it", async () => {
+  await page.goto("/services");
+  await page.getByRole("button", { name: "Add service" }).click();
+  const wizard = page.getByRole("dialog", { name: "Add new service" });
+  await wizard.getByLabel("Service name").fill("Docker Tune-up");
+  await wizard.getByLabel("Customer-facing description").fill("A tune-up, booked on a customer's own domain.");
+  await wizard.getByRole("button", { name: /^Next: Booking/ }).click();
+  await wizard.getByRole("radio", { name: /^Instant booking/ }).check();
+  await wizard.getByRole("button", { name: /^Next: Pricing/ }).click();
+  await wizard.getByLabel("Fee amount (USD)").or(wizard.getByLabel("Price (USD)")).fill("75");
+  await wizard.getByRole("button", { name: /^Next: Availability/ }).click();
+  await wizard.getByRole("button", { name: /^Next: Review/ }).click();
+  await wizard.getByRole("button", { name: "Add service" }).click();
+  await expect(wizard).toBeHidden();
+  expect(sql("select slug, booking_method from services")).toEqual([["docker-tune-up", "instant"]]);
+  await page.goto("/website");
+  await expect(page.getByText("Services shown", { exact: false }).first()).toBeVisible();
+  await expect(page.locator("main")).toContainText(/1 Service/);
+});
+
+test("every workspace module reads the database as the restricted role, and the Builder opens", async () => {
+  const problems: string[] = [];
+  page.on("pageerror", (error) => problems.push(error.message));
+  for (const path of ["/", "/bookings", "/schedule", "/jobs", "/customers", "/services", "/team", "/quotes-invoices", "/payments", "/maintenance-plans", "/website", "/website/builder", "/website/templates", "/website/domain", "/marketplace", "/reviews", "/marketing", "/analytics", "/settings", "/settings/branding"]) {
+    const response = await page.goto(path);
+    expect(response?.status(), path).toBe(200);
+    await expect(page.locator("main, [role=main]").first(), path).toBeVisible();
+    await expect(page.locator("body"), path).not.toContainText(/Application error|Internal Server Error|Something went wrong/i);
+  }
+  expect(problems).toEqual([]);
+  // The Builder showed a real editor, not an error shell.
+  await page.goto("/website/builder");
+  await expect(page.getByRole("button", { name: /Publish/ }).first()).toBeVisible();
+});
+
+test("a logo is uploaded as PNG, JPEG and WebP: sharp re-encodes each inside the production container and the public route serves it with its own policy", async () => {
+  const stored: { id: string; sha: string }[] = [];
+  for (const format of ["png", "jpeg", "webp"] as const) {
+    const source = await sharp({ create: { width: 320, height: 200, channels: 3, background: { r: 13, g: 92, b: 99 } } })[format]().toBuffer();
+    const response = await asPerson("/api/branding", { form: multipart({ accent: "#17766B" }, { field: "logo", name: `crest.${format}`, type: `image/${format}`, bytes: source }) });
+    expect(response.status, format).toBe(200);
+    const body = JSON.parse(response.body) as { ok: boolean; branding: { logo: { src: string } } };
+    expect(body.ok).toBe(true);
+    const src = body.branding.logo.src;
+    expect(src).toMatch(/^\/assets\/[0-9a-f-]{36}$/);
+
+    // Anyone can fetch it, through the proxy, with no cookie.
+    const served = await get(stack.publicHost, src);
+    expect(served.status, format).toBe(200);
+    expect(served.headers["content-type"]).toBe("image/webp");
+    expect(served.headers["content-security-policy"]).toBe("default-src 'none'; style-src 'unsafe-inline'; sandbox");
+    expect(served.headers["x-content-type-options"]).toBe("nosniff");
+    expect(served.headers["content-disposition"]).toBe("inline");
+    expect(served.headers["strict-transport-security"]).toBeDefined();
+    const bytes = served.bytes;
+    expect(bytes.subarray(0, 4).toString("latin1")).toBe("RIFF");
+    expect(bytes.subarray(8, 12).toString("latin1")).toBe("WEBP");
+    stored.push({ id: src.split("/").pop() ?? "", sha: createHash("sha256").update(bytes).digest("hex") });
+  }
+  expect(new Set(stored.map((logo) => logo.id)).size).toBe(3);
+
+  // The database knows three READY assets, one of them chosen; the bytes are files on the persistent volume, owned by the app's user.
+  expect(sql("select media_type, status, storage_driver from assets order by created_at")).toEqual([["image/webp", "ready", "local"], ["image/webp", "ready", "local"], ["image/webp", "ready", "local"]]);
+  expect(one("select logo_asset_id from organization_branding")).toBe(stored[2].id);
+  const files = compose("exec", "-T", "app", "find", "/data/assets", "-type", "f").split(/\r?\n/).filter(Boolean);
+  expect(files.length).toBe(3);
+  expect(compose("exec", "-T", "app", "stat", "-c", "%u", ...files).trim().split(/\r?\n/)).toEqual(["10001", "10001", "10001"]);
+  // Only the chosen one is public; the two replaced ones are the same plain 404 as an id that never existed.
+  expect((await get(stack.publicHost, `/assets/${stored[0].id}`)).status).toBe(404);
+  expect((await get(stack.publicHost, `/assets/${stored[1].id}`)).status).toBe(404);
+  expect((await get(stack.publicHost, `/assets/${stored[2].id}`)).status).toBe(200);
+  writeFileSync(".data/docker-logo.json", JSON.stringify(stored[2]));
+});
+
+test("a logo that is not an image, or is too large, is refused by the production container", async () => {
+  const notAnImage = await asPerson("/api/branding", { form: multipart({ accent: "" }, { field: "logo", name: "x.png", type: "image/png", bytes: Buffer.from("<svg onload=alert(1)></svg>") }) });
+  expect(notAnImage.status).toBeGreaterThanOrEqual(400);
+  expect(notAnImage.status).toBeLessThan(500);
+  // Above the proxy's 8 MB limit the proxy refuses it before the application sees a byte.
+  const huge = await asPerson("/api/branding", { form: multipart({ accent: "" }, { field: "logo", name: "huge.png", type: "image/png", bytes: Buffer.alloc(9 * 1024 * 1024, 1) }) });
+  expect([400, 413]).toContain(huge.status);
+  // A page of another site, naming itself the server through every header a client can send, is not this application's own page.
+  const forged = await asPerson("/api/branding", {
+    form: multipart({ accent: "" }),
+    headers: { origin: "https://evil.example", "x-forwarded-host": "evil.example", forwarded: "host=evil.example;proto=https", "x-original-host": "evil.example" },
+  });
+  expect(forged.status).toBe(403);
+  expect(Number(one("select count(*) from assets where status = 'ready'"))).toBe(3);
+});
+
+test("publishing makes the Site public on the platform's address, with its logo and its Service", async () => {
+  await page.goto("/website");
+  expect(Number(one("select count(*) from sites where published_version_id is not null"))).toBe(0);
+  await page.getByRole("button", { name: "Publish website" }).first().click();
+  await expect.poll(() => one("select count(*) from sites where published_version_id is not null"), { timeout: 20_000 }).toBe("1");
+
+  const home = await get(stack.publicHost, `/sites/${SLUG}`);
+  expect(home.status).toBe(200);
+  expect(home.body).toContain(BUSINESS.replace("&", "&amp;"));
+  expect(home.body).toMatch(/\/assets\/[0-9a-f-]{36}/);
+  const booking = await get(stack.publicHost, `/sites/${SLUG}/booking`);
+  expect(booking.status).toBe(200);
+  expect(booking.body).toContain("Docker Tune-up");
+  // Nothing of the workspace is in a public page.
+  expect(home.body).not.toContain(email);
+  expect(home.body).not.toMatch(/organization_id|better-auth|session/i);
+  expect((await get(stack.publicHost, "/sites/no-such-site")).status).toBe(404);
+});

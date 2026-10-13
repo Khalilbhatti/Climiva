@@ -8,9 +8,10 @@ import "server-only";
  * its own form. The session cookie is SameSite=Lax as well, so a page on another site cannot even send it on such a POST; this is the second
  * layer, and it is the one that does not depend on a cookie setting.
  *
- * The site's own host is the request's `Host` (or the proxy's `X-Forwarded-Host`), the configured public origin, and any origins listed in
- * AUTH_TRUSTED_ORIGINS, which is the same list the sign-in endpoints trust. `Sec-Fetch-Site`, where the browser sends it, must say the
- * request is from the same origin.
+ * The site's own authority is the request's `Host` header (the reverse proxy preserves the name the browser used), the configured public
+ * origin, and any origins listed in AUTH_TRUSTED_ORIGINS, which is the same list the sign-in endpoints trust. `Forwarded` and `X-Forwarded-Host`
+ * are NOT consulted: they are headers any client can send, and a request that names its own forged host there must not be able to make
+ * its own `Origin` look like this site's. `Sec-Fetch-Site`, where the browser sends it, must say the request is from the same origin.
  */
 export function isSameOrigin(request: Request, env: NodeJS.ProcessEnv = process.env): boolean {
   const origin = request.headers.get("origin");
@@ -25,7 +26,8 @@ export function isSameOrigin(request: Request, env: NodeJS.ProcessEnv = process.
   if (fetchSite && fetchSite !== "same-origin") return false;
 
   const allowed = new Set<string>();
-  for (const value of [request.headers.get("host"), request.headers.get("x-forwarded-host")]) if (value) allowed.add(value.split(",")[0].trim());
+  const direct = request.headers.get("host");
+  if (direct) allowed.add(direct.trim());
   for (const value of [env.BETTER_AUTH_URL, ...(env.AUTH_TRUSTED_ORIGINS ?? "").split(",")]) {
     if (!value?.trim()) continue;
     try {

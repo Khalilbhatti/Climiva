@@ -1,0 +1,192 @@
+# The production-shaped stack: reverse proxy, web app, PostgreSQL and the migration that runs before the app starts.
+#
+#   docker compose -f docker-compose.production.yml --env-file .env.production up -d --build --wait
+#
+# (deploy/scripts/deploy.sh does exactly that, after checking the env file.) The development database (docker-compose.yml) is a different file
+# with one service and is unaffected.
+#
+#   internet ──80/443──> proxy ──edge network──> app ──data network──> db
+#                          │                       │
+#                          │                       └── assets volume (uploaded logos, when ASSET_STORAGE_DRIVER=local)
+#                          └── caddy-data volume (certificates and the ACME account: keep it, or every certificate is requested again)
+#
+# What is published: the proxy's 80 and 443. NOTHING else: the app and the database have no `ports:`, and the database is on a network that has no
+# route out or in except through the app and the migration. Each service is handed only the settings it needs (an explicit list below, not
+# `env_file`), so the app never receives the owner's database password and the database never receives the sign-in secret.
+#
+# The database is initialised on first start (the owner role is the container's superuser; the restricted runtime role `climvia_app` is created
+# by the migration). Nothing in this file seeds data: a new deployment has no business in it, and the first person to sign up creates theirs.
+name: ${COMPOSE_PROJECT_NAME:-climvia}
+
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is not set}
+      POSTGRES_USER: ${POSTGRES_OWNER_USER:?POSTGRES_OWNER_USER is not set}
+      POSTGRES_PASSWORD: ${POSTGRES_OWNER_PASSWORD:?POSTGRES_OWNER_PASSWORD is not set}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    # PostgreSQL stops cleanly on SIGINT/SIGTERM; give it time to finish a checkpoint.
+    stop_grace_period: 60s
+    security_opt:
+      - no-new-privileges:true
+    # The image starts as root, fixes the data directory's owner and then runs PostgreSQL as `postgres`; it needs exactly these.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    logging: *logging
+
+  migrate:
+    build:
+      context: .
+      target: tools
+    image: climvia-tools:${APP_VERSION:-local}
+    # Runs once per deploy, applies every migration that is pending and provisions the restricted role, then exits. The app starts only if it succeeded.
+    # It is also the way to run the other one-off database commands:  docker compose run --rm migrate npm run db:status
+    command: ["npm", "run", "db:migrate"]
+    restart: "no"
+    environment:
+      DATABASE_ADMIN_URL: ${DATABASE_ADMIN_URL:?DATABASE_ADMIN_URL is not set}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD is not set}
+      DB_WAIT_SECONDS: "120"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - data
+    read_only: true
+    tmpfs:
+      - /tmp
+    <<: *hardening
+    logging: *logging
+
+  app:
+    build:
+      context: .
+      target: runner
+      args:
+        APP_VERSION: ${APP_VERSION:-local}
+    image: climvia-web:${APP_VERSION:-local}
+    restart: unless-stopped
+    # An init process forwards the stop signal to Node and reaps its children, so `docker stop` is a graceful shutdown, not a kill after the timeout.
+    init: true
+    environment:
+      # Exactly scripts/deploy/rules.ts APP_ENVIRONMENT (a test holds the two together). The image adds NODE_ENV, CLIMVIA_ENV, PORT, HOSTNAME, APP_VERSION.
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is not set}
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is not set}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?BETTER_AUTH_URL is not set}
+      AUTH_TRUSTED_PROXIES: ${AUTH_TRUSTED_PROXIES:-}
+      AUTH_TRUSTED_ORIGINS: ${AUTH_TRUSTED_ORIGINS:-}
+      APP_HOSTS: ${APP_HOSTS:-}
+      CUSTOM_DOMAIN_TARGET: ${CUSTOM_DOMAIN_TARGET:-}
+      CUSTOM_DOMAIN_URL_SCHEME: ${CUSTOM_DOMAIN_URL_SCHEME:-}
+      TLS_ASK_TOKEN: ${TLS_ASK_TOKEN:-}
+      ASSET_STORAGE_DRIVER: ${ASSET_STORAGE_DRIVER:-}
+      ASSET_LOCAL_DIR: ${ASSET_LOCAL_DIR:-}
+      AWS_REGION: ${AWS_REGION:-}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
+    volumes:
+      - assets:/data/assets
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - edge
+      - data
+    # Nothing is written inside the image: uploads go to the volume, and Next.js and the image library keep their scratch files in memory.
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+      - /app/.next/cache:size=64m,uid=10001,gid=10001
+    stop_grace_period: 30s
+    <<: *hardening
+    logging: *logging
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?PUBLIC_HOST is not set}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is not set}
+      TLS_ASK_TOKEN: ${TLS_ASK_TOKEN:?TLS_ASK_TOKEN is not set}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # How certificates are obtained: mode.public.caddy (the default, public ACME) or mode.local.caddy (Caddy's own CA, for a trial without a public name).
+      - ${CADDY_MODE_FILE:-./deploy/caddy/mode.public.caddy}:/etc/caddy/mode/mode.caddy:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - edge
+    healthcheck:
+      # Both listeners accept connections. (Not the admin API: every poll of it is a line in the log.)
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 80 && nc -z 127.0.0.1 443"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    # Binding 80 and 443 is the one privilege it needs.
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    stop_grace_period: 10s
+    logging: *logging
+
+networks:
+  # The proxy and the app. Egress is allowed (the app reaches S3 from here once it uses it). The subnet is fixed so the app can be told, by address,
+  # which hop may name a client's IP (AUTH_TRUSTED_PROXIES must list it).
+  edge:
+    ipam:
+      config:
+        - subnet: ${EDGE_SUBNET:-172.30.0.0/24}
+  # The app, the migration and the database. `internal`: no route to the Internet and no published port can reach it.
+  data:
+    internal: true
+
+volumes:
+  # The database. Losing this is losing every business: back it up (deploy/scripts/backup.sh) and keep the dumps somewhere else.
+  pgdata:
+  # Uploaded logos when ASSET_STORAGE_DRIVER=local. Back it up too (deploy/scripts/backup-assets.sh); it is not in the database dump.
+  assets:
+  # Caddy's certificates and ACME account.
+  caddy-data:
+  caddy-config:

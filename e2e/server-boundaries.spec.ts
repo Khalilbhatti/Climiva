@@ -365,9 +365,29 @@ test.describe("tenant data is never cached or prerendered", () => {
     }
   });
 
-  test("the app has exactly three route handlers: Better Auth's, the Branding upload and the public logo, and each keeps to its own line", () => {
+  test("the app has exactly six route handlers: Better Auth's, the Branding upload, the public logo, the two health checks and the certificate permission, and each keeps to its own line", () => {
     const routes = walk(join(SRC, "app"), (path) => /route\.(ts|tsx)$/.test(path)).map(posix);
-    expect(routes).toEqual(["src/app/(public)/assets/[assetId]/route.ts", "src/app/api/auth/[...all]/route.ts", "src/app/api/branding/route.ts"]);
+    expect(routes).toEqual([
+      "src/app/(public)/assets/[assetId]/route.ts",
+      "src/app/api/auth/[...all]/route.ts",
+      "src/app/api/branding/route.ts",
+      "src/app/health/live/route.ts",
+      "src/app/health/ready/route.ts",
+      "src/app/internal/tls-allow/route.ts",
+    ]);
+
+    // The health checks read no session, cookie, workspace or tenant context, and they answer without saying why.
+    for (const file of ["health/live/route.ts", "health/ready/route.ts"]) {
+      expect(read(join(SRC, "app", file)).replace(/\/\*[\s\S]*?\*\//g, ""), file).not.toMatch(/cookies\(|headers\(|getSessionUser|resolveWorkspace|withTenant|withUser|session|error\.message|String\(error/i);
+    }
+    expect(read(join(SRC, "server", "readiness.ts")).replace(/\/\*[\s\S]*?\*\//g, "")).not.toMatch(/cookies\(|headers\(|resolveWorkspace|withTenant|withUser|schema/i);
+
+    // The certificate permission checks the secret before it looks at the name, compares it in constant time, and logs no name.
+    const allow = read(join(SRC, "app", "internal", "tls-allow", "route.ts")).replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(allow.indexOf("sameSecret(params.get(")).toBeGreaterThan(-1);
+    expect(allow.indexOf("sameSecret(params.get(")).toBeLessThan(allow.indexOf("isTlsEligible("));
+    expect(allow).toContain("timingSafeEqual");
+    expect(allow).not.toMatch(/console\.|cookies\(|headers\(|getSessionUser|resolveWorkspace|withTenant/);
 
     // The upload is the only one that takes a file, and it does everything that needs no body before it reads one: the request must come from
     // this site's own pages, the caller is a verified member who may manage settings, and only then is the body read, under a byte limit.
@@ -475,19 +495,20 @@ test.describe("every module reads the database for the verified workspace", () =
 
 test.describe("database access", () => {
   test("only the database layer and the auth adapter open a connection", () => {
-    // src/db/public-queries.ts is the visitor's door (below): the three public functions, and nothing else.
+    // src/db/public-queries.ts is the visitor's door (below): the public functions, and nothing else.
     const users = sourceFiles.filter((path) => /\bgetDb\(|\bgetPool\(/.test(read(path))).map(posix).sort();
     expect(users).toEqual(["src/db/index.ts", "src/db/public-queries.ts", "src/db/tenant.ts", "src/lib/auth.ts"]);
   });
 
-  test("the visitor's door runs only the six public database functions: no table, no tenant context, no organization", () => {
+  test("the visitor's door runs only the seven public database functions: no table, no tenant context, no organization", () => {
     const source = read(join(SRC, "db", "public-queries.ts")).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     const calls = [...source.matchAll(/select (app_\w+)\(/g)].map(([, name]) => name).sort();
-    expect(calls).toEqual(["app_public_asset", "app_public_create_booking", "app_public_domain", "app_public_listing", "app_public_site", "app_public_site_domain"]);
+    expect(calls).toEqual(["app_public_asset", "app_public_create_booking", "app_public_domain", "app_public_listing", "app_public_site", "app_public_site_domain", "app_tls_eligible"]);
     expect(source).not.toMatch(/@\/db\/schema|\.(select|insert|update|delete)\(|\.from\(|set_config|withTenant|runAsTenant|organization_?id/i);
-    // Only the server's public routes, the public logo route, the host resolver and the visitor's booking action import it.
+    // Only the server's public routes, the public logo route, the host resolver, the visitor's booking action, the certificate-authorization
+    // endpoint (the proxy's one question) and the readiness check (which asks that same question about a name that can not exist) import it.
     const importers = sourceFiles.filter((path) => importsOf(read(path)).some((specifier) => /public-queries$/.test(specifier))).map(posix).sort();
-    expect(importers).toEqual(["src/app/(public)/assets/[assetId]/route.ts", "src/server/actions/public-booking.ts", "src/server/public-site.ts", "src/server/request-host.ts"]);
+    expect(importers).toEqual(["src/app/(public)/assets/[assetId]/route.ts", "src/app/internal/tls-allow/route.ts", "src/server/actions/public-booking.ts", "src/server/public-site.ts", "src/server/readiness.ts", "src/server/request-host.ts"]);
     // The owner credential is never reachable from a request handler (this file included).
     expect(source).not.toContain("DATABASE_ADMIN_URL");
   });
@@ -504,9 +525,14 @@ test.describe("database access", () => {
     const example = read(join(ROOT, ".env.example"));
     expect(example).toMatch(/^DATABASE_URL=postgres:\/\/climvia_app:/m);
     expect(example).toMatch(/^DATABASE_ADMIN_URL=postgres:\/\/climvia_owner:/m);
-    for (const path of sourceFiles.filter((file) => !posix(file).startsWith("src/db/") )) {
+    // Nothing outside the database layer reads the owner's credential. One file NAMES it: the production configuration rules refuse to start an
+    // application whose environment holds it, and they look settings up by name, never by `process.env.DATABASE_ADMIN_URL`.
+    for (const path of sourceFiles.filter((file) => !posix(file).startsWith("src/db/") && posix(file) !== "src/lib/deployment.ts")) {
       expect(read(path), posix(path)).not.toContain("DATABASE_ADMIN_URL");
     }
+    const refusal = read(join(SRC, "lib", "deployment.ts"));
+    expect(refusal).not.toMatch(/\.DATABASE_ADMIN_URL|\["DATABASE_ADMIN_URL"\]/);
+    expect(refusal).toMatch(/NEVER_IN_THE_APP = \[[^\]]*"DATABASE_ADMIN_URL"/);
   });
 });
 
@@ -565,7 +591,8 @@ test.describe("secrets and deployment files", () => {
   test("the Docker image never contains an .env file and runs as an unprivileged user", () => {
     const dockerfile = read(join(ROOT, "Dockerfile"));
     expect(dockerfile).not.toMatch(/COPY[^\n]*\.env/);
-    expect(dockerfile).toMatch(/^USER climvia$/m);
+    // A fixed numeric user, so a volume written by one container is owned by the same user in the next.
+    expect(dockerfile).toMatch(/^USER 10001:10001$/m);
     const ignore = read(join(ROOT, ".dockerignore"));
     expect(ignore).toMatch(/^\.env$/m);
     expect(ignore).toMatch(/^\.env\.\*$/m);
@@ -634,7 +661,7 @@ test.describe("the documentation covers the architecture", () => {
       /Phase 16 changed/,
     ];
     for (const topic of required) expect(headings.some((heading) => topic.test(heading)), String(topic)).toBe(true);
-    for (const expected of ["Durable assets and Organization Branding", "private S3 bucket", "app_public_asset", "SELECT … FOR UPDATE", "SECURITY DEFINER", "snapshot-versioned", "Docker verification is required before AWS deployment"]) {
+    for (const expected of ["Durable assets and Organization Branding", "private S3 bucket", "app_public_asset", "SELECT … FOR UPDATE", "SECURITY DEFINER", "snapshot-versioned", "Docker verification was required before AWS deployment"]) {
       expect(text, expected).toContain(expected);
     }
   });
@@ -668,14 +695,14 @@ test.describe("the documentation covers the architecture", () => {
     // Every address a page may not take is written down, and so is what a person is told when their tab is behind.
     for (const slug of RESERVED_PAGE_SLUGS) expect(section, `reserved address ${slug}`).toContain(`\`${slug}\``);
     expect(section).toContain(STALE_DRAFT);
-    for (const expected of ["Docker verification is required before AWS deployment", "no shortcut that publishes", "site_versions.revision", "@dnd-kit/core"]) {
+    for (const expected of ["Docker verification was required before AWS deployment", "no shortcut that publishes", "site_versions.revision", "@dnd-kit/core"]) {
       expect(section, expected).toContain(expected);
     }
   });
 
   test("the deployment section documents the container, environment, migration and start commands, and backups", () => {
     const text = doc();
-    for (const expected of ["docker build", "--target tools", "npm run db:migrate", "docker run -d", "BETTER_AUTH_SECRET", "DATABASE_ADMIN_URL", "pg_dump", "private S3"]) {
+    for (const expected of ["docker build", "--target tools", "npm run db:migrate", "docker-compose.production.yml", "deploy/scripts/deploy.sh", "deploy/scripts/restore-drill.sh", "BETTER_AUTH_SECRET", "DATABASE_ADMIN_URL", "pg_dump", "private S3"]) {
       expect(text, expected).toContain(expected);
     }
   });

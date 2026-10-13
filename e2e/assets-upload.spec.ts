@@ -249,6 +249,27 @@ saas.describe("who may call it", () => {
     expect(await assetsOf(biz.organizationId)).toEqual([]);
   });
 
+  saas("a header any client can send does not make another site's page look like this one's: X-Forwarded-Host, Forwarded and the like are not read", async ({ clientAddresses }) => {
+    const biz = await makeBusiness("forged-host", db);
+    const api = await signedIn(biz.owner.email, clientAddresses());
+    const form = brandingForm({ logo: file(await picture("png")) });
+    // The request says it comes from a page of evil.example and claims, in every way a client can, that evil.example is this server's own name.
+    const forged: Record<string, string>[] = [
+      { "x-forwarded-host": "evil.example" },
+      { "x-forwarded-host": "evil.example, localhost" },
+      { "x-forwarded-host": "evil.example", "x-forwarded-proto": "https" },
+      { forwarded: "host=evil.example;proto=https" },
+      { "x-original-host": "evil.example" },
+      { "x-host": "evil.example" },
+      { "x-forwarded-server": "evil.example" },
+    ];
+    for (const extra of forged) {
+      const response = await api.post("/api/branding", { multipart: form, headers: { origin: "https://evil.example", ...extra } });
+      expect(response.status(), JSON.stringify(extra)).toBe(403);
+    }
+    expect(await assetsOf(biz.organizationId)).toEqual([]);
+  });
+
   saas("nothing in the request names the organization: forged ids, keys and a forged workspace cookie change only the caller's own business", async ({ clientAddresses, workerTenant }) => {
     const mine = await makeBusiness("forge-a", db);
     const theirs = await makeBusiness("forge-b", db);

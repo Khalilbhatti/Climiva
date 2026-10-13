@@ -111,3 +111,32 @@ export async function ensureDatabase(name: string): Promise<void> {
     await pool.end();
   }
 }
+
+/**
+ * Wait until the database server accepts connections, retrying with a growing pause, for at most `seconds` (DB_WAIT_SECONDS, default 120).
+ * A deployment starts PostgreSQL and the migration at about the same time, and a slow first start (or a restart) must not fail the deploy:
+ * the container healthcheck says the server is up, and this covers the gap between "up" and "accepting this role". A wrong password or a
+ * missing role is NOT retried for long: the server answered, so the answer is final and the command fails with it.
+ */
+export async function waitForDatabase(connectionString: string, seconds = Number(process.env.DB_WAIT_SECONDS ?? 120)): Promise<void> {
+  const deadline = Date.now() + seconds * 1000;
+  let pause = 500;
+  for (let attempt = 1; ; attempt += 1) {
+    const pool = new Pool({ connectionString, max: 1, connectionTimeoutMillis: 3000 });
+    try {
+      await pool.query("select 1");
+      if (attempt > 1) console.log(`The database answered after ${attempt} attempts.`);
+      return;
+    } catch (error) {
+      const code = (error as { code?: string }).code ?? "";
+      // 28xxx: authentication/authorization failed; 3D000: no such database. The server is there; waiting will not change the answer.
+      if (/^(28|3D)/.test(code)) throw error;
+      if (Date.now() + pause > deadline) throw new Error(`The database did not become reachable within ${seconds} seconds (${code || (error as Error).message}).`);
+      console.log(`Waiting for the database (attempt ${attempt}: ${code || (error as Error).message})...`);
+      await new Promise((resolve) => setTimeout(resolve, pause));
+      pause = Math.min(pause * 2, 5000);
+    } finally {
+      await pool.end().catch(() => undefined);
+    }
+  }
+}

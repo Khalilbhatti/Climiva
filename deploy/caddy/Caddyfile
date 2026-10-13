@@ -1,0 +1,127 @@
+# The reverse proxy in front of the Climvia web app (docker-compose.production.yml, service "proxy").
+#
+# What it does, and what it is deliberately not asked to do:
+#
+#   * It is the ONLY thing that listens on the Internet (80 and 443). The application and PostgreSQL publish no port at all.
+#   * It terminates TLS and passes the request on with the Host header EXACTLY as the browser sent it: the application tells a customer's
+#     domain from the platform's own names by that header alone, and by nothing a client can add to a request (see src/proxy.ts).
+#   * It sets the client's address itself (X-Forwarded-For) and removes the other forwarding headers a client could send. It trusts no
+#     other proxy in front of it, so a client can not name its own address.
+#   * It never forwards /internal/*: that is the proxy's own question to the application ("may a certificate be requested for this name?").
+#   * Certificates for a customer's domain are requested ON DEMAND, and only after the application answers "yes" to that question: the name must
+#     be an ACTIVE domain of a PUBLISHED site. A name nobody activated gets no certificate and no handshake, so pointing any name at this server
+#     can not make it ask a public certificate authority for one.
+#   * Platform subdomains (<site>.climvia.com) are NOT served here yet: they need a wildcard certificate (DNS validation) and DNS that does not
+#     exist. The block for them is at the end of this file, commented out.
+#
+# Settings (from the compose file, which reads .env.production): PUBLIC_HOST, ACME_EMAIL, TLS_ASK_TOKEN. How certificates are obtained is chosen
+# by the file mounted as /etc/caddy/mode/mode.caddy: mode.public.caddy (public ACME, for a real deployment) or mode.local.caddy (Caddy's own CA,
+# for trying the stack on a machine that has no public name).
+{
+	email {$ACME_EMAIL}
+
+	# Asked once, before a certificate is requested for a name this proxy has not served before. The answer is only the status: 200 yes, anything else no.
+	on_demand_tls {
+		ask http://app:3000/internal/tls-allow?token={$TLS_ASK_TOKEN}
+	}
+
+	servers {
+		timeouts {
+			read_header 10s
+			read_body 60s
+			write 120s
+			idle 2m
+		}
+	}
+
+	import /etc/caddy/mode/*.caddy
+}
+
+(guards) {
+	# The proxy's own question to the application is never reachable from outside.
+	@internal path /internal /internal/*
+	handle @internal {
+		respond "Not found" 404
+	}
+	# The largest thing a person sends is a logo (5 MB, src/lib/asset-rules.ts) in a form; the application enforces the real limit.
+	request_body {
+		max_size 8MB
+	}
+}
+
+(security) {
+	# Only where the application has not said otherwise: the logo route carries its own Content-Security-Policy, which must reach the browser as sent.
+	# One directive per header on purpose: Caddy applies the "only if absent" test to a whole `header { }` block, so a block that mixed them would
+	# skip every default as soon as the application had set any one of them.
+	header ?Strict-Transport-Security "max-age=31536000"
+	header ?X-Content-Type-Options "nosniff"
+	header {
+		-Server
+		-X-Powered-By
+	}
+}
+
+(access_log) {
+	# Who asked for what and what was answered: no body, and no cookie or credential.
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>headers>Cookie delete
+				request>headers>Authorization delete
+				resp_headers>Set-Cookie delete
+			}
+		}
+	}
+}
+
+(application) {
+	reverse_proxy app:3000 {
+		# The original Host is passed through untouched (Caddy's default). These are headers a client could send to pretend to be something else;
+		# the application reads none of them, and none of them gets as far as it.
+		header_up -Forwarded
+		header_up -X-Original-Host
+		header_up -X-Host
+		header_up -X-Forwarded-Server
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 60s
+		}
+	}
+}
+
+# ── the application's own address: signed-in workspace, sign-in, the Builder, the platform's published sites ──────
+{$PUBLIC_HOST} {
+	import access_log
+	import guards
+	import security
+	import application
+}
+
+# ── a customer's domain: any other name that reaches this server over https. The certificate is requested only when the application says yes. ──
+https:// {
+	tls {
+		on_demand
+	}
+	import access_log
+	import guards
+	import security
+	import application
+}
+
+# ── plain http: send the browser to https. (Certificate challenges are answered before this is consulted.) ───────
+http:// {
+	redir https://{host}{uri} permanent
+}
+
+# ── platform subdomains: NOT served yet. Needs DNS for the platform domain and a wildcard certificate, which are infrastructure (Phase 18C2). ──
+# *.climvia.com {
+# 	tls {
+# 		dns <provider> ...
+# 	}
+# 	import access_log
+# 	import guards
+# 	import security
+# 	import application
+# }

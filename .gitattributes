@@ -1,0 +1,11 @@
+# Files that run inside a Linux container or on a Linux host must keep Unix line endings on every machine, whatever core.autocrlf says:
+# a shell script with CRLF fails with "bad interpreter", a CRLF Caddyfile or compose file is read differently, and the compose file is
+# also matched line by line by a test (e2e/server-boundaries.spec.ts).
+*.sh text eol=lf
+Dockerfile text eol=lf
+docker-compose*.yml text eol=lf
+.dockerignore text eol=lf
+deploy/** text eol=lf
+*.caddy text eol=lf
+Caddyfile* text eol=lf
+.env.production.example text eol=lf

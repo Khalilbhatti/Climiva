@@ -139,7 +139,7 @@ export async function bodyOf(response: { text: () => Promise<string> }): Promise
 }
 
 /** A second `next start` process on its own port, for what one server cannot show: a failing store, a restart. Always stopped with `stop()`. */
-export async function startServer(port: number, env: Record<string, string> = {}): Promise<{ origin: string; stop: () => void }> {
+export async function startServer(port: number, env: Record<string, string> = {}, upPath = "/login"): Promise<{ origin: string; stop: () => void }> {
   const origin = `http://localhost:${port}`;
   const child: ChildProcess = spawn("npx", ["next", "start", "-p", String(port)], { shell: true, stdio: "ignore", env: { ...process.env, BETTER_AUTH_URL: origin, ...env } });
   const stop = () => {
@@ -149,7 +149,7 @@ export async function startServer(port: number, env: Record<string, string> = {}
   };
   const isUp = async () => {
     try {
-      return (await fetch(`${origin}/login`)).status === 200;
+      return (await fetch(`${origin}${upPath}`)).status === 200;
     } catch {
       return false;
     }

@@ -73,13 +73,12 @@ test.describe("the browser", () => {
 });
 
 test.describe("the Host", () => {
-  test("only the Host header selects a business: no source reads a forwarded host, and the two places that look at the request's name both read Host", () => {
-    // One file reads X-Forwarded-Host, and not to choose a business: the upload's CSRF check lists the hosts a page of this application may have
-    // come from (src/server/same-origin.ts), and the business comes from the verified session. Phase 18C's trusted-proxy setting is where that goes.
-    const EXEMPT = ["src/server/same-origin.ts"];
+  test("only the Host header selects a business: no source reads a forwarded host (the upload's CSRF check included), and the places that look at the request's name read Host", () => {
+    // Nothing reads a forwarded host any more, not even the upload's CSRF check (src/server/same-origin.ts): the proxy passes the original Host
+    // through unchanged, so the request's own Host is the page's name and no header any client can send decides which names are "this application".
     const users = sourceFiles.filter((file) => /server\/same-origin/.test(read(file))).map(posix);
     expect(users).toEqual(["src/app/api/branding/route.ts"]);
-    const hits = sourceFiles.filter((file) => !EXEMPT.includes(posix(file))).flatMap((file) => {
+    const hits = sourceFiles.flatMap((file) => {
       const code = stripComments(read(file));
       return [/x-forwarded-host/i, /x-original-host/i, /x-forwarded-server/i, /\bx-host\b/i, /get\(\s*["']forwarded["']\s*\)/i].filter((pattern) => pattern.test(code)).map((pattern) => `${posix(file)}: ${pattern}`);
     });
@@ -135,7 +134,9 @@ test.describe("DNS is read, never written, and nothing is fetched from a custome
       if (existsSync(join(ROOT, file))) expect(read(join(ROOT, file)), file).not.toMatch(/DOMAIN_DNS_RESOLVER|DOMAIN_DNS_FIXTURE_DIR|TEST_DNS_DIR/);
     }
     const readers = sourceFiles.filter((file) => /DOMAIN_DNS_RESOLVER|DOMAIN_DNS_FIXTURE_DIR/.test(read(file))).map(posix);
-    expect(readers).toEqual(["src/lib/dns-resolver.ts"]);
+    // The resolver reads it; the production configuration rules (src/lib/deployment.ts) NAME it, to refuse a deployment that sets it.
+    expect(readers).toEqual(["src/lib/deployment.ts", "src/lib/dns-resolver.ts"]);
+    expect(read(join(SRC, "lib", "deployment.ts"))).toContain('add("DOMAIN_DNS_RESOLVER", "must not be set: the test resolver is for tests only")');
     const config = read(join(ROOT, "playwright.config.ts"));
     expect(config).toContain('process.env.DOMAIN_DNS_RESOLVER = "fixture"');
   });

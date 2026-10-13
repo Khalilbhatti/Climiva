@@ -14,6 +14,16 @@ test-results
 playwright-report
 *.tsbuildinfo
 
+# Database dumps and asset archives are a business's data; the deploy tooling and the Docker-side tests are not part of the application.
+backups
+*.dump
+*.dump.sha256
+*.assets.tar.gz
+deploy
+e2e-docker
+playwright.config.ts
+playwright.docker.config.ts
+
 .git
 .gitignore
 .claude

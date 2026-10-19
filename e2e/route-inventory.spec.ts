@@ -52,7 +52,7 @@ test.describe("the inventory is complete", () => {
     for (const pattern of patterns) expect(ROUTE_INVENTORY.some((route) => route.pattern === pattern), pattern).toBe(true);
     for (const route of ROUTE_INVENTORY) expect(route.url, route.pattern).not.toMatch(/[[\]]/);
     // Every top-level module is in it.
-    for (const url of ["/", "/bookings", "/schedule", "/jobs", "/customers", "/services", "/team", "/quotes-invoices", "/payments", "/maintenance-plans", "/website", "/marketplace", "/reviews", "/marketing", "/analytics", "/settings", "/help"]) {
+    for (const url of ["/", "/bookings", "/schedule", "/jobs", "/customers", "/services", "/team", "/quotes-invoices", "/payments", "/maintenance-plans", "/website", "/marketplace-listing", "/reviews", "/marketing", "/analytics", "/settings", "/help"]) {
       expect(ROUTE_INVENTORY.map((route) => route.url), url).toContain(url);
     }
     expect(new Set(ROUTE_INVENTORY.map((route) => route.url)).size).toBe(ROUTE_INVENTORY.length);

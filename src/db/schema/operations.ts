@@ -22,6 +22,7 @@
 import { sql } from "drizzle-orm";
 import { check, date, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, time, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { customerProperties, customers, equipment } from "./customers";
+import { marketplaceListings } from "./marketplace";
 import { organizations } from "./organizations";
 import { services } from "./services";
 import { teamMembers } from "./team";
@@ -96,6 +97,15 @@ export const bookings = pgTable(
      * finds the first booking instead of making another. Null for every booking not made from a public page.
      */
     submissionKey: text("submission_key"),
+    /**
+     * Marketplace attribution. `marketplace_listing_id` is the listing the booking was made through: written only by the public Marketplace booking
+     * function, from the listing the page named, never from anything the visitor sent. `discovery_service` and `discovery_location` are what the visitor
+     * was looking at (a Service address and a place address from the results page they came from): checked for shape, informational, never used to
+     * decide anything. All three are null for a booking that did not come from the Marketplace.
+     */
+    marketplaceListingId: uuid("marketplace_listing_id"),
+    discoveryService: text("discovery_service"),
+    discoveryLocation: text("discovery_location"),
     /** When the request arrived. NULL when it is not known (an older record); every booking made through the application has one. */
     receivedAt: timestamp("received_at", { withTimezone: true }),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
@@ -112,6 +122,8 @@ export const bookings = pgTable(
     }),
     foreignKey({ name: "bookings_service_fk", columns: [table.organizationId, table.serviceId], foreignColumns: [services.organizationId, services.id] }),
     foreignKey({ name: "bookings_assignee_fk", columns: [table.organizationId, table.assigneeId], foreignColumns: [teamMembers.organizationId, teamMembers.id] }),
+    // Migration 0024 makes this ON DELETE SET NULL (marketplace_listing_id): the column list keeps the booking's own organization.
+    foreignKey({ name: "bookings_marketplace_listing_fk", columns: [table.organizationId, table.marketplaceListingId], foreignColumns: [marketplaceListings.organizationId, marketplaceListings.id] }).onDelete("set null"),
     unique("bookings_org_id_unique").on(table.organizationId, table.id),
     unique("bookings_org_number_unique").on(table.organizationId, table.number),
     index("bookings_org_status_date_idx").on(table.organizationId, table.status, table.serviceDate),
@@ -120,6 +132,12 @@ export const bookings = pgTable(
     index("bookings_org_assignee_idx").on(table.organizationId, table.assigneeId),
     uniqueIndex("bookings_org_submission_key_unique").on(table.organizationId, table.submissionKey).where(sql`${table.submissionKey} is not null`),
     check("bookings_submission_key", sql`${table.submissionKey} is null or char_length(${table.submissionKey}) between 8 and 64`),
+    check("bookings_marketplace_source", sql`${table.marketplaceListingId} is null or ${table.source} = 'Marketplace'`),
+    check(
+      "bookings_discovery_shape",
+      sql`(${table.discoveryService} is null or (${table.discoveryService} ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and char_length(${table.discoveryService}) <= 80)) and (${table.discoveryLocation} is null or (${table.discoveryLocation} ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and char_length(${table.discoveryLocation}) <= 80))`,
+    ),
+    index("bookings_marketplace_listing_idx").on(table.marketplaceListingId).where(sql`${table.marketplaceListingId} is not null`),
     check("bookings_number_positive", sql`${table.number} >= 1`),
     check("bookings_source", sql`${table.source} in (${list(BOOKING_SOURCE_VALUES)})`),
     check("bookings_status", sql`${table.status} in (${list(BOOKING_STATUS_VALUES)})`),

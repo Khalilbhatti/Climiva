@@ -19,7 +19,7 @@ const AREAS: readonly HelpArea[] = [
   { title: "Team", description: "Team members, roles and availability.", icon: IdCard, routes: ["/team"] },
   { title: "Quotes, Invoices & Payments", description: "Quotes and invoices, and the payments recorded against them.", icon: ReceiptText, routes: ["/quotes-invoices", "/payments"] },
   { title: "Maintenance Plans", description: "Maintenance agreements and their included visits.", icon: ShieldCheck, routes: ["/maintenance-plans"] },
-  { title: "Website & Marketplace", description: "Your public website and your Climvia Marketplace listing.", icon: Globe, routes: ["/website", "/marketplace"] },
+  { title: "Website & Marketplace", description: "Your public website and your Climvia Marketplace listing.", icon: Globe, routes: ["/website", "/marketplace-listing"] },
   { title: "Reviews & Marketing", description: "Customer reviews and replies, and email and SMS campaigns.", icon: Star, routes: ["/reviews", "/marketing"] },
   { title: "Analytics", description: "Read-only reports on bookings, jobs, quotes, invoices and payments.", icon: ChartLine, routes: ["/analytics"] },
   { title: "Settings", description: "Business information, hours, branding, preferences and your profile.", icon: Settings, routes: ["/settings"] },

@@ -113,7 +113,8 @@ export default async function PlatformMarketplacePage({ searchParams }: { search
                 <TableHeaderCell>Business chose</TableHeaderCell>
                 <TableHeaderCell>Platform decision</TableHeaderCell>
                 <TableHeaderCell>Public now</TableHeaderCell>
-                <TableHeaderCell className="text-right">Services</TableHeaderCell>
+                <TableHeaderCell>Services shown</TableHeaderCell>
+                <TableHeaderCell>Service areas</TableHeaderCell>
                 <TableHeaderCell>Site</TableHeaderCell>
                 <TableHeaderCell>Moderation</TableHeaderCell>
               </tr>
@@ -125,7 +126,15 @@ export default async function PlatformMarketplacePage({ searchParams }: { search
                     <Link href={consoleHref(`/platform-admin/organizations/${row.organizationId}`)} className="font-semibold text-primary hover:underline">
                       {row.organizationName}
                     </Link>
-                    <p className="text-xs text-ink-muted">/listings/{row.publicSlug}</p>
+                    <p className="text-xs text-ink-muted">
+                      {row.publiclyAvailable ? (
+                        <Link href={`/listings/${row.publicSlug}`} className="text-primary hover:underline">
+                          /listings/{row.publicSlug}
+                        </Link>
+                      ) : (
+                        <>/listings/{row.publicSlug}</>
+                      )}
+                    </p>
                   </TableCell>
                   <TableCell>
                     <StatusBadge tone={row.status === "published" ? "positive" : "neutral"}>{BUSINESS_STATUS[row.status] ?? row.status}</StatusBadge>
@@ -137,8 +146,14 @@ export default async function PlatformMarketplacePage({ searchParams }: { search
                   </TableCell>
                   <TableCell>
                     <StatusBadge tone={row.publiclyAvailable ? "positive" : "neutral"}>{row.publiclyAvailable ? "Available" : "Not available"}</StatusBadge>
+                    <p className="mt-1 text-xs text-ink-muted">{row.discoverable ? "Listed in the Marketplace" : "Not in the Marketplace"}</p>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{row.selectedServices}</TableCell>
+                  <TableCell className="max-w-56 text-xs text-ink">
+                    {row.serviceNames.length === 0 ? <span className="text-ink-muted">None selected</span> : row.serviceNames.join(", ")}
+                  </TableCell>
+                  <TableCell className="max-w-56 text-xs text-ink">
+                    {row.serviceAreas.length === 0 ? <span className="text-ink-muted">None listed</span> : row.serviceAreas.join(", ")}
+                  </TableCell>
                   <TableCell>
                     {row.site ? (
                       <>

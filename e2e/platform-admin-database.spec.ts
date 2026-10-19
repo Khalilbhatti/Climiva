@@ -324,12 +324,12 @@ test.describe("what the platform reads return", () => {
     const listings = await asUser(admin.userId, (client) => one<{ rows: Record<string, unknown>[] }>(client, "select app_platform_listings($1, 25, 0) as data", [listing.slug]));
     expect(listings.rows).toHaveLength(1);
     expect(listings.rows[0]).toMatchObject({ id: listing.id, organizationId: business.organizationId, status: "hidden", publiclyAvailable: false, moderation: { state: "allowed" } });
-    expect(Object.keys(listings.rows[0]).sort()).toEqual(["id", "moderation", "organizationId", "organizationName", "publicSlug", "publiclyAvailable", "publishedAt", "selectedServices", "site", "status"]);
+    expect(Object.keys(listings.rows[0]).sort()).toEqual(["discoverable", "id", "moderation", "organizationId", "organizationName", "publicSlug", "publiclyAvailable", "publishedAt", "selectedServices", "serviceAreas", "serviceNames", "site", "status"]);
 
     const reviews = await asUser(admin.userId, (client) => one<{ total: number; rows: { rating: number; text: string; organizationName: string }[] }>(client, "select app_platform_reviews(null, 5, 25, 0) as data"));
     expect(reviews.total).toBeGreaterThan(0);
     expect(reviews.rows.every((row) => row.rating === 5 && row.text.length > 0 && row.organizationName.length > 0)).toBe(true);
-    expect(Object.keys(reviews.rows[0]).sort()).toEqual(["id", "organizationId", "organizationName", "rating", "replied", "reviewer", "source", "submittedOn", "text"]);
+    expect(Object.keys(reviews.rows[0]).sort()).toEqual(["id", "organizationId", "organizationName", "rating", "replied", "reviewer", "source", "submittedOn", "text", "visibility"]);
     expect((await asUser(admin.userId, (client) => one<{ total: number }>(client, "select app_platform_reviews(null, 9, 25, 0) as data"))).total).toBe(0);
 
     const system = await asUser(admin.userId, (client) => one<{ databaseVersion: string; migrationsApplied: number; counts: Record<string, number> }>(client, "select app_platform_system() as data"));

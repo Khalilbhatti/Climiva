@@ -2,6 +2,7 @@
 
 import { orderedPages, platformHost } from "@/data/website";
 import { getListingServices, type ListingConfig } from "@/data/marketplace";
+import { areaDisplay } from "@/lib/marketplace-discovery";
 import { useServices } from "@/components/services/ServicesProvider";
 import { useBusiness, useHoursRows, useSettings } from "@/components/settings/SettingsProvider";
 import { PREVIEW_BASE } from "@/components/website/site-links";
@@ -28,6 +29,7 @@ export function useListingData(config: ListingConfig): ListingViewData {
     logo: logo ? { src: logo.src } : null,
     hours,
     services: getListingServices(config, catalog),
+    areas: config.areas.map(areaDisplay),
     website: website ? platformHost(website.site.platformSlug) : null,
     site: website
       ? { base: PREVIEW_BASE, pages: orderedPages(website.draft).filter((page) => page.visible).map((page) => ({ key: page.key, title: page.title, slug: page.slug, type: page.type })) }

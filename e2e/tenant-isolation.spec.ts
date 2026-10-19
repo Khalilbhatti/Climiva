@@ -94,7 +94,7 @@ test.describe("the sample business belongs to Apex alone", () => {
     const { page, problems } = await openAs("taylor");
     for (const [path, name, shown] of [
       ["/website", "Website", "northstar.climvia.com"],
-      ["/marketplace", "Marketplace", NORTHSTAR.name],
+      ["/marketplace-listing", "Marketplace", NORTHSTAR.name],
     ] as const) {
       await page.goto(path);
       await expect(page.getByRole("heading", { level: 1, name }), path).toBeVisible();
@@ -147,7 +147,7 @@ test.describe("the sample business belongs to Apex alone", () => {
   test("Taylor's previews are her own site and listing; the public pages are the same for everyone", async ({ apiAs }) => {
     const taylor = await apiAs("taylor");
     const routes = ROUTE_INVENTORY.filter((route) => !route.shell);
-    const previews = routes.filter((route) => route.url.startsWith("/website/preview") || route.url.startsWith("/marketplace/preview"));
+    const previews = routes.filter((route) => route.url.startsWith("/website/preview") || route.url.startsWith("/marketplace-listing/preview"));
     const published = routes.filter((route) => route.url.startsWith("/sites/") || route.url.startsWith("/listings/"));
     expect(previews.length).toBeGreaterThan(6);
     expect(published.length).toBeGreaterThan(6);
@@ -335,7 +335,7 @@ test.describe("concurrent requests from different people", () => {
 test.describe("nothing about a workspace is cached", () => {
   test("pages that show a workspace are never stored by a browser or a shared cache", async ({ apiAs }) => {
     const alex = await apiAs("alex");
-    for (const url of ["/", "/settings", "/settings/hours", "/customers", "/customers/sarah-mitchell", "/website/preview", "/marketplace/preview", "/help"]) {
+    for (const url of ["/", "/settings", "/settings/hours", "/customers", "/customers/sarah-mitchell", "/website/preview", "/marketplace-listing/preview", "/help"]) {
       for (const headers of [{}, { rsc: "1" }] as Record<string, string>[]) {
         const cacheControl = (await alex.get(url, { headers })).headers()["cache-control"] ?? "";
         expect(cacheControl, url).toMatch(/no-store|private/);

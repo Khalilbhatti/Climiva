@@ -44,6 +44,9 @@ const PARAMS: Record<string, readonly string[]> = {
   // The published sample sites and listings, by their public addresses (the standing sample business and Northstar).
   siteSlug: ["apexclimate"],
   listingSlug: ["apex-climate-heating-air"],
+  // The Marketplace's Service and place pages: Services the sample business offers online, and places it lists (a city and a ZIP code).
+  serviceSlug: ["ac-repair-diagnostics", "annual-cooling-tune-up"],
+  locationSlug: ["austin-tx", "78704"],
   reviewId: REVIEWS_DATA.reviews.map((review) => review.id),
   campaignId: MARKETING.campaigns.map((campaign) => campaign.id),
 };
@@ -75,7 +78,7 @@ export const AUTH_PAGES = ["/login", "/signup", "/onboarding"];
  * prefixes that name no Site or listing page). They are checked on their own (states, route-inventory and public-boundary specs), not crawled for a 2xx.
  */
 // (/custom-site is where a customer's own domain is rewritten to; reached on a platform name it is "not found". domains-host.spec.ts crawls it by Host.)
-export const NOT_FOUND_ONLY_PATTERNS = ["/[...unknown]", "/sites", "/listings", "/listings/[listingSlug]/[...rest]", "/custom-site/[[...slug]]"] as const;
+export const NOT_FOUND_ONLY_PATTERNS = ["/[...unknown]", "/sites", "/listings", "/listings/[listingSlug]/[...rest]", "/marketplace/[...rest]", "/custom-site/[[...slug]]"] as const;
 
 export function pagePatterns(): { pattern: string; shell: boolean }[] {
   return pageFiles(APP_DIR)
@@ -113,7 +116,7 @@ export const STATE_ROUTES: string[] = [
   "/jobs?tab=completed",
   "/payments?record=1",
   "/maintenance-plans?new=1",
-  "/marketplace/edit?setup=1",
+  "/marketplace-listing/edit?setup=1",
   "/quotes-invoices?tab=invoices",
   "/reviews?tab=awaiting",
   "/reviews?tab=responded",
@@ -122,7 +125,7 @@ export const STATE_ROUTES: string[] = [
   "/analytics?tab=plans",
   "/analytics?range=last-month",
   "/analytics?range=custom&from=2024-10-10&to=2024-10-20",
-  ...["/jobs", "/payments", "/maintenance-plans", "/services", "/website", "/marketplace", "/reviews", "/marketing"].map((path) => `${path}?state=empty`),
+  ...["/jobs", "/payments", "/maintenance-plans", "/services", "/website", "/marketplace-listing", "/reviews", "/marketing"].map((path) => `${path}?state=empty`),
   "/team?state=solo",
 ];
 

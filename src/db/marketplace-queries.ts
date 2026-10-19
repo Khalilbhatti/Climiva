@@ -9,12 +9,12 @@
  * another business's Service is indistinguishable from one that does not exist. A listing row is locked before it is changed, so two saves
  * queue up. No `server-only` import (shared with the seed and the specs); no Client Component may import this file.
  */
-import { and, asc, eq } from "drizzle-orm";
-import { defaultListingConfig, getEligibleServices, type ListingConfig, type ListingStatus, type MarketplaceState, type CoverId } from "@/data/marketplace";
+import { and, asc, eq, sql } from "drizzle-orm";
+import { defaultListingConfig, getEligibleServices, type ListingConfig, type ListingStatus, type MarketplaceState, type CoverId, type ServiceArea } from "@/data/marketplace";
 import type { Service } from "@/data/services";
 import { refuse } from "@/lib/refusal";
 import type { Tx } from "./index";
-import { marketplaceListingServices, marketplaceListings, services, type MarketplaceListingRow } from "./schema";
+import { marketplaceListingServices, marketplaceListings, marketplaceServiceAreas, services, type MarketplaceListingRow } from "./schema";
 
 export type ListingContext = { tx: Tx; organizationId: string; organizationSlug: string };
 
@@ -34,7 +34,7 @@ function statusOf(row: MarketplaceListingRow): ListingStatus {
  */
 export async function loadMarketplace(tx: Tx, organizationId: string, catalog: readonly Service[]): Promise<MarketplaceState> {
   const row = await findListing(tx, organizationId);
-  if (!row) return { status: "not-set-up", config: defaultListingConfig(catalog) };
+  if (!row) return { status: "not-set-up", suspended: false, config: defaultListingConfig(catalog) };
   const selectedRows = await tx
     .select({ slug: services.slug, sortOrder: marketplaceListingServices.sortOrder })
     .from(marketplaceListingServices)
@@ -45,6 +45,12 @@ export async function loadMarketplace(tx: Tx, organizationId: string, catalog: r
   // A Service that is no longer eligible (switched off, made internal) is not shown, but its selection is kept until the listing is saved.
   const selected = selectedRows.map((selection) => selection.slug).filter((slug) => eligible.includes(slug));
   const order = [...selected, ...eligible.filter((id) => !selected.includes(id))];
+  const areaRows = await tx
+    .select()
+    .from(marketplaceServiceAreas)
+    .where(and(eq(marketplaceServiceAreas.organizationId, organizationId), eq(marketplaceServiceAreas.listingId, row.id)))
+    .orderBy(asc(marketplaceServiceAreas.sortOrder));
+  const areas: ServiceArea[] = areaRows.map((area) => ({ city: area.city, state: area.stateRegion, postal: area.postalCode, label: area.label }));
   const config: ListingConfig = {
     description: row.description,
     cover: (row.cover as CoverId | null) ?? undefined,
@@ -52,8 +58,11 @@ export async function loadMarketplace(tx: Tx, organizationId: string, catalog: r
     selected,
     contact: { phone: row.showPhone, email: row.showEmail, address: row.showAddress, hours: row.showHours, website: row.showWebsite },
     actions: { book: row.actionBook, website: row.actionWebsite, contact: row.actionContact },
+    areas,
   };
-  return { status: statusOf(row), config, slug: row.publicSlug };
+  // Whether the PLATFORM has suspended the listing: a yes or a no from the database (the reason stays where the platform keeps it).
+  const suspended = (await tx.execute<{ suspended: boolean }>(sql`select app_listing_suspended() as suspended`)).rows[0]?.suspended === true;
+  return { status: statusOf(row), suspended, config, slug: row.publicSlug };
 }
 
 async function lockListing(tx: Tx, organizationId: string): Promise<MarketplaceListingRow | undefined> {
@@ -85,6 +94,14 @@ async function replaceSelection(tx: Tx, organizationId: string, listingId: strin
   await tx.delete(marketplaceListingServices).where(and(eq(marketplaceListingServices.organizationId, organizationId), eq(marketplaceListingServices.listingId, listingId)));
   if (selection.length > 0) {
     await tx.insert(marketplaceListingServices).values(selection.map((service, index) => ({ organizationId, listingId, serviceId: service.id, sortOrder: index })));
+  }
+}
+
+/** The places the business works, replaced as a set in the order given. The database refuses a place twice and more than fifty. */
+async function replaceAreas(tx: Tx, organizationId: string, listingId: string, areas: readonly ServiceArea[]): Promise<void> {
+  await tx.delete(marketplaceServiceAreas).where(and(eq(marketplaceServiceAreas.organizationId, organizationId), eq(marketplaceServiceAreas.listingId, listingId)));
+  if (areas.length > 0) {
+    await tx.insert(marketplaceServiceAreas).values(areas.map((area, index) => ({ organizationId, listingId, city: area.city, stateRegion: area.state, postalCode: area.postal, label: area.label, sortOrder: index })));
   }
 }
 
@@ -128,6 +145,7 @@ export async function saveListing(ctx: ListingContext, config: ListingConfig, op
       .values({ organizationId, publicSlug, status: "published", ...columnsOf(config) })
       .returning({ id: marketplaceListings.id });
     await replaceSelection(tx, organizationId, created.id, selection);
+    await replaceAreas(tx, organizationId, created.id, config.areas);
     return;
   }
   await tx
@@ -135,6 +153,7 @@ export async function saveListing(ctx: ListingContext, config: ListingConfig, op
     .set({ ...columnsOf(config), ...(options.publish ? { status: "published" } : {}) })
     .where(and(eq(marketplaceListings.organizationId, organizationId), eq(marketplaceListings.id, row.id)));
   await replaceSelection(tx, organizationId, row.id, selection);
+  await replaceAreas(tx, organizationId, row.id, config.areas);
 }
 
 /** Publish a saved listing, or hide a published one. Its configuration is untouched either way. */
@@ -160,9 +179,11 @@ export async function insertSeedListing(tx: Tx, organizationId: string, organiza
     .values({ organizationId, publicSlug, status: seed.status, ...columnsOf(seed.config) })
     .returning({ id: marketplaceListings.id });
   await replaceSelection(tx, organizationId, created.id, selection);
+  await replaceAreas(tx, organizationId, created.id, seed.config.areas);
 }
 
 export async function clearMarketplace(tx: Tx, organizationId: string): Promise<void> {
+  await tx.delete(marketplaceServiceAreas).where(eq(marketplaceServiceAreas.organizationId, organizationId));
   await tx.delete(marketplaceListingServices).where(eq(marketplaceListingServices.organizationId, organizationId));
   await tx.delete(marketplaceListings).where(eq(marketplaceListings.organizationId, organizationId));
 }

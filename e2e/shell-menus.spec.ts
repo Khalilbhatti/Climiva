@@ -119,7 +119,7 @@ test.describe("the open menus are accessible", () => {
       await expectAccessible(page);
     }
     // Website and Marketplace are Northstar's own too.
-    for (const path of ["/website", "/marketplace"]) {
+    for (const path of ["/website", "/marketplace-listing"]) {
       await page.goto(path);
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
       await expectAccessible(page);

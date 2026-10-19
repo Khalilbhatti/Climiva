@@ -21,6 +21,8 @@ import { organizations } from "./organizations";
 import { teamMembers } from "./team";
 
 export const REVIEW_SOURCE_VALUES = ["Climvia"] as const;
+/** private: only the business sees it. public: it may be shown on the business's Marketplace profile and counts toward its public rating. */
+export const REVIEW_VISIBILITY_VALUES = ["private", "public"] as const;
 export const REVIEW_CHANNEL_VALUES = ["email", "sms"] as const;
 export const REVIEW_REQUEST_STATUS_VALUES = ["recorded"] as const;
 
@@ -56,6 +58,14 @@ export const reviews = pgTable(
     submittedOn: date("submitted_on", { mode: "string" }).notNull(),
     replyDraft: text("reply_draft"),
     imported: boolean("imported").notNull().default(false),
+    /**
+     * Whether the review may be shown publicly (the Marketplace profile and its rating). Every review is private until it is made public, and no
+     * workspace screen or Server Action does that: the runtime role cannot write this table, so only the owner connection (the seed today, the
+     * customer's own consent step when review collection exists) can. The business cannot choose which reviews to show, so a rating cannot be curated.
+     * `made_public_at` is set by the database when a review becomes public.
+     */
+    visibility: text("visibility").notNull().default("private"),
+    madePublicAt: timestamp("made_public_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -75,6 +85,9 @@ export const reviews = pgTable(
     check("reviews_rating", sql`${table.rating} between 1 and 5`),
     check("reviews_text", sql`char_length(btrim(${table.reviewText})) between 1 and 2000`),
     check("reviews_party", sql`(${table.customerId} is null) = (${table.contactName} is not null)`),
+    check("reviews_visibility", sql`${table.visibility} in (${list(REVIEW_VISIBILITY_VALUES)})`),
+    check("reviews_made_public_at", sql`(${table.visibility} = 'public') = (${table.madePublicAt} is not null)`),
+    index("reviews_org_visibility_idx").on(table.organizationId, table.visibility),
   ],
 ).enableRLS();
 

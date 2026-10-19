@@ -356,12 +356,30 @@ test.describe("a Marketplace listing configuration", () => {
     selected: ids.slice(0, 3),
     contact: { phone: true, email: false, address: true, hours: true, website: true },
     actions: { book: true, website: true, contact: false },
+    areas: [{ city: "austin", state: "Texas" }, { postal: "78704", label: "South Austin" }],
   });
 
   test("a complete configuration parses", () => {
     const result = parseListingConfig(valid());
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.selected).toEqual(ids.slice(0, 3));
+    if (result.ok) {
+      expect(result.value.selected).toEqual(ids.slice(0, 3));
+      // The areas are stored in their normal form.
+      expect(result.value.areas).toEqual([{ city: "Austin", state: "TX", postal: null, label: null }, { city: null, state: null, postal: "78704", label: "South Austin" }]);
+    }
+  });
+
+  test("the service areas are part of the configuration: a request without them is refused, one with a bad or repeated place is refused, and none is allowed", () => {
+    const without: Record<string, unknown> = { ...valid() };
+    delete without.areas;
+    expect(parseListingConfig(without).ok).toBe(false);
+    expect(parseListingConfig({ ...valid(), areas: "Austin, TX" }).ok).toBe(false);
+    expect(parseListingConfig({ ...valid(), areas: [{ city: "Austin" }] }).ok).toBe(false);
+    expect(parseListingConfig({ ...valid(), areas: [{ postal: "78704" }, { postal: "78704-0001" }] }).ok).toBe(false);
+    expect(parseListingConfig({ ...valid(), areas: Array.from({ length: 51 }, (_, index) => ({ postal: String(20000 + index) })) }).ok).toBe(false);
+    const none = parseListingConfig({ ...valid(), areas: [] });
+    expect(none.ok).toBe(true);
+    if (none.ok) expect(none.value.areas).toEqual([]);
   });
 
   test("a description is required, bounded and plain text", () => {

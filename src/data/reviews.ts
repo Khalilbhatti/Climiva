@@ -54,6 +54,11 @@ export type Review = {
   replyDraft?: string;
   /** Carried in with the sample business's history (informational: its totals are reconciled by an imported adjustment). */
   imported?: boolean;
+  /**
+   * The customer made it public: it may be shown on the business's Marketplace profile and counts toward its public rating. Written by the seed (and,
+   * later, by the customer's own consent step); no workspace screen sets it, and the business cannot choose which reviews are shown.
+   */
+  public?: boolean;
 };
 
 export type ReviewRequestChannel = "email" | "sms";

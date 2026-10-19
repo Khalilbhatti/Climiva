@@ -33,7 +33,7 @@ test.describe("a Settings change reaches every module that shows it", () => {
     await expect(main(page)).toContainText("Summit HVAC Services");
     await go(page, "/website/preview/contact");
     await expect(page.getByTestId("site-frame").locator("footer")).toContainText("Summit HVAC Services");
-    await go(page, "/marketplace/preview");
+    await go(page, "/marketplace-listing/preview");
     await expect(page.getByTestId("directory-frame")).toContainText("Summit HVAC Services");
     await expect(page.getByTestId("directory-frame")).toContainText("(737) 555-0100");
     await expect(page.getByTestId("directory-frame")).not.toContainText("Apex Climate");
@@ -56,7 +56,7 @@ test.describe("a Settings change reaches every module that shows it", () => {
     await expect(page.getByRole("region", { name: "Business information" })).toContainText("Mon–Fri: 8:00 AM–5:00 PM");
     await go(page, "/website/preview/contact");
     await expect(page.getByTestId("site-frame")).toContainText(/Mon–Fri\s*8:00 AM–5:00 PM/);
-    await go(page, "/marketplace/preview");
+    await go(page, "/marketplace-listing/preview");
     await expect(page.getByTestId("directory-frame")).toContainText("Mon–Fri 8:00 AM–5:00 PM");
     await go(page, "/team/alex-morgan");
     await expect(main(page)).toContainText("Mon–Fri 8:00 AM–5:00 PM");
@@ -240,21 +240,21 @@ test.describe("cancelling a scheduled campaign keeps it as a Draft", () => {
 
 test.describe("hiding and publishing the Marketplace listing is what the public page shows", () => {
   test("hidden: the public page says so and lists nothing; published again: the five Services are back", async ({ page }) => {
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     await page.getByRole("switch", { name: "Listing visible" }).click();
     await page.getByRole("dialog", { name: "Hide Marketplace listing?" }).getByRole("button", { name: "Hide listing" }).click();
     await expect(toast(page)).toContainText("Marketplace listing hidden.");
 
-    await go(page, "/marketplace/preview");
+    await go(page, "/marketplace-listing/preview");
     await expect(page.getByRole("heading", { level: 1, name: "This listing isn't available" })).toBeVisible();
     await expect(page.getByTestId("directory-frame")).toContainText("Apex Climate Heating & Air is not listed in the Climvia Marketplace right now.");
     await expect(page.getByTestId("directory-frame")).not.toContainText("AC Repair & Diagnostics");
     await expect(primaryNav(page)).toHaveCount(0);
 
-    await go(page, "/marketplace");
+    await go(page, "/marketplace-listing");
     await page.getByRole("button", { name: "Publish listing" }).click();
     await expect(toast(page)).toContainText("Marketplace listing published.");
-    await go(page, "/marketplace/preview");
+    await go(page, "/marketplace-listing/preview");
     const frame = page.getByTestId("directory-frame");
     await expect(frame).toContainText("AC Repair & Diagnostics");
     await expect(frame).not.toContainText("Emergency No-Heat / No-Cool");

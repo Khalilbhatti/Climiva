@@ -38,8 +38,8 @@ const EMERGENCY = "Emergency No-Heat / No-Cool Service";
 const listed = (scope: ReturnType<Page["locator"]>) => scope.getByRole("region", { name: "Services" }).getByRole("listitem").locator("p.text-sm.font-semibold");
 
 test.describe("Marketplace listing", () => {
-  test("renders the approved header, Published badge, four summary tiles and the Marketplace sidebar state", async ({ page, workerTenant }) => {
-    await page.goto("/marketplace");
+  test("renders the approved header, Published badge, five summary tiles and the Marketplace sidebar state", async ({ page, workerTenant }) => {
+    await page.goto("/marketplace-listing");
     await expect(page.getByRole("heading", { level: 1, name: "Marketplace" })).toBeVisible();
     await expect(page.getByText("Manage how your business appears in the Climvia directory.")).toBeVisible();
     await expect(primaryNav(page).getByRole("link", { name: /^Marketplace/ })).toHaveAttribute("aria-current", "page");
@@ -55,15 +55,16 @@ test.describe("Marketplace listing", () => {
     await expect(tiles).toContainText("Shown");
     await expect(tiles).toContainText("Booking");
     await expect(tiles).toContainText("Enabled");
-    await expect(tiles).toContainText("Customers can open your Booking page");
+    await expect(tiles).toContainText("Customers can book from your listing");
+    await expect(tiles).toContainText("Marketplace bookings");
 
-    await expect(page.getByRole("link", { name: "Edit listing" })).toHaveAttribute("href", "/marketplace/edit");
+    await expect(page.getByRole("link", { name: "Edit listing" })).toHaveAttribute("href", "/marketplace-listing/edit");
     // The public listing is its own page, at the listing's public address.
     await expect(page.getByRole("link", { name: "View public listing" })).toHaveAttribute("href", `/listings/${workerTenant.listingSlug}`);
   });
 
   test("business information comes from the organization's record, in the preview and beside it", async ({ page, workerTenant }) => {
-    await page.goto("/marketplace");
+    await page.goto("/marketplace-listing");
     const card = page.getByRole("region", { name: "Business information" });
     await expect(card).toContainText(business.name);
     await expect(card).toContainText(business.phone);
@@ -84,7 +85,7 @@ test.describe("Marketplace listing", () => {
   });
 
   test("exactly 5 of the 6 canonical Services are selected; Emergency No-Heat / No-Cool Service is not selected", async ({ page }) => {
-    await page.goto("/marketplace");
+    await page.goto("/marketplace-listing");
     await expect(listed(preview(page))).toHaveText(FIVE);
     await expect(preview(page)).not.toContainText(EMERGENCY);
     const shown = page.getByRole("region", { name: "Services shown" });
@@ -92,7 +93,7 @@ test.describe("Marketplace listing", () => {
     await expect(shown).toContainText("1 service not selected");
     await expect(shown).toContainText(`${EMERGENCY} — Not selected for the directory.`);
 
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     const services = page.getByRole("region", { name: "Services shown" });
     await expect(services).toContainText("5 of 6 eligible Services selected");
     for (const name of FIVE) await expect(services.getByRole("checkbox", { name: `Show ${name}` })).toBeChecked();
@@ -104,21 +105,21 @@ test.describe("Marketplace listing", () => {
   });
 
   test("the six public Services are the only choices: maintenance plan coverage is never offered", async ({ page }) => {
-    for (const path of ["/marketplace", "/marketplace/edit"]) {
+    for (const path of ["/marketplace-listing", "/marketplace-listing/edit"]) {
       await page.goto(path);
       await expect(main(page)).not.toContainText("Cooling maintenance");
       await expect(main(page)).not.toContainText("Heating maintenance");
     }
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     await expect(page.getByRole("region", { name: "Services shown" }).getByRole("listitem")).toHaveCount(SERVICES.length);
   });
 });
 
 test.describe("Edit listing", () => {
   test("opens with the approved fields, Save disabled until something changes", async ({ page }) => {
-    await page.goto("/marketplace");
+    await page.goto("/marketplace-listing");
     await page.getByRole("link", { name: "Edit listing" }).click();
-    await expect(page).toHaveURL("/marketplace/edit");
+    await expect(page).toHaveURL("/marketplace-listing/edit");
     await expect(page.getByRole("heading", { level: 1, name: "Edit Marketplace listing" })).toBeVisible();
     await expect(primaryNav(page).getByRole("link", { name: /^Marketplace/ })).toHaveAttribute("aria-current", "page");
     for (const heading of ["Listing details", "Contact information", "Services shown", "Customer actions", "Listing visibility"]) {
@@ -129,12 +130,12 @@ test.describe("Edit listing", () => {
     await expect(page.getByRole("textbox", { name: /Business name/ })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Edit business information" }).first()).toHaveAttribute("href", "/settings");
     await expect(page.getByRole("button", { name: "Save changes" })).toBeDisabled();
-    await expect(page.getByRole("link", { name: "Preview listing" })).toHaveAttribute("href", "/marketplace/preview");
+    await expect(page.getByRole("link", { name: "Preview listing" })).toHaveAttribute("href", "/marketplace-listing/preview");
     await expect(page.getByLabel(/^Business description/)).toHaveValue(/^HVAC maintenance, diagnostics, repair, and installation services/);
   });
 
   test("editing the description shows Unsaved changes, previews live, and saves to the database", async ({ page }) => {
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     await page.getByLabel(/^Business description/).fill("Austin heating and cooling, done right.");
     await expect(page.getByText("Unsaved changes").first()).toBeVisible();
     await expect(page.getByText("You have unsaved changes to your Marketplace listing.")).toBeVisible();
@@ -155,7 +156,7 @@ test.describe("Edit listing", () => {
   });
 
   test("the description is required, and a listing needs at least one Service", async ({ page }) => {
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     await page.getByLabel(/^Business description/).fill("");
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(page.getByText("Enter a description for your listing.")).toBeVisible();
@@ -166,7 +167,7 @@ test.describe("Edit listing", () => {
   });
 
   test("changing Service order and selection changes only the listing, never the Services", async ({ page }) => {
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     const services = page.getByRole("region", { name: "Services shown" });
     // Furnace starts last of six; three moves put it ahead of Heat Pump.
     for (let move = 0; move < 3; move += 1) await services.getByRole("button", { name: "Move Furnace Safety Inspection & Tune-Up up" }).click();
@@ -192,7 +193,7 @@ test.describe("Edit listing", () => {
   });
 
   test("each contact detail can be hidden, and the tile follows", async ({ page }) => {
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     await page.getByRole("switch", { name: "Show phone" }).click();
     await expect(page.getByRole("complementary", { name: "Listing preview" })).not.toContainText(business.phone);
     await expect(page.getByRole("complementary", { name: "Listing preview" })).toContainText(business.email);
@@ -212,7 +213,7 @@ test.describe("Edit listing", () => {
   });
 
   test("the Book service action can be switched off: the Booking tile and the public listing follow", async ({ page }) => {
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     await page.getByRole("switch", { name: 'Show "Book service"' }).click();
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(toast(page)).toContainText("Listing changes saved.");
@@ -226,7 +227,7 @@ test.describe("Edit listing", () => {
   });
 
   test("the cover is a choice of built-in treatments and can be removed", async ({ page }) => {
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     await expect(page.getByRole("radio", { name: /^Teal horizon/ })).toBeChecked();
     await page.getByRole("radio", { name: /^Warm linen/ }).check();
     await page.getByRole("radio", { name: /^No cover image/ }).check();
@@ -237,24 +238,24 @@ test.describe("Edit listing", () => {
 
 test.describe("Unsaved changes", () => {
   test("leaving by any link asks first; Keep editing keeps the edits and Discard and leave drops them", async ({ page }) => {
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     await page.getByLabel(/^Business description/).fill("Not saved yet.");
     await primaryNav(page).getByRole("link", { name: /^Bookings/ }).click();
 
     const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
     await expect(dialog).toContainText("You have unsaved changes. If you leave now, your edits to this listing will be lost.");
-    await expect(page).toHaveURL("/marketplace/edit");
+    await expect(page).toHaveURL("/marketplace-listing/edit");
     await dialog.getByRole("button", { name: "Keep editing" }).click();
     await expect(page.getByLabel(/^Business description/)).toHaveValue("Not saved yet.");
 
     await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Marketplace" }).click();
     await page.getByRole("dialog", { name: "Discard unsaved changes?" }).getByRole("button", { name: "Discard changes" }).click();
-    await expect(page).toHaveURL("/marketplace");
+    await expect(page).toHaveURL("/marketplace-listing");
     await expect(preview(page)).not.toContainText("Not saved yet.");
   });
 
   test("Discard in the header asks first and restores the saved listing; saved edits leave without a prompt", async ({ page }) => {
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     await page.getByLabel(/^Business description/).fill("Draft words.");
     await page.getByRole("button", { name: "Discard" }).click();
     const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
@@ -275,7 +276,7 @@ test.describe("Unsaved changes", () => {
 
 test.describe("Hide and publish", () => {
   test("Hide listing explains what happens, asks first, and keeps everything saved", async ({ page }) => {
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     await page.getByLabel(/^Business description/).fill("Kept while hidden.");
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(toast(page)).toContainText("Listing changes saved.");
@@ -304,7 +305,7 @@ test.describe("Hide and publish", () => {
   });
 
   test("the Hidden state: banner, tiles and a preview of what customers will see once published", async ({ page }) => {
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     await page.getByRole("switch", { name: "Listing visible" }).click();
     await page.getByRole("dialog", { name: "Hide Marketplace listing?" }).getByRole("button", { name: "Hide listing" }).click();
     await primaryNav(page).getByRole("link", { name: /^Marketplace/ }).click();
@@ -322,7 +323,7 @@ test.describe("Hide and publish", () => {
   });
 
   test("Publish listing shows the listing again with its saved configuration", async ({ page }) => {
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     await page.getByLabel(/^Business description/).fill("Restored after hiding.");
     await page.getByRole("switch", { name: 'Show "Contact business"' }).click();
     await page.getByRole("button", { name: "Save changes" }).click();
@@ -341,7 +342,7 @@ test.describe("Hide and publish", () => {
   });
 
   test("the listing can be published again from the editor's visibility switch", async ({ page }) => {
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     await page.getByRole("switch", { name: "Listing visible" }).click();
     await page.getByRole("dialog", { name: "Hide Marketplace listing?" }).getByRole("button", { name: "Hide listing" }).click();
     await expect(page.getByRole("switch", { name: "Listing visible" })).toHaveAttribute("aria-checked", "false");
@@ -353,7 +354,7 @@ test.describe("Hide and publish", () => {
 
 test.describe("Directory preview", () => {
   test("is the public listing: no workspace sidebar, top bar, internal controls or state labels", async ({ page, workerTenant }) => {
-    await page.goto("/marketplace");
+    await page.goto("/marketplace-listing");
     await page.getByRole("link", { name: "View public listing" }).click();
     await expect(page).toHaveURL(`/listings/${workerTenant.listingSlug}`);
 
@@ -371,7 +372,7 @@ test.describe("Directory preview", () => {
   });
 
   test("makes no claims it cannot back: no verified, licensed, ranking or sponsored labels, no analytics", async ({ page }) => {
-    await page.goto("/marketplace/preview");
+    await page.goto("/marketplace-listing/preview");
     const text = (await page.locator("body").innerText()).toLowerCase();
     for (const claim of ["verified", "licensed", "insured", "certified", "ranking", "sponsored", "top rated", "rating", "analytics", "wake county", "north carolina", "dispatch"]) {
       expect(text, claim).not.toContain(claim);
@@ -379,7 +380,7 @@ test.describe("Directory preview", () => {
   });
 
   test("its buttons lead to the Website's real Booking, contact and service pages", async ({ page }) => {
-    await page.goto("/marketplace/preview");
+    await page.goto("/marketplace-listing/preview");
     await expect(page.getByRole("link", { name: "Book service" })).toHaveAttribute("href", "/website/preview/booking");
     await expect(page.getByRole("link", { name: "View website" })).toHaveAttribute("href", "/website/preview");
     await expect(page.getByRole("link", { name: "Contact business" })).toHaveAttribute("href", "/website/preview/contact");
@@ -389,7 +390,7 @@ test.describe("Directory preview", () => {
   });
 
   test("the Desktop / Mobile switch narrows the page", async ({ page }) => {
-    await page.goto("/marketplace/preview");
+    await page.goto("/marketplace-listing/preview");
     const frame = page.getByTestId("directory-frame");
     const wide = (await frame.boundingBox())!.width;
     await page.getByRole("button", { name: "Mobile" }).click();
@@ -403,7 +404,7 @@ test.describe("Directory preview", () => {
     consoleGuard.allow(/status of 404/);
     await page.goto(`/listings/${workerTenant.listingSlug}`);
     await expect(page.getByRole("heading", { level: 1, name: business.name })).toBeVisible();
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     await page.getByRole("button", { name: "Hide listing" }).click();
     await page.getByRole("dialog", { name: "Hide Marketplace listing?" }).getByRole("button", { name: "Hide listing" }).click();
     await expect(toast(page)).toContainText("Marketplace listing hidden.");
@@ -414,7 +415,7 @@ test.describe("Directory preview", () => {
     expect(gone?.status()).toBe(404);
     await expect(page.getByText(business.phone)).toHaveCount(0);
     // ...and the signed-in preview of the saved listing says it is not listed.
-    await page.goto("/marketplace/preview");
+    await page.goto("/marketplace-listing/preview");
     await expect(page.getByRole("heading", { name: "This listing isn't available" })).toBeVisible();
     await expect(page.getByText(business.phone)).toHaveCount(0);
     await expect(primaryNav(page)).toHaveCount(0);
@@ -423,7 +424,7 @@ test.describe("Directory preview", () => {
   test("the listing's Website row is the Climvia address; an active custom domain does not replace it", async ({ page, db, workerTenant }) => {
     const host = uniqueHost("listing");
     await insertActiveClaim(db, workerTenant.organizationId, host);
-    await page.goto("/marketplace");
+    await page.goto("/marketplace-listing");
     await expect(page.getByRole("region", { name: "Business information" })).toContainText(`${workerTenant.platformSlug}.climvia.com`);
     await expect(page.getByRole("region", { name: "Business information" })).not.toContainText(host);
     await expect(preview(page)).toContainText(`${workerTenant.platformSlug}.climvia.com`);
@@ -432,7 +433,7 @@ test.describe("Directory preview", () => {
 
 test.describe("First-time setup and empty state", () => {
   test("the empty state offers one primary action, and no second business onboarding", async ({ page }) => {
-    await page.goto("/marketplace?state=empty");
+    await page.goto("/marketplace-listing?state=empty");
     await expect(page.getByRole("heading", { name: "Set up your Marketplace listing" })).toBeVisible();
     await expect(page.getByText("Create a public business profile using the information and Services already configured in Climvia.")).toBeVisible();
     await expect(summary(page)).toContainText("Not configured");
@@ -445,9 +446,9 @@ test.describe("First-time setup and empty state", () => {
   });
 
   test("Set up listing opens the setup form; Save & publish listing publishes it and shows the clean success state", async ({ page }) => {
-    await page.goto("/marketplace?state=empty");
+    await page.goto("/marketplace-listing?state=empty");
     await main(page).getByRole("link", { name: /Set up listing/ }).first().click();
-    await expect(page).toHaveURL("/marketplace/edit?setup=1");
+    await expect(page).toHaveURL("/marketplace-listing/edit?setup=1");
     await expect(page.getByRole("heading", { level: 1, name: "Set up Marketplace listing" })).toBeVisible();
     await expect(page.getByText("Draft", { exact: true })).toBeVisible();
     await expect(page.getByText("Nothing is publicly discoverable until you click Save & publish listing.")).toBeVisible();
@@ -455,7 +456,7 @@ test.describe("First-time setup and empty state", () => {
     await expect(page.getByRole("region", { name: "Services shown" })).toContainText("5 of 6 eligible Services selected");
 
     await page.getByRole("button", { name: "Save & publish listing" }).click();
-    await expect(page).toHaveURL("/marketplace");
+    await expect(page).toHaveURL("/marketplace-listing");
     await expect(toast(page)).toContainText("Marketplace listing published.");
     // Stored: the listing survives a reload.
     await page.reload();
@@ -469,15 +470,15 @@ test.describe("First-time setup and empty state", () => {
   });
 
   test("Back to Marketplace leaves setup without publishing", async ({ page }) => {
-    await page.goto("/marketplace/edit?setup=1");
+    await page.goto("/marketplace-listing/edit?setup=1");
     await page.getByRole("link", { name: "Back to Marketplace" }).click();
-    await expect(page).toHaveURL("/marketplace");
+    await expect(page).toHaveURL("/marketplace-listing");
   });
 });
 
 test.describe("Marketplace content rules", () => {
   test("no other business identity, location or claim appears on any Marketplace page", async ({ page }) => {
-    for (const path of ["/marketplace", "/marketplace?state=empty", "/marketplace/edit", "/marketplace/edit?setup=1", "/marketplace/preview"]) {
+    for (const path of ["/marketplace-listing", "/marketplace-listing?state=empty", "/marketplace-listing/edit", "/marketplace-listing/edit?setup=1", "/marketplace-listing/preview"]) {
       await page.goto(path);
       await page.locator("h1, h2").first().waitFor();
       await page.waitForLoadState("networkidle");

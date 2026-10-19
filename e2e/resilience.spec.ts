@@ -58,7 +58,7 @@ test.describe("the database is unreachable", () => {
   test("the same on the customer-facing previews and on an unknown address", async ({ browser, workerTenant }) => {
     const context = await browser.newContext({ storageState: workerTenant.storageState, baseURL: ORIGIN });
     const page = waitsForHydration(await context.newPage());
-    for (const path of ["/website/preview", "/marketplace/preview", "/no-such-page", "/"]) {
+    for (const path of ["/website/preview", "/marketplace-listing/preview", "/no-such-page", "/"]) {
       const response = await page.goto(path);
       expect(response?.status(), path).toBeGreaterThanOrEqual(500 - (path === "/no-such-page" ? 96 : 0));
       for (const value of SAMPLE) expect(await page.content(), `${path}: ${value}`).not.toContain(value);

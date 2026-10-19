@@ -121,7 +121,7 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       {
         label: "Marketplace",
-        href: "/marketplace",
+        href: "/marketplace-listing",
         icon: Store,
       },
       {

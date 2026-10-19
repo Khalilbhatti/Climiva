@@ -78,6 +78,13 @@ export const APEX_LISTING: SeedListing = {
     selected: APEX_LISTED,
     contact: { phone: true, email: true, address: true, hours: true, website: true },
     actions: { book: true, website: true, contact: true },
+    // Where Apex works: the city of its headquarters, two ZIP codes it names (one is the headquarters' own, one is labelled), and a neighbouring city.
+    areas: [
+      { city: "Austin", state: "TX", postal: null, label: null },
+      { city: null, state: null, postal: "78704", label: "South Austin" },
+      { city: null, state: null, postal: "78741", label: null },
+      { city: "Round Rock", state: "TX", postal: null, label: null },
+    ],
   },
 };
 
@@ -117,6 +124,11 @@ export const NORTHSTAR_LISTING: SeedListing = {
     selected: ["furnace-tune-up", "ac-repair-diagnostics"],
     contact: { phone: true, email: true, address: true, hours: false, website: true },
     actions: { book: true, website: true, contact: false },
+    areas: [
+      { city: "Denver", state: "CO", postal: null, label: null },
+      { city: "Aurora", state: "CO", postal: null, label: null },
+      { city: "Lakewood", state: "CO", postal: null, label: null },
+    ],
   },
 };
 

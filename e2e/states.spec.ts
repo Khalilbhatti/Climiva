@@ -33,7 +33,7 @@ test.describe("no screen prints a programming artefact", () => {
 
 test.describe("the approved empty states", () => {
   // The modules with an approved first-time screen preview it with ?state=empty.
-  const LISTS = ["/jobs", "/payments", "/maintenance-plans", "/services", "/website", "/marketplace", "/reviews", "/marketing"];
+  const LISTS = ["/jobs", "/payments", "/maintenance-plans", "/services", "/website", "/marketplace-listing", "/reviews", "/marketing"];
   for (const path of LISTS) {
     test(`${path}?state=empty explains itself and offers a way forward`, async ({ page }) => {
       await page.goto(`${path}?state=empty`);
@@ -106,7 +106,7 @@ test.describe("unusual addresses never break a page", () => {
     "/analytics?range=custom&from=bad&to=worse",
     "/analytics?range=custom&from=2024-10-20&to=2024-10-10",
     "/analytics?range=custom",
-    "/marketplace/edit?setup=bogus",
+    "/marketplace-listing/edit?setup=bogus",
     "/website/preview/booking/ac-repair-diagnostics?date=garbage",
     "/website/builder?page=home&section=nothing",
     "/website/builder?mode=bogus",

@@ -22,7 +22,6 @@ import {
 import { addDays, formatLongDate, formatTime, formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import { getSlotGroup, type Slot } from "@/lib/booking-slots";
 import { toTelHref } from "@/lib/format";
-import type { SiteView } from "./site-view";
 
 const STEP_LABELS: Record<BookingMethod, readonly string[]> = {
   instant: ["Service", "Date & time", "Your details", "Confirmation"],
@@ -64,7 +63,8 @@ export type JourneyResult = { ok: true; reference: string } | { ok: false; error
 type JourneyProps = {
   /** The Service being booked, or undefined when the address names one the site does not offer. */
   service: Service | undefined;
-  view: SiteView;
+  /** Only the business is used: the name, and its phone when the page may show one (a Marketplace listing can keep its phone private). */
+  view: { business: { name: string; phone: string } };
   /** The business's weekly hours and its today: the same slot rules apply on every page that books. */
   hours: WeeklyHours;
   today: string;
@@ -74,17 +74,23 @@ type JourneyProps = {
   homeHref: AppHref;
 };
 
-function NotAvailable({ view, service, bookingHref }: { view: SiteView; service?: Service; bookingHref: AppHref }) {
+function NotAvailable({ view, service, bookingHref }: { view: { business: { name: string; phone: string } }; service?: Service; bookingHref: AppHref }) {
   const { business } = view;
   return (
     <section className="px-6 py-14 text-center">
       <h1 className="text-xl font-bold text-ink">{service ? `${service.name} can't be booked online` : "Service not found"}</h1>
       <p className="mx-auto mt-2 max-w-md text-sm text-ink-muted">
-        This service isn&apos;t available to book on the website right now. You can call {business.name} at{" "}
-        <a href={toTelHref(business.phone)} className="font-semibold text-primary hover:underline">
-          {business.phone}
-        </a>
-        .
+        This service isn&apos;t available to book online right now.
+        {business.phone ? (
+          <>
+            {" "}
+            You can call {business.name} at{" "}
+            <a href={toTelHref(business.phone)} className="font-semibold text-primary hover:underline">
+              {business.phone}
+            </a>
+            .
+          </>
+        ) : null}
       </p>
       <ButtonLink href={bookingHref} variant="secondary" className="mt-5">
         Back to booking

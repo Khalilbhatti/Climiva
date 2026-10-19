@@ -629,7 +629,7 @@ test.describe("a new business", () => {
     expect(preview).toContain("(303) 555-0199");
     expect(preview).toContain("Boulder, CO");
     for (const foreign of ["Apex", "Northstar", "(555) 392-8100"]) expect(preview, foreign).not.toContain(foreign);
-    await page.goto("/marketplace");
+    await page.goto("/marketplace-listing");
     await expect(page.getByRole("heading", { level: 1, name: "Marketplace" })).toBeVisible();
     await expect(page.getByText("Apex")).toHaveCount(0);
   });

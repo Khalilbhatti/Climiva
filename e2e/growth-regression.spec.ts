@@ -38,12 +38,12 @@ test.describe("Phase 5 guardrail: the public Service catalog stays exactly the s
   });
 
   test("the Marketplace offers only the six: five shown, Emergency not selected, no coverage labels", async ({ page }) => {
-    await page.goto("/marketplace/edit");
+    await page.goto("/marketplace-listing/edit");
     const services = page.getByRole("region", { name: "Services shown" });
     await expect(services.getByRole("listitem")).toHaveCount(6);
     for (const name of SIX) await expect(services.getByRole("checkbox", { name: `Show ${name}` })).toBeVisible();
     for (const label of PLAN_COVERAGE) await expect(main(page)).not.toContainText(label);
-    await page.goto("/marketplace/preview");
+    await page.goto("/marketplace-listing/preview");
     for (const label of PLAN_COVERAGE) await expect(page.locator("body")).not.toContainText(label);
   });
 
@@ -58,7 +58,7 @@ test.describe("Phase 5 guardrail: the public Service catalog stays exactly the s
 
 test.describe("Growth modules read the central records", () => {
   test("the Marketplace listing shows each selected Service's catalog price, description and booking method", async ({ page }) => {
-    await page.goto("/marketplace");
+    await page.goto("/marketplace-listing");
     const listing = page.getByRole("region", { name: "Directory preview" });
     for (const service of SERVICES.filter((item) => item.id !== "emergency-no-heat-no-cool")) {
       const item = listing.getByRole("listitem").filter({ hasText: service.name });
@@ -118,7 +118,7 @@ test.describe("Earlier modules still work", () => {
   });
 
   test("the Growth modules are real pages in the shell, not placeholders", async ({ page }) => {
-    for (const path of ["/marketplace", "/reviews", "/marketing"]) {
+    for (const path of ["/marketplace-listing", "/reviews", "/marketing"]) {
       await page.goto(path);
       await expect(page.getByText("isn't built yet")).toHaveCount(0);
       await expect(primaryNav(page)).toBeVisible();

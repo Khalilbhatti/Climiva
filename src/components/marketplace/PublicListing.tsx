@@ -28,7 +28,7 @@ export function PublicListing() {
     <div className="min-h-dvh bg-surface-low">
       <div className="sticky top-0 z-20 border-b border-line bg-surface">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-2.5">
-          <Link href="/marketplace" className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-muted hover:text-primary">
+          <Link href="/marketplace-listing" className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-muted hover:text-primary">
             <ArrowLeft aria-hidden className="size-4" />
             Back to Marketplace
           </Link>
@@ -67,7 +67,7 @@ export function PublicListing() {
             <section className="px-6 py-16 text-center">
               <h1 className="text-xl font-bold text-ink">This listing isn&apos;t available</h1>
               <p className="mx-auto mt-2 max-w-md text-sm text-ink-muted">{business.name} is not listed in the Climvia Marketplace right now.</p>
-              <ButtonLink href="/marketplace" variant="secondary" className="mt-5">
+              <ButtonLink href="/marketplace-listing" variant="secondary" className="mt-5">
                 Back to Marketplace
               </ButtonLink>
             </section>

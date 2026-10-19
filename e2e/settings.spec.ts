@@ -218,7 +218,7 @@ test.describe("Business information reaches the rest of the workspace", () => {
     // The public preview is the customer's page: no workspace sidebar or top bar.
     await expect(primaryNav(page)).toHaveCount(0);
 
-    await go(page, "/marketplace/preview");
+    await go(page, "/marketplace-listing/preview");
     await expect(page.getByTestId("directory-frame")).toContainText("Summit HVAC Services");
     await expect(page.getByTestId("directory-frame")).toContainText("(737) 555-0100");
     await expect(page.getByTestId("directory-frame")).not.toContainText("Apex Climate");
@@ -229,7 +229,7 @@ test.describe("Business information reaches the rest of the workspace", () => {
     await page.goto("/settings");
     await field(page, "Email").fill("office@summit.test");
     await saveAndWait(page, "Save changes");
-    await go(page, "/marketplace/edit");
+    await go(page, "/marketplace-listing/edit");
     await expect(page.locator("main")).toContainText("office@summit.test");
     await expect(page.getByRole("link", { name: "Edit business information" }).first()).toHaveAttribute("href", "/settings");
   });
@@ -330,7 +330,7 @@ test.describe("Business hours reach the rest of the workspace", () => {
     await go(page, "/website/preview/contact");
     await expect(page.getByTestId("site-frame")).toContainText(/Mon–Fri\s*8:00 AM–5:00 PM/);
     await expect(page.getByTestId("site-frame")).toContainText(/Sat–Sun\s*Closed/);
-    await go(page, "/marketplace/preview");
+    await go(page, "/marketplace-listing/preview");
     await expect(page.getByTestId("directory-frame")).toContainText("Mon–Fri 8:00 AM–5:00 PM");
 
     await go(page, "/team/alex-morgan");
@@ -453,7 +453,7 @@ test.describe("Branding", () => {
     expect(await frame.evaluate((element) => (element as HTMLElement).style.getPropertyValue("--color-primary").trim().toUpperCase())).toBe("#8B3A1E");
     expect(await frame.locator("header").getByRole("link", { name: "Book service" }).evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgb(139, 58, 30)");
 
-    await go(page, "/marketplace/preview");
+    await go(page, "/marketplace-listing/preview");
     const listing = page.getByRole("article");
     expect(await listing.evaluate((element) => (element as HTMLElement).style.getPropertyValue("--color-primary").trim().toUpperCase())).toBe("#8B3A1E");
     // The Climvia Marketplace header around the listing is Climvia's, not the business's.
@@ -473,7 +473,7 @@ test.describe("Branding", () => {
     // The Website (the signed-in preview) and the listing draw the same stored logo, not a local copy and not the business's initials.
     await go(page, "/website/preview");
     await expect(page.getByTestId("site-frame").locator("header img[data-site-logo]")).toHaveAttribute("src", stored!);
-    await go(page, "/marketplace/preview");
+    await go(page, "/marketplace-listing/preview");
     await expect(page.getByRole("article").locator("img[data-site-logo]")).toHaveAttribute("src", stored!);
     // And with the logo removed they fall back to the initials.
     await go(page, "/settings/branding");
@@ -482,7 +482,7 @@ test.describe("Branding", () => {
     await go(page, "/website/preview");
     await expect(page.getByTestId("site-frame").locator("header img")).toHaveCount(0);
     await expect(page.getByTestId("site-frame").locator("header")).toContainText("AC");
-    await go(page, "/marketplace/preview");
+    await go(page, "/marketplace-listing/preview");
     await expect(page.getByRole("article").locator("img")).toHaveCount(0);
     await expect(page.getByRole("article")).toContainText("AC");
   });

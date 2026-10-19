@@ -8,11 +8,14 @@ import { BrandMark } from "@/components/website/BrandMark";
 import { bookingHrefIn, typeHrefIn, type SiteView } from "@/components/website/site-view";
 import type { AppHref } from "@/config/routes";
 import type { ContactField, CoverId, ListingAction } from "@/data/marketplace";
+import type { PublicReview } from "@/data/public-site";
 import { BOOKING_METHOD_ACTION, formatDuration, formatServicePrice, type Service } from "@/data/services";
 import type { BusinessInfo } from "@/data/settings";
 import { cn } from "@/lib/cn";
 import { formatCityStateZip, toTelHref } from "@/lib/format";
+import { bookingHref, reviewDate, type DiscoveryContext } from "@/lib/marketplace-discovery";
 import type { HoursRow } from "@/lib/settings-state";
+import { Rating, StarRow } from "./discovery/Rating";
 
 const COVER_CLASS: Record<CoverId, string> = {
   "teal-horizon": "bg-gradient-to-br from-primary via-primary to-primary-hover text-white/25",
@@ -50,6 +53,16 @@ export type ListingViewData = {
    * look of buttons.
    */
   site: Pick<SiteView, "base" | "pages"> | null;
+  /** The places the business works, as it lists them (what a visitor reads: "Austin, TX", "South Austin"). Undefined or empty: it claims none, and none is shown. */
+  areas?: readonly string[];
+  /** The rating its public reviews make, and the latest of them. Only the public page has these; the picture inside the workspace has none to show. */
+  rating?: { average: number; count: number } | null;
+  reviews?: readonly PublicReview[];
+  /**
+   * The public Marketplace page: Services lead to the Marketplace booking page of this listing (not to the website's), carrying what the visitor was
+   * looking for. Null or absent: they lead to the website's pages (the Draft preview) or nowhere.
+   */
+  book?: { listing: string; context: DiscoveryContext } | null;
 };
 
 type ListingViewProps = {
@@ -66,7 +79,7 @@ type ListingViewProps = {
 /** A real link on the directory page; just the look of one in the picture of the listing inside the workspace. */
 function ActionLink({ href, className, children }: { href: AppHref | undefined; className: string; children: ReactNode }) {
   return href ? (
-    <Link href={href} className={className}>
+    <Link href={href} prefetch={false} className={className}>
       {children}
     </Link>
   ) : (
@@ -86,6 +99,10 @@ export function ListingView({ data, variant, style, className }: ListingViewProp
   const ServicesTitle: "h2" | "h3" = page ? "h2" : "h3";
   const hoursLines = data.hours.map((row) => `${row.days} ${row.hours}`);
   const lead = (target: AppHref | undefined) => (page ? target : undefined);
+  // On the public Marketplace page a Service is bookable here when the business turned booking on for the listing and offers that Service online.
+  const marketplace = page && data.book ? data.book : null;
+  const bookable = marketplace && data.actions.book ? services.filter((service) => service.visibility === "public-booking") : [];
+  const bookingLink = (service: Service): AppHref | undefined => (marketplace ? bookingHref(marketplace.listing, service.id, marketplace.context) : site ? bookingHrefIn(site, service.id) : undefined);
 
   const contactRows = [
     data.contact.phone && {
@@ -132,10 +149,20 @@ export function ListingView({ data, variant, style, className }: ListingViewProp
   ].filter(Boolean) as { icon: LucideIcon; label: string; value: ReactNode }[];
 
   const actions = [
-    data.actions.book && { icon: CalendarCheck, label: "Book service", href: site ? typeHrefIn(site, "booking") : undefined, primary: true },
-    data.actions.website && { icon: Globe, label: "View website", href: site ? (site.base as AppHref) : undefined, primary: false },
-    data.actions.contact && { icon: MessageSquare, label: "Contact business", href: site ? typeHrefIn(site, "contact") : undefined, primary: false },
-  ].filter(Boolean) as { icon: LucideIcon; label: string; href: AppHref | undefined; primary: boolean }[];
+    data.actions.book && (!marketplace || bookable.length > 0) && {
+      icon: CalendarCheck,
+      label: "Book service",
+      href: marketplace ? (bookable.length === 1 ? bookingLink(bookable[0]) : undefined) : site ? typeHrefIn(site, "booking") : undefined,
+      anchor: marketplace && bookable.length !== 1 ? "#services" : undefined,
+      primary: true,
+    },
+    data.actions.website && { icon: Globe, label: "View website", href: site ? (site.base as AppHref) : undefined, anchor: undefined, primary: false },
+    data.actions.contact && { icon: MessageSquare, label: "Contact business", href: site ? typeHrefIn(site, "contact") : undefined, anchor: undefined, primary: false },
+  ]
+    .filter(Boolean)
+    // On the directory page a button that leads nowhere is not drawn (a business with no published website has no site to open); the picture inside the
+    // workspace draws every one, as the look of the page it will be.
+    .filter((action) => !page || (action && (action.href || action.anchor))) as { icon: LucideIcon; label: string; href: AppHref | undefined; anchor: string | undefined; primary: boolean }[];
 
   return (
     <article aria-label={`${business.name} listing`} style={style} className={cn("@container overflow-hidden rounded-card border border-line bg-surface", className)}>
@@ -145,6 +172,11 @@ export function ListingView({ data, variant, style, className }: ListingViewProp
           <BrandMark name={business.name} logo={data.logo} tile="size-12 rounded-card text-base font-bold" image="h-12 max-w-48 rounded-card" />
           <div className="min-w-0">
             <Name className="text-lg font-bold tracking-tight text-ink @2xl:text-xl">{business.name}</Name>
+            {data.rating && (
+              <a href="#reviews" className="mt-1 inline-flex items-center hover:underline">
+                <Rating rating={data.rating} />
+              </a>
+            )}
             {data.contact.address && (
               <p className="mt-0.5 flex items-start gap-1.5 text-sm text-ink-muted">
                 <MapPin aria-hidden className="mt-0.5 size-3.5 shrink-0" />
@@ -157,12 +189,19 @@ export function ListingView({ data, variant, style, className }: ListingViewProp
 
         {actions.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {actions.map((action) => (
-              <ActionLink key={action.label} href={lead(action.href)} className={buttonClasses({ variant: action.primary ? "primary" : "secondary", size: "md" })}>
-                <action.icon aria-hidden className="size-4" />
-                {action.label}
-              </ActionLink>
-            ))}
+            {actions.map((action) =>
+              action.anchor ? (
+                <a key={action.label} href={action.anchor} className={buttonClasses({ variant: action.primary ? "primary" : "secondary", size: "md" })}>
+                  <action.icon aria-hidden className="size-4" />
+                  {action.label}
+                </a>
+              ) : (
+                <ActionLink key={action.label} href={lead(action.href)} className={buttonClasses({ variant: action.primary ? "primary" : "secondary", size: "md" })}>
+                  <action.icon aria-hidden className="size-4" />
+                  {action.label}
+                </ActionLink>
+              ),
+            )}
           </div>
         )}
 
@@ -180,7 +219,7 @@ export function ListingView({ data, variant, style, className }: ListingViewProp
           </dl>
         )}
 
-        <section aria-label="Services">
+        <section aria-label="Services" id="services" className="scroll-mt-4">
           <div className="mb-3 flex items-baseline justify-between gap-3">
             <ServicesTitle className="text-sm font-bold text-ink">Services</ServicesTitle>
             <p className="text-xs text-ink-muted">
@@ -200,17 +239,55 @@ export function ListingView({ data, variant, style, className }: ListingViewProp
                       {formatServicePrice(service.pricing)} · {formatDuration(service.durationMinutes)}
                     </p>
                   </div>
-                  <ActionLink
-                    href={lead(site ? bookingHrefIn(site, service.id) : undefined)}
-                    className={buttonClasses({ variant: "secondary", size: "sm", className: "shrink-0 self-start @xl:self-center" })}
-                  >
-                    {BOOKING_METHOD_ACTION[service.bookingMethod]}
-                  </ActionLink>
+                  {(!marketplace || bookable.includes(service)) && (
+                    <ActionLink
+                      href={lead(bookingLink(service))}
+                      className={buttonClasses({ variant: "secondary", size: "sm", className: "shrink-0 self-start @xl:self-center" })}
+                    >
+                      {BOOKING_METHOD_ACTION[service.bookingMethod]}
+                      <span className="sr-only"> {service.name}</span>
+                    </ActionLink>
+                  )}
                 </li>
               ))}
             </ul>
           )}
         </section>
+
+        {data.areas && data.areas.length > 0 && (
+          <section aria-label="Where we work" id="areas">
+            <h2 className="mb-3 text-sm font-bold text-ink">Where we work</h2>
+            <ul className="flex flex-wrap gap-2">
+              {data.areas.map((area) => (
+                <li key={area} className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-low px-3 py-1 text-sm text-ink">
+                  <MapPin aria-hidden className="size-3.5 text-primary" />
+                  {area}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {data.reviews && data.reviews.length > 0 && (
+          <section aria-label="Reviews" id="reviews" className="scroll-mt-4">
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
+              <h2 className="text-sm font-bold text-ink">Reviews</h2>
+              {data.rating && <Rating rating={data.rating} />}
+            </div>
+            <ul className="space-y-3">
+              {data.reviews.map((review, index) => (
+                <li key={`${review.date}-${index}`} className="rounded-card border border-line p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <StarRow value={review.rating} />
+                    <span className="text-xs text-ink-muted">{reviewDate(review.date)}</span>
+                  </div>
+                  {review.text && <p className="mt-2 text-sm text-ink">{review.text}</p>}
+                  <p className="mt-2 text-xs font-semibold text-ink-muted">{review.reviewer}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
     </article>
   );

@@ -46,3 +46,16 @@ export function hostConfig(env: Env = process.env): HostConfig {
 export function canonicalScheme(env: Env = process.env): "http" | "https" {
   return env.CUSTOM_DOMAIN_URL_SCHEME === "http" ? "http" : "https";
 }
+
+/**
+ * The platform's own address (scheme, host and optional port) from BETTER_AUTH_URL, or null when it is not a valid URL. The Marketplace's canonical
+ * addresses and its sitemap are built on it, so a search engine is only ever told the platform's name for a page of the platform.
+ */
+export function platformOrigin(env: Env = process.env): string | null {
+  if (!env.BETTER_AUTH_URL) return null;
+  try {
+    return new URL(env.BETTER_AUTH_URL).origin;
+  } catch {
+    return null;
+  }
+}

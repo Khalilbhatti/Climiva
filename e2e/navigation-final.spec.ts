@@ -39,7 +39,7 @@ const SIDEBAR: { group: string; items: [string, string][] }[] = [
     group: "Growth",
     items: [
       ["Website", "/website"],
-      ["Marketplace", "/marketplace"],
+      ["Marketplace", "/marketplace-listing"],
       ["Reviews", "/reviews"],
       ["Marketing", "/marketing"],
     ],
@@ -82,7 +82,7 @@ test.describe("Help is a finished route", () => {
       ["Team", ["/team"]],
       ["Quotes, Invoices & Payments", ["/quotes-invoices", "/payments"]],
       ["Maintenance Plans", ["/maintenance-plans"]],
-      ["Website & Marketplace", ["/website", "/marketplace"]],
+      ["Website & Marketplace", ["/website", "/marketplace-listing"]],
       ["Reviews & Marketing", ["/reviews", "/marketing"]],
       ["Analytics", ["/analytics"]],
       ["Settings", ["/settings"]],

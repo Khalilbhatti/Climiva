@@ -263,7 +263,7 @@ test.describe("marketplace moderation", () => {
     expect((await owner.pool.query("select status, description, cover, updated_at from marketplace_listings where id = $1", [listing.id])).rows[0]).toEqual(before);
     const ownerApi = await signedIn(business.owner.email, `fd00:${randomBytes(2).toString("hex")}:9::1`);
     try {
-      for (const path of ["/marketplace", "/marketplace/edit", "/website", "/"]) {
+      for (const path of ["/marketplace-listing", "/marketplace-listing/edit", "/website", "/"]) {
         const response = await ownerApi.get(path, { maxRedirects: 0 });
         expect(response.status(), path).toBe(200);
         expect(await response.text(), path).not.toContain(reason);
@@ -384,7 +384,7 @@ test("reviews are read across the platform and cannot be changed from here", asy
   await expect(page.getByRole("row").nth(1)).toBeVisible();
   // Read-only: no control changes a review; the page says moderation of public reviews is a later step.
   await expect(page.getByRole("button", { name: /hide|remove|delete|approve|reject|suspend|respond|reply/i })).toHaveCount(0);
-  await expect(page.getByText(/arrives together with public reviews/)).toBeVisible();
+  await expect(page.getByText(/Hiding a public review from this page is not part of this release/)).toBeVisible();
   // The rating filter.
   await page.goto("/platform-admin/reviews?rating=5");
   const rows = page.getByRole("row");

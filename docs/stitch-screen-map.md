@@ -62,7 +62,7 @@ Team, Quotes & Invoices and Payments (Phase 4), Maintenance Plans and Website (P
 | | Payments | `/payments` (+ `/payments/[paymentId]`) | **Built (Phase 4)** |
 | | Maintenance Plans | `/maintenance-plans` (+ `/maintenance-plans/[planId]`) | **Built (Phase 5)** |
 | Growth | Website | `/website`, `/website/pages`, `/website/builder` (the Website Builder, Phase 16; Phase 17 adds `/website/templates`, the Template Gallery, and `/website/templates/[templateKey]`, one Template in full, both reached from the Builder's **Change template**; the Phase 5 page editors at `/website/pages/[pageId]` are superseded and the address redirects to it), `/website/booking`, `/website/domain`; the signed-in Draft preview outside the shell at `/website/preview` (+ `/services`, `/about`, `/contact`, `/booking`, `/booking/[serviceSlug]`) and, since Phase 15, the same pages published for anyone at `/sites/[siteSlug]` (+ the same page addresses) | **Built (Phase 5); stored and published in Phase 15** |
-| | Marketplace | `/marketplace`, `/marketplace/edit` (+ `?setup=1`); signed-in listing preview outside the shell at `/marketplace/preview`; the published listing at `/listings/[listingSlug]` (Phase 15) | **Built (Phase 6); stored and published in Phase 15** |
+| | Marketplace | `/marketplace-listing`, `/marketplace-listing/edit` (+ `?setup=1`); signed-in listing preview outside the shell at `/marketplace-listing/preview`; the published listing at `/listings/[listingSlug]` (Phase 15); the public Marketplace at `/marketplace`, `/marketplace/services/[serviceSlug]`, `/marketplace/locations/[locationSlug]` and `/marketplace/services/[serviceSlug]/[locationSlug]`, with booking at `/listings/[listingSlug]/book/[serviceSlug]` (Phase 19B; the business's screens were at `/marketplace` until then) | **Built (Phase 6); stored and published in Phase 15** |
 | | Reviews | `/reviews` (+ `/reviews/[reviewId]`) | **Built (Phase 6)** |
 | | Marketing | `/marketing` (+ `/marketing/new`, `/marketing/[campaignId]`, `/marketing/[campaignId]/edit`) | **Built (Phase 6)** |
 | Insights | Analytics | `/analytics` (tab and date range in the query string) | **Built (Phase 7)** |
@@ -600,7 +600,7 @@ mount with the others (`WorkspaceProviders`), so the signed-in directory preview
 the workspace shell, shows what was saved inside it; the published listing mounts none. Nothing persists: reload restores the baseline. Phases 1 to 5 are unchanged
 except where listed under "Deliberate changes to earlier work".
 
-Routes: `/marketplace`, `/marketplace/edit` (also first-time setup with `?setup=1`), `/marketplace/preview` (public, no shell) ·
+Routes: `/marketplace-listing`, `/marketplace-listing/edit` (also first-time setup with `?setup=1`), `/marketplace-listing/preview` (signed-in, no shell; they were `/marketplace…` before Phase 19B gave that address to the public Marketplace) ·
 `/reviews`, `/reviews/[reviewId]` · `/marketing`, `/marketing/new`, `/marketing/[campaignId]`, `/marketing/[campaignId]/edit`.
 `?state=empty` previews the approved empty state on the three list pages, as on earlier modules.
 
@@ -634,7 +634,7 @@ Routes: `/marketplace`, `/marketplace/edit` (also first-time setup with `?setup=
 - **Unsaved changes:** a banner and badge, Discard (with a confirmation), and an in-app guard: while there are unsaved edits, following any
   link out of the page asks "Discard unsaved changes?" first. (Closing or reloading the tab is the browser's own and is not intercepted.)
   Preview listing is disabled until the edits are saved, as in the Website Builder.
-- **Directory preview** (`/marketplace/preview`) is its own layout: a Climvia Marketplace header, the listing and a footer, with a slim
+- **Directory preview** (`/marketplace-listing/preview`) is its own layout: a Climvia Marketplace header, the listing and a footer, with a slim
   toolbar (Back to Marketplace, Desktop / Mobile). A hidden listing shows "This listing isn't available". Its buttons lead to the Website's
   real Booking, contact and per-Service booking pages. It is not the Website's component: the two previews share only primitives.
 - **Cover:** there is no image upload, so a cover is a reference to one of three built-in CSS treatments (Teal horizon, Warm linen, Cool

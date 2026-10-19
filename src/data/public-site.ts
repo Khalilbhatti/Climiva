@@ -38,6 +38,12 @@ export type PublicSite = {
   services: Service[];
 };
 
+/** A place a listing's business works, as a visitor reads it ("Austin, TX", "South Austin", "78741") and as an address on the public pages. */
+export type PublicServiceArea = { display: string; kind: "city" | "postal"; slug: string };
+
+/** A review a business's customer made public: the first name and last initial, never an email, a phone or the job. */
+export type PublicReview = { rating: number; text: string; date: string; reviewer: string };
+
 export type PublicListingContact = { phone: boolean; email: boolean; address: boolean; hours: boolean; website: boolean };
 export type PublicListingActions = { book: boolean; website: boolean; contact: boolean };
 
@@ -58,4 +64,10 @@ export type PublicListingData = {
   /** That site's visible pages (address and kind), so the actions can lead to its Booking and Contact pages. */
   sitePages: PublicNavPage[];
   services: Service[];
+  /** The places the business works, as it listed them. Empty: it claims none. */
+  serviceAreas: PublicServiceArea[];
+  /** The average of the public reviews (one decimal) and how many there are; null when there are none. */
+  rating: { average: number; count: number } | null;
+  /** The latest public reviews, newest first (at most ten). */
+  reviews: PublicReview[];
 };

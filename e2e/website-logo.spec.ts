@@ -120,7 +120,7 @@ test.describe("the other places that draw it", () => {
     await visitor.goto(`/listings/${workerTenant.listingSlug}`);
     await expect(visitor.getByRole("article").locator("img[data-site-logo]")).toHaveAttribute("src", `/assets/${logo}`);
     await markLoaded(visitor, "article img[data-site-logo]");
-    await page.goto("/marketplace/preview");
+    await page.goto("/marketplace-listing/preview");
     await expect(page.getByRole("article").locator("img[data-site-logo]")).toHaveAttribute("src", `/assets/${logo}`);
 
     await setLogo(pool, workerTenant.organizationId, null);

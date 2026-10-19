@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowRight, BadgeCheck, CalendarCheck, EyeOff, Info, Pencil, Phone, Plus, Rocket, SquareArrowOutUpRight, Store, Wrench } from "lucide-react";
+import { ArrowRight, BadgeCheck, CalendarCheck, EyeOff, Info, MapPin, Pencil, Phone, Plus, Rocket, ShieldAlert, SquareArrowOutUpRight, Store, Wrench } from "lucide-react";
 import { useBusiness } from "@/components/settings/SettingsProvider";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { cardClasses } from "@/components/ui/Card";
@@ -13,6 +13,7 @@ import { SectionCard } from "@/components/ui/SectionCard";
 import { StatusBadge, type StatusTone } from "@/components/ui/StatusBadge";
 import { publicListingHref } from "@/lib/site-domain";
 import { useToast } from "@/components/ui/Toast";
+import { useOperations } from "@/components/operations/OperationsProvider";
 import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { formatCityStateZip } from "@/lib/format";
 import {
@@ -22,9 +23,11 @@ import {
   isAnyContactShown,
   type ListingStatus,
 } from "@/data/marketplace";
+import { areaDisplay } from "@/lib/marketplace-discovery";
 import { ListingView } from "./ListingView";
 import { useListingData } from "./listing-data";
 import { useMarketplace } from "./MarketplaceProvider";
+import { SuspendedNotice } from "./SuspendedNotice";
 import { useServices } from "@/components/services/ServicesProvider";
 
 const STATUS_TONE: Record<ListingStatus, StatusTone> = { "not-set-up": "neutral", published: "positive", hidden: "neutral" };
@@ -44,6 +47,11 @@ export function MarketplaceOverview() {
   const shown = getListingServices(config, catalog);
   const notSelected = eligible.filter((service) => !config.selected.includes(service.id));
   const configured = status !== "not-set-up";
+  // Suspended by the platform: still the business's listing and still published, but nobody outside can find it. The reason is never known here.
+  const suspended = listing.suspended && configured;
+  // Every booking a visitor made from the Marketplace is recorded with its source, so the count is the real number, not an estimate.
+  const { data: operations } = useOperations();
+  const marketplaceBookings = operations.bookings.filter((booking) => booking.source === "Marketplace").length;
 
   async function publish() {
     const result = await publishListing();
@@ -54,20 +62,20 @@ export function MarketplaceOverview() {
     status === "published" ? (
       <>
         {canManage && (
-          <ButtonLink href="/marketplace/edit" variant="secondary" size="lg">
+          <ButtonLink href="/marketplace-listing/edit" variant="secondary" size="lg">
             <Pencil aria-hidden className="size-4" />
             Edit listing
           </ButtonLink>
         )}
-        <ButtonLink href={listing.slug ? publicListingHref(listing.slug) : "/marketplace/preview"} size="lg">
+        <ButtonLink href={listing.slug && !suspended ? publicListingHref(listing.slug) : "/marketplace-listing/preview"} size="lg">
           <SquareArrowOutUpRight aria-hidden className="size-4" />
-          View public listing
+          {suspended ? "Preview listing" : "View public listing"}
         </ButtonLink>
       </>
     ) : status === "hidden" ? (
       canManage && (
         <>
-          <ButtonLink href="/marketplace/edit" variant="secondary" size="lg">
+          <ButtonLink href="/marketplace-listing/edit" variant="secondary" size="lg">
             <Pencil aria-hidden className="size-4" />
             Edit listing
           </ButtonLink>
@@ -79,7 +87,7 @@ export function MarketplaceOverview() {
       )
     ) : (
       canManage && (
-        <ButtonLink href="/marketplace/edit?setup=1" size="lg">
+        <ButtonLink href="/marketplace-listing/edit?setup=1" size="lg">
           <Store aria-hidden className="size-4" />
           Set up listing
         </ButtonLink>
@@ -92,20 +100,22 @@ export function MarketplaceOverview() {
         <div>
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight text-ink">Marketplace</h1>
-            <StatusBadge tone={STATUS_TONE[status]}>{LISTING_STATUS_LABEL[status]}</StatusBadge>
+            <StatusBadge tone={suspended ? "danger" : STATUS_TONE[status]}>{suspended ? "Suspended by Climvia" : LISTING_STATUS_LABEL[status]}</StatusBadge>
           </div>
           <p className="mt-1 text-sm text-ink-muted">Manage how your business appears in the Climvia directory.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">{actions}</div>
       </div>
 
-      <section aria-label="Listing summary" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {suspended && <SuspendedNotice published={status === "published"} />}
+
+      <section aria-label="Listing summary" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <KpiCard
           label="Listing status"
-          value={configured ? LISTING_STATUS_LABEL[status] : "Not configured"}
-          icon={status === "published" ? BadgeCheck : EyeOff}
-          hint={status === "published" ? "Visible in Climvia Marketplace" : status === "hidden" ? "Not discoverable in directory" : "Listing has not been set up"}
-          hintDot={status === "published"}
+          value={suspended ? "Suspended" : configured ? LISTING_STATUS_LABEL[status] : "Not configured"}
+          icon={suspended ? ShieldAlert : status === "published" ? BadgeCheck : EyeOff}
+          hint={suspended ? "Not discoverable: suspended by Climvia" : status === "published" ? "Visible in Climvia Marketplace" : status === "hidden" ? "Not discoverable in directory" : "Listing has not been set up"}
+          hintDot={status === "published" && !suspended}
         />
         <KpiCard
           label="Public services"
@@ -127,7 +137,13 @@ export function MarketplaceOverview() {
           label="Booking"
           value={!configured ? "Not configured" : config.actions.book ? "Enabled" : "Not shown"}
           icon={CalendarCheck}
-          hint={!configured ? "Booking link unassigned" : config.actions.book ? "Customers can open your Booking page" : 'The "Book service" button is off'}
+          hint={!configured ? "Booking link unassigned" : config.actions.book ? "Customers can book from your listing" : 'The "Book service" button is off'}
+        />
+        <KpiCard
+          label="Marketplace bookings"
+          value={marketplaceBookings}
+          icon={Store}
+          hint={marketplaceBookings === 0 ? "None yet from your listing" : "Booked from your Marketplace listing"}
         />
       </section>
 
@@ -139,7 +155,7 @@ export function MarketplaceOverview() {
             description="Create a public business profile using the information and Services already configured in Climvia."
             action={
               canManage ? (
-                <ButtonLink href="/marketplace/edit?setup=1" size="lg">
+                <ButtonLink href="/marketplace-listing/edit?setup=1" size="lg">
                   <Plus aria-hidden className="size-4" />
                   Set up listing
                 </ButtonLink>
@@ -208,6 +224,32 @@ export function MarketplaceOverview() {
                     { label: "Website", value: data.website ?? "Not set up yet" },
                   ]}
                 />
+              </SectionCard>
+
+              <SectionCard
+                title="Service areas"
+                icon={MapPin}
+                action={
+                  canManage ? (
+                    <Link href="/marketplace-listing/edit" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
+                      Edit areas
+                      <ArrowRight aria-hidden className="size-3.5" />
+                    </Link>
+                  ) : undefined
+                }
+              >
+                {config.areas.length === 0 ? (
+                  <p className="text-sm text-ink-muted">No service areas listed. Customers who search by place won&apos;t find this listing.</p>
+                ) : (
+                  <ul aria-label="Service areas" className="space-y-1.5 text-sm text-ink">
+                    {config.areas.map((area) => (
+                      <li key={`${area.city ?? ""}|${area.state ?? ""}|${area.postal ?? ""}`} className="flex items-center gap-2">
+                        <MapPin aria-hidden className="size-3.5 shrink-0 text-primary" />
+                        {areaDisplay(area)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </SectionCard>
 
               <SectionCard

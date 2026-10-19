@@ -30,7 +30,7 @@ const PAGES = [
   "/team/alex-morgan/availability",
   "/settings/hours",
   "/website/preview/booking/annual-cooling-tune-up",
-  "/marketplace/preview",
+  "/marketplace-listing/preview",
 ];
 
 const BROWSERS = [

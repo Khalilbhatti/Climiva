@@ -8,7 +8,7 @@
  *      copy and nothing of anyone's workspace (no person, organization, customer, team or financial data, no provider in the page's JavaScript),
  *      whichever business's public page the person opens.
  *
- *   2. On a second server whose database role can do exactly one thing: run the seven public functions (it cannot read a single table).
+ *   2. On a second server whose database role can do exactly one thing: run the public functions (it cannot read a single table).
  *      Every public page still serves, for a visitor and for each signed-in person alike, so a public request provably asks the database nothing
  *      but those functions: no session lookup, no workspace, no Draft. The same server cannot serve a workspace page, which shows the role really
  *      is restricted and the check is not vacuous.
@@ -84,7 +84,14 @@ const MISSING_SERVICE = ["/sites/apexclimate/booking/no-such-service"];
 const listings = () => ["/listings/apex-climate-heating-air", `/listings/${ids.northstarListing}`];
 /** The business's logo is public (it is drawn on its Site and its listing); any other address under /assets is a plain 404. */
 const assetPaths = () => [`/assets/${ids.apexLogo}`, "/assets/00000000-0000-4000-8000-000000000000", "/assets/not-an-id"];
-const everyPublicPath = () => [...APEX_SITE, ...NORTHSTAR_SITE, ...listings(), ...MISSING_SERVICE, ...NOT_FOUND, ...assetPaths()];
+/**
+ * The public Marketplace: a search, a Service-in-place page, a place page, a booking page, the robots file, and addresses that name nothing. They are scoped to
+ * the standing sample providers (Northstar is the only business in Denver and the only one named for it; the booking page is the standing Apex's), because the
+ * index of the whole Marketplace changes whenever another test publishes a listing, and these are compared byte for byte.
+ */
+const MARKETPLACE_FOUND = ["/marketplace?q=northstar", "/marketplace/services/furnace-tune-up/denver-co", "/marketplace/locations/denver-co", "/listings/apex-climate-heating-air/book/ac-repair-diagnostics", "/robots.txt"];
+const MARKETPLACE_NOT_FOUND = ["/marketplace/nonsense/path", "/marketplace/services/NOT_A_SLUG", "/marketplace/locations/not%20a%20place", "/listings/apex-climate-heating-air/book/no-such-service"];
+const everyPublicPath = () => [...APEX_SITE, ...NORTHSTAR_SITE, ...listings(), ...MISSING_SERVICE, ...NOT_FOUND, ...assetPaths(), ...MARKETPLACE_FOUND, ...MARKETPLACE_NOT_FOUND];
 
 /** What would show that a response carries someone's workspace: people, organizations, the business's own records and the shape of the workspace's data. */
 function workspaceMarkers(extra: string[] = []): { label: string; test: (body: string) => boolean }[] {
@@ -114,8 +121,11 @@ function expectNoWorkspace(path: string, viewer: Viewer, body: string, extra: st
 test.describe("a published Site or listing is the same page for a visitor and for anyone signed in", () => {
   test("a visitor with no session gets the published site, its pages, its booking page, the listing, and one plain not found", async () => {
     const answers = await fetchAll(ORIGIN, "anonymous", everyPublicPath());
-    for (const path of [...APEX_SITE, ...NORTHSTAR_SITE, ...listings()]) expect(answers.get(path)?.status, path).toBe(200);
-    for (const path of NOT_FOUND) expect(answers.get(path)?.status, path).toBe(404);
+    for (const path of [...APEX_SITE, ...NORTHSTAR_SITE, ...listings(), ...MARKETPLACE_FOUND]) expect(answers.get(path)?.status, path).toBe(200);
+    for (const path of [...NOT_FOUND, ...MARKETPLACE_NOT_FOUND]) expect(answers.get(path)?.status, path).toBe(404);
+    // The Marketplace search is a page of providers, found by name, with nothing of the workspace in it.
+    expect(answers.get("/marketplace?q=northstar")?.body).toContain("Northstar Heating");
+    expect(answers.get("/marketplace?q=northstar")?.body).not.toContain("Apex Climate");
     expect(answers.get(MISSING_SERVICE[0])?.body).toContain("Service not found");
     expect(answers.get("/sites/apexclimate")?.body).toContain("Heating &amp; cooling service when you need it.");
     expect(answers.get("/listings/apex-climate-heating-air")?.body).toContain("Apex Climate Heating &amp; Air");
@@ -250,7 +260,7 @@ test.describe("a published Site or listing is the same page for a visitor and fo
     const taylor = await client(ORIGIN, "taylor");
     const owner = await playwrightRequest.newContext({ baseURL: ORIGIN, storageState: workerTenant.storageState });
     try {
-      for (const path of ["/website/preview", "/website/preview/services", "/marketplace/preview", "/website/builder"]) {
+      for (const path of ["/website/preview", "/website/preview/services", "/marketplace-listing/preview", "/website/builder"]) {
         const blocked = await visitor.get(path, { maxRedirects: 0 });
         expect(blocked.status(), path).toBe(307);
         expect(blocked.headers().location, path).toContain("/login");
@@ -269,9 +279,9 @@ test.describe("a published Site or listing is the same page for a visitor and fo
   });
 });
 
-/* ───────────────────────── a server that can only run the seven public functions ───────────────────────── */
+/* ───────────────────────── a server that can only run the public functions ───────────────────────── */
 
-test.describe("a server whose database role can run the seven public functions and nothing else", () => {
+test.describe("a server whose database role can run the public functions and nothing else", () => {
   test.describe.configure({ mode: "serial", timeout: 120_000 });
 
   let role: string;
@@ -293,7 +303,7 @@ test.describe("a server whose database role can run the seven public functions a
     await admin.query(`create role ${role} login password '${password}' nosuperuser nocreatedb nocreaterole nobypassrls`);
     await admin.query(`grant connect on database "${database}" to ${role}`);
     await admin.query(`grant usage on schema public to ${role}`);
-    await admin.query(`do $$ declare f record; begin for f in select oid::regprocedure as sig from pg_proc where proname in ('app_public_site', 'app_public_listing', 'app_public_create_booking', 'app_public_asset', 'app_public_domain', 'app_public_site_domain', 'app_tls_eligible') loop execute format('grant execute on function %s to ${role}', f.sig); end loop; end $$`);
+    await admin.query(`do $$ declare f record; begin for f in select oid::regprocedure as sig from pg_proc where proname in ('app_public_site', 'app_public_listing', 'app_public_create_booking', 'app_public_asset', 'app_public_domain', 'app_public_site_domain', 'app_tls_eligible', 'app_public_marketplace_search', 'app_public_marketplace_facets', 'app_public_marketplace_sitemap', 'app_public_listing_booking', 'app_public_create_marketplace_booking') loop execute format('grant execute on function %s to ${role}', f.sig); end loop; end $$`);
 
     const url = new URL(process.env.DATABASE_ADMIN_URL!);
     url.username = role;
@@ -343,7 +353,9 @@ test.describe("a server whose database role can run the seven public functions a
       const answers = await fetchAll(probeOrigin, viewer, everyPublicPath());
       for (const [path, answer] of answers) {
         expect(answer.status, `${viewer} ${path}`).toBe(normal.get(path)!.status);
-        expect(answer.body === normal.get(path)!.body, `${viewer} is sent a different ${path} by the restricted server: ${firstDifference(normal.get(path)!.body, answer.body)}`).toBe(true);
+        // The only thing that may differ is the server's own address (a canonical link names the platform's origin, which is each server's BETTER_AUTH_URL).
+        const sent = answer.body.replaceAll(probeOrigin, ORIGIN);
+        expect(sent === normal.get(path)!.body, `${viewer} is sent a different ${path} by the restricted server: ${firstDifference(normal.get(path)!.body, sent)}`).toBe(true);
       }
     }
   });
@@ -363,7 +375,7 @@ test.describe("a server whose database role can run the seven public functions a
     for (const viewer of SIGNED_IN) {
       const api = await client(probeOrigin, viewer);
       try {
-        for (const path of ["/", "/customers", "/website/builder", "/website/preview", "/marketplace/preview"]) {
+        for (const path of ["/", "/customers", "/website/builder", "/website/preview", "/marketplace-listing/preview"]) {
           const response = await api.get(path, { maxRedirects: 0 });
           const body = await response.text();
           expect(response.status() === 200 && /Website Builder|Workspace Overview|Customers/.test(body), `${viewer} was served ${path} by the restricted server`).toBe(false);

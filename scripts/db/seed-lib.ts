@@ -486,7 +486,8 @@ export async function websiteFingerprint(db: AdminDb, organizationId: string): P
       (select count(*) || ':' || coalesce(max(updated_at)::text, '') from site_pages where organization_id = ${organizationId}),
       (select count(*) || ':' || coalesce(max(updated_at)::text, '') from site_sections where organization_id = ${organizationId}),
       (select count(*) || ':' || coalesce(max(updated_at)::text, '') || ':' || coalesce(string_agg(status, ''), '') from marketplace_listings where organization_id = ${organizationId}),
-      (select count(*) || ':' || coalesce(sum(sort_order), 0) from marketplace_listing_services where organization_id = ${organizationId})
+      (select count(*) || ':' || coalesce(sum(sort_order), 0) from marketplace_listing_services where organization_id = ${organizationId}),
+      (select count(*) || ':' || coalesce(string_agg(coalesce(city_key, '') || '/' || coalesce(state_region, '') || '/' || coalesce(postal_code, '') || '/' || coalesce(label, '') || '/' || sort_order, ',' order by sort_order), '') from marketplace_service_areas where organization_id = ${organizationId})
     ) as fingerprint`);
   return result.rows[0].fingerprint;
 }

@@ -61,6 +61,7 @@ export async function loadReviews(tx: Tx, organizationId: string, timeZone: stri
           : undefined,
         replyDraft: orUndefined(row.replyDraft),
         imported: row.imported ? true : undefined,
+        public: row.visibility === "public" ? true : undefined,
       };
     }),
     requests: requestRows.map(
@@ -212,6 +213,7 @@ export async function insertReviews(tx: Tx, organizationId: string, timeZone: st
         submittedOn: review.date,
         replyDraft: review.replyDraft ?? null,
         imported: review.imported ?? false,
+        visibility: review.public ? "public" : "private",
       })
       .returning({ id: reviews.id });
     if (review.response) {

@@ -49,6 +49,17 @@ export const LISTING_ACTIONS: readonly { id: ListingAction; label: string; toggl
   { id: "contact", label: "Contact business", toggle: 'Show "Contact business"', detail: "Opens the contact form on your website." },
 ];
 
+/**
+ * A place a business serves: ONE of a city (with its state) or a ZIP code, and an optional label ("South Austin"). Only what a business lists here is
+ * ever claimed as coverage; its headquarters address is not. See lib/marketplace-discovery for how areas are read, checked and matched.
+ */
+export type ServiceArea = {
+  city: string | null;
+  state: string | null;
+  postal: string | null;
+  label: string | null;
+};
+
 export type ListingConfig = {
   description: string;
   cover?: CoverId;
@@ -58,10 +69,17 @@ export type ListingConfig = {
   selected: readonly string[];
   contact: Record<ContactField, boolean>;
   actions: Record<ListingAction, boolean>;
+  /** Where the business works, in the order it gave them. None is allowed: the listing is then found by Service and name, but by no place. */
+  areas: readonly ServiceArea[];
 };
 
 export type MarketplaceState = {
   status: ListingStatus;
+  /**
+   * True when the platform has suspended the listing. It then cannot be found by the public, whatever `status` says, until the suspension is lifted.
+   * The reason is never part of this: the business is told THAT, not why.
+   */
+  suspended: boolean;
   config: ListingConfig;
   /** The listing's public identity (`/listings/<slug>`), once it has been set up. */
   slug?: string;
@@ -80,12 +98,13 @@ export function defaultListingConfig(services: readonly Service[]): ListingConfi
     selected: eligible.map((service) => service.id),
     contact: { phone: true, email: true, address: true, hours: true, website: true },
     actions: { book: true, website: true, contact: true },
+    areas: [],
   };
 }
 
 /** A business with no listing: not set up, and the defaults the setup form starts from. */
 export function emptyMarketplaceState(services: readonly Service[]): MarketplaceState {
-  return { status: "not-set-up", config: defaultListingConfig(services) };
+  return { status: "not-set-up", suspended: false, config: defaultListingConfig(services) };
 }
 
 /** The Services the listing shows, in listing order. Catalog data is read, never copied. */

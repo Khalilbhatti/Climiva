@@ -331,13 +331,16 @@ export const NORTHSTAR_MAINTENANCE: SeedPlans = {
   ],
 };
 
+/** The sample customers made their reviews public, so the Marketplace profile has real reviews to show (the demo data; nothing else makes a review public). */
+const markPublic = (reviews: ReviewsData["reviews"]): ReviewsData["reviews"] => reviews.map((review) => ({ ...review, public: true }));
+
 /**
  * Northstar's reviews: two of its own customers' words (not Apex's), one answered by Taylor Brooks and one awaiting a reply, and
  * one recorded review request. None names a job (Northstar has no completed job yet). Not `imported`: its totals are counted from
  * these rows.
  */
 export const NORTHSTAR_REVIEWS: ReviewsData = {
-  reviews: [
+  reviews: markPublic([
     {
       id: "rev-priya-raman",
       source: "Climvia",
@@ -355,7 +358,7 @@ export const NORTHSTAR_REVIEWS: ReviewsData = {
       text: "Easy online booking, and Jordan arrived right on time.",
       date: "2024-10-26",
     },
-  ],
+  ]),
   requests: [
     {
       id: "req-1",

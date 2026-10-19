@@ -169,6 +169,20 @@
       "when": 1792421398918,
       "tag": "0023_platform_admin_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792441987148,
+      "tag": "0024_marketplace_discovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792442149297,
+      "tag": "0025_marketplace_discovery_rls",
+      "breakpoints": true
     }
   ]
 }

@@ -834,7 +834,7 @@ test.describe("the public paths, called with no session and no business", () => 
 
   test("a published listing shows only what it switches on, with its selected Services in its order, and Emergency is not among them", async () => {
     const apexListing = (await publicListing("apex-climate-heating-air")).value as PublicListingJson;
-    expect(Object.keys(apexListing).sort()).toEqual(["hours", "listing", "organization", "sitePages", "siteSlug", "services"].sort());
+    expect(Object.keys(apexListing).sort()).toEqual(["hours", "listing", "organization", "rating", "reviews", "serviceAreas", "sitePages", "siteSlug", "services"].sort());
     expect(apexListing.services).toHaveLength(5);
     expect(apexListing.services.map((service: { slug: string }) => service.slug)).not.toContain("emergency-no-heat-no-cool");
     expect(apexListing.siteSlug).toBe("apexclimate");

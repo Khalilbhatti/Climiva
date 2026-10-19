@@ -35,7 +35,7 @@ test.describe("signed out", () => {
 
   test("the Draft previews are for people signed in to the business: a visitor is sent to Log in and sees none of it", async ({ apiAs }) => {
     const api = await apiAs(null);
-    for (const path of ["/website/preview", "/website/preview/services", "/website/preview/booking/annual-cooling-tune-up", "/marketplace/preview"]) {
+    for (const path of ["/website/preview", "/website/preview/services", "/website/preview/booking/annual-cooling-tune-up", "/marketplace-listing/preview"]) {
       const response = await api.get(path, { maxRedirects: 0 });
       expect(response.status(), path).toBe(307);
       expect(response.headers().location ?? "", path).toContain("/login");

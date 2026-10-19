@@ -194,10 +194,20 @@ export type PlatformListingRow = {
   status: string;
   publishedAt: string | null;
   selectedServices: number;
+  /** The names of the Services the listing shows, in its order. */
+  serviceNames: string[];
+  /** The places the business listed as service areas, as a visitor reads them. */
+  serviceAreas: string[];
   site: { platformSlug: string; status: string; published: boolean } | null;
   moderation: ModerationDecision;
+  /** Published by the business AND not suspended: a visitor can open the profile. */
   publiclyAvailable: boolean;
+  /** ... and the Marketplace lists it (it also shows at least one active public Service). */
+  discoverable: boolean;
 };
+
+/** The strings of a JSON array (anything else in it is dropped). */
+const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []);
 
 async function readListings(administratorId: string, search: string, page: number): Promise<Page<PlatformListingRow>> {
   const raw = record(await ask(administratorId, sql`select app_platform_listings(${search}, ${PAGE_SIZE}, ${(Math.max(page, 1) - 1) * PAGE_SIZE}) as data`));
@@ -213,9 +223,12 @@ async function readListings(administratorId: string, search: string, page: numbe
         status: text(row.status),
         publishedAt: maybeText(row.publishedAt),
         selectedServices: count(row.selectedServices),
+        serviceNames: strings(row.serviceNames),
+        serviceAreas: strings(row.serviceAreas),
         site: typeof site.platformSlug === "string" ? { platformSlug: text(site.platformSlug), status: text(site.status), published: flag(site.published) } : null,
         moderation: decision(row.moderation),
         publiclyAvailable: flag(row.publiclyAvailable),
+        discoverable: flag(row.discoverable),
       };
     }),
   };
@@ -223,7 +236,7 @@ async function readListings(administratorId: string, search: string, page: numbe
 
 export const platformListings = (administratorId: string, search: string, page: number) => lastPageWhenPast((current) => readListings(administratorId, search, current), page);
 
-export type PlatformReviewRow = { id: string; organizationId: string; organizationName: string; reviewer: string; rating: number; text: string; submittedOn: string; source: string; replied: boolean };
+export type PlatformReviewRow = { id: string; organizationId: string; organizationName: string; reviewer: string; rating: number; text: string; submittedOn: string; source: string; replied: boolean; /** Shown on the business's public Marketplace profile, or kept private. */ public: boolean };
 
 async function readReviews(administratorId: string, search: string, rating: number | null, page: number): Promise<Page<PlatformReviewRow>> {
   const raw = record(await ask(administratorId, sql`select app_platform_reviews(${search}, ${rating}::integer, ${PAGE_SIZE}, ${(Math.max(page, 1) - 1) * PAGE_SIZE}) as data`));
@@ -239,6 +252,7 @@ async function readReviews(administratorId: string, search: string, rating: numb
       submittedOn: text(row.submittedOn),
       source: text(row.source),
       replied: flag(row.replied),
+      public: row.visibility === "public",
     })),
   };
 }

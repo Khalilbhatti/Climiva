@@ -16,7 +16,7 @@ import type { ReviewsData } from "@/data/reviews";
 export const SARAH_REPLY =
   "Thank you, Sarah. We appreciate your feedback and are glad the repair process was clear and completed as scheduled.";
 
-export const REVIEWS: ReviewsData["reviews"] = [
+const SAMPLE_REVIEWS: ReviewsData["reviews"] = [
   {
     id: "rev-sarah-mitchell",
     source: "Climvia",
@@ -58,5 +58,8 @@ export const REVIEWS: ReviewsData["reviews"] = [
     imported: true,
   },
 ];
+
+/** The sample customers made their reviews public, so the Marketplace profile has real reviews to show (the demo data; nothing else makes a review public). */
+export const REVIEWS: ReviewsData["reviews"] = SAMPLE_REVIEWS.map((review) => ({ ...review, public: true }));
 
 export const REVIEWS_DATA: ReviewsData = { reviews: REVIEWS, requests: [] };

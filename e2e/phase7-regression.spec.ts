@@ -18,7 +18,7 @@ const ROUTES = [
   "/payments",
   "/maintenance-plans",
   "/website",
-  "/marketplace",
+  "/marketplace-listing",
   "/reviews",
   "/marketing",
   "/analytics",
@@ -109,7 +109,7 @@ test.describe("every route still renders inside the real shell", () => {
 });
 
 test.describe("customer-facing previews stay outside the shell and read Settings", () => {
-  for (const route of ["/website/preview", "/website/preview/contact", "/website/preview/booking", "/marketplace/preview"]) {
+  for (const route of ["/website/preview", "/website/preview/contact", "/website/preview/booking", "/marketplace-listing/preview"]) {
     test(`${route} has no workspace sidebar, top bar or Settings controls`, async ({ page }) => {
       await page.goto(route);
       await expect(primaryNav(page)).toHaveCount(0);

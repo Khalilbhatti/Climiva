@@ -1114,7 +1114,7 @@ A Site that is private, unpublished, unknown or misspelt, a page that does not e
 
 ### Draft preview security
 
-The Draft is for people signed in to the business. `/website/preview` and `/website/preview/[...slug]` (and `/marketplace/preview`) call `requireWorkspaceContext()` first (the layout does, and the shared preview route does), read the **signed-in person's own** primary Site's Draft from the workspace snapshot, and draw it with the same renderer as the published Site. A visitor is redirected to Log in; a person from another business sees their own Draft, never another's; an address that names no visible Draft page is "not found". Compatibility: the old `?view=live` links redirect to the published Site at `/sites/<slug>`. The preview's booking journey makes a real booking **as the signed-in owner or admin** through the workspace's authorized action (the preview is inside the workspace); the published Site uses the public path below.
+The Draft is for people signed in to the business. `/website/preview` and `/website/preview/[...slug]` (and `/marketplace-listing/preview`) call `requireWorkspaceContext()` first (the layout does, and the shared preview route does), read the **signed-in person's own** primary Site's Draft from the workspace snapshot, and draw it with the same renderer as the published Site. A visitor is redirected to Log in; a person from another business sees their own Draft, never another's; an address that names no visible Draft page is "not found". Compatibility: the old `?view=live` links redirect to the published Site at `/sites/<slug>`. The preview's booking journey makes a real booking **as the signed-in owner or admin** through the workspace's authorized action (the preview is inside the workspace); the published Site uses the public path below.
 
 ### A visitor's booking: tenant resolution
 
@@ -1320,7 +1320,7 @@ The workspace's private state (the verified person, the workspaces they belong t
 | `app/layout.tsx` (root) | the document, the self-hosted font, global CSS | **nothing**: it reads no session, no workspace and no data |
 | `(signed-in)` | the two groups below | `WorkspaceProviders` (it verifies the person and the workspace first) |
 | `(signed-in)/(workspace)` | every module, the Builder, Settings, Help | `AppShell` |
-| `(signed-in)/(preview)` | the signed-in Draft previews: `/website/preview…`, `/marketplace/preview` | no shell |
+| `(signed-in)/(preview)` | the signed-in Draft previews: `/website/preview…`, `/marketplace-listing/preview` | no shell |
 | `(public)` | the published Sites (`/sites/<address>…`) and Marketplace listings (`/listings/<address>`) | **nothing**: no providers, no shell, no session |
 | `(auth)` | Log in, Sign up, set-up | nothing (they read the session only to send a signed-in person on) |
 | `(platform-admin)` | Climvia's own console, `/platform-admin…` (§36) | nothing of the workspace: its own layout; the database says whether the person is a platform administrator |
@@ -1336,7 +1336,7 @@ One Next.js behaviour made this subtle and is worth knowing: **a layout's `not-f
 
 ### What stays private
 
-- **Draft preview** (`/website/preview…`, `/marketplace/preview`) is the business's own: a visitor is sent to Log in, a member sees their own Draft (never another business's), and the page is outside the public group. It shares the workspace's providers because it reads the workspace's Draft.
+- **Draft preview** (`/website/preview…`, `/marketplace-listing/preview`) is the business's own: a visitor is sent to Log in, a member sees their own Draft (never another business's), and the page is outside the public group. It shares the workspace's providers because it reads the workspace's Draft.
 - **The Builder** (`/website/builder`) is in `(signed-in)/(workspace)` with every provider, its authorization (`website:manage` to write), its revision protection and the business switcher's guard unchanged.
 - **Switching business and logging out** are still full page loads; the providers are rebuilt from the new business.
 
@@ -1856,6 +1856,8 @@ The console works on a database that was only migrated: no organization, user, l
 
 ### What Phase 19B must change for the public landing
 
+*Update (Phase 19B).* §37 built what this subsection asked for except the landing page: the public Marketplace index and its Service and place pages, the SEO surface (sitemap, robots, canonical and `noindex` rules) that honours suspension, a public display of reviews (with the visibility switch it needs; collection and moderation are not built), and a notice to a suspended business that says THAT and never why. What follows is the list as it stood; §37 ends with what is left for Phase 19C.
+
 The public landing (`/` → Marketplace → Business signup → Business login) is **not built** in 19A. When it is:
 
 - `/` is the signed-in workspace's Overview today (an anonymous visitor is sent to Log in). It must become a public landing page for visitors, with the workspace Overview moved or branched by session, and the proxy's rules (`PUBLIC_PREFIXES`, `AUTH_PAGES`), the route inventory, the sidebar's "Overview" and every `next=/` redirect updated with it.
@@ -1864,3 +1866,120 @@ The public landing (`/` → Marketplace → Business signup → Business login) 
 - Telling a business its listing was suspended, and why it may say so, needs a design (and a tenant-visible field that is not the internal reason).
 - Public reviews, and with them review moderation and the audit actions for it.
 - The listing's SEO surface (`sitemap`, `robots`, structured data) must honour suspension.
+
+## 37. The public Marketplace (Phase 19B)
+
+Phase 19B turns the per-business Marketplace listing of Phase 15 into a customer-facing discovery experience: a visitor with no account says what they need and where, sees the providers that really offer it there, opens a provider's profile and books. It adds no second data model. It reuses Organizations, listings and their selected Services, Reviews, Branding, Bookings and the platform moderation of §36, and adds only what discovery needed that did not exist: **where a business works** (service areas), **which reviews may be public**, and **where a booking came from**. This section says what the pages are, how the data is shaped and protected, how a search is matched and ranked, what the public can and cannot see, how bookings are attributed, how moderation interacts, what a search engine is told, how a business configures all this, and what Phase 19C needs.
+
+### The rule: Marketplace visibility = tenant published AND platform allowed
+
+A provider appears anywhere in the Marketplace (search, a Service or place page, its profile, its booking page, the sitemap) only when **all** of these are true, decided in one SQL function (`app_marketplace_match`) and repeated nowhere else:
+
+1. its business has the listing **published** (`marketplace_listings.status = 'published'`), and
+2. the platform has **not suspended** it (`platform_listing_moderation`, where no row means allowed), and
+3. it shows **at least one active, public Service** (a selected Service that is still active and not internal).
+
+Neither side alone is enough, and neither can override the other: a business cannot publish past a suspension, and the platform allowing a listing again publishes nothing. A suspended or hidden provider is not "greyed out" anywhere: it is absent, with the same answer as an address that does not exist, and the business's own data (the listing, its text, Services, areas, reviews, bookings) is exactly as it was, so lifting a suspension restores the provider **only if the business still has it published**. A test walks all four combinations and the transitions between them (`marketplace-discovery.spec.ts`).
+
+### Routes
+
+| Address | What it is |
+| --- | --- |
+| `/marketplace` | the public index and search: `?q=` words, `?service=`, `?location=`, `?booking=`, `?category=`, `?page=` |
+| `/marketplace/services/<service>` | the providers that list one Service (the Service's own address, e.g. `ac-repair-diagnostics`) |
+| `/marketplace/locations/<place>` | the providers that listed one place: `austin-tx`, or a five-digit ZIP |
+| `/marketplace/services/<service>/<place>` | the providers that list the Service **and** work in the place |
+| `/listings/<address>` | a provider's profile (unchanged address; upgraded page) |
+| `/listings/<address>/book/<service>` | the Marketplace booking page for one of the provider's Services |
+| `/sitemap.xml`, `/robots.txt` | for crawlers (below) |
+
+**The tenant screens moved.** `/marketplace` used to be the signed-in business's own Marketplace screen. The public index needed that address, so the business's screens are now `/marketplace-listing` (overview), `/marketplace-listing/edit` and `/marketplace-listing/preview`. The sidebar still says "Marketplace". They are workspace pages (session required, `marketplace:manage` to edit); nothing under `/marketplace` is.
+
+All of `/marketplace…` and `/listings/…` live in the `(public)` route group of §30: **no workspace provider, no session read, no cookie, no tenant context**, `force-dynamic`. `proxy.ts` leaves `/marketplace` (the exact path and everything under it) public; `/marketplace-listing` is not, because the prefix match needs the slash. **On a customer's own domain none of it exists**: the proxy rewrites every path on a customer's host to that customer's site, so `/marketplace`, `/listings/…`, `/sitemap.xml` and `/robots.txt` there are paths the site does not have, and an unknown host is "not found". There is **no fallback** from a customer's name, an unknown name or an empty search to the platform's Marketplace or to any sample business (a test requests every one with the Host of an active claim and of a name nobody owns).
+
+### The service-area model
+
+A business states where it works as rows of `marketplace_service_areas` (migration `0024`), one per place, in the order it gave them, belonging to its one listing (composite foreign key `(organization_id, listing_id)`, `ON DELETE CASCADE`):
+
+- A row is **either a city with its US state (`city` + `state_region`, two capital letters) or a five-digit `postal_code`, never both and never neither** (a check). It may have a display `label` ("South Austin", 1 to 60 characters, plain text) that customers read instead of the city or ZIP. There is no free-form text that a search could be confused by.
+- `city_key` is a **generated column** (lower case, apostrophes and periods dropped, hyphens and runs of spaces as one space) so "St. Louis", "st louis" and "ST LOUIS" are one place and no writer can store a key that disagrees with the name. A unique index over `(listing, city_key, state, postal_code)` refuses the same place twice, however it was typed. At most **fifty** per listing (a trigger). The TypeScript `cityKey()` in `lib/marketplace-discovery` computes the same key, and a test holds the two to each other for every spelling.
+- **A business's headquarters address is not coverage.** Only what a business lists is claimed. A listing with no areas is found by Service and by name, **never by a place** (a place filter, or a place word in a search, matches only a configured area), and its card says "Not listed" rather than implying anywhere.
+- Matching is **exact on the normalized keys**: a ZIP equals a ZIP; a city equals a city (in the state asked for, or any state when none was given). There is no radius, no geocoding and no distance. **The seam for them is a new kind of row** (a "radius" kind with its own columns would sit beside "city" and "postal"), and the single SQL function that says whether an area matches a search (`app_marketplace_match`) is the one place that would learn it. Nothing else knows what a "kind" is.
+- Row Level Security: members of the active business **read**; only owners and admins **insert and delete** (rows are replaced as a set when the listing is saved); there is no update. A forged `listing_id` of another business fails the composite foreign key; a member's insert fails the policy; a visitor reads the table through no policy at all (the public functions are the only door).
+
+### The reviews that may be public
+
+`reviews.visibility` (`private`, the default, or `public`) and `made_public_at` (set by a trigger the moment a review becomes public) say which reviews may be shown on the profile and counted in a public rating. **No workspace screen or Server Action can change it**: the runtime role has `SELECT` on `reviews` and nothing else, so a business cannot curate its own rating, and a customer-consent step (a later phase) is the only writer there will be. The single predicate `app_review_is_public(review)` is the definition of an eligible review and is used by every public path, so review moderation, when it exists, narrows it **there and nowhere else**. The seeded sample reviews are marked public (test and development data only); a new business has none.
+
+A public review is projected as a rating, its text and its date, and the reviewer as **"First L."** (`app_reviewer_display_name`; a single name stays as it is; nothing becomes "Customer"). The full name, email, phone, job and customer ids never leave the database on a public path. A provider's rating is the average of its **public** reviews to one decimal, and the count behind it; a provider with none says "No reviews yet". Nothing is estimated, defaulted or shown to look better.
+
+### The public discovery model and the data projection
+
+The Marketplace never reads a table. It calls **five more narrow `SECURITY DEFINER` functions** (fixed `search_path`, `EXECUTE` revoked from `PUBLIC` and granted to `climvia_app` alone), beside the existing public functions, so the visitor's door runs **twelve** functions in all (the server-boundaries spec lists them by name):
+
+- `app_public_marketplace_search(tokens, service, location, booking, category, page, size)` → `{ total, page, pageSize, results[] }`;
+- `app_public_marketplace_facets(…)` → the Services, places, types of work and ways of booking that really exist **given what is chosen** (each list leaves out its own filter, and counts providers);
+- `app_public_marketplace_sitemap()` → the discoverable providers and the Service, place and Service-in-place pages that have at least one;
+- `app_public_listing(address)` (replaced) → the profile, now with service areas, rating and the ten latest public reviews;
+- `app_public_listing_booking(address, service)` → what the booking page needs for one Service of one listing; and the booking writer `app_public_create_marketplace_booking(…)` (below).
+
+**A card is built field by field**: the listing's address, the business's public name and description, its logo's asset id, its rating, the Service the search matched (its name, category, price and way of booking), how many Services it shows, its types of work, up to four of its areas (the one searched for first) and whether the matched Service can be booked online. **No organization id, listing id, user id, email, phone, internal Service id, moderation state or reason, reviewer name or customer** is in any projection; a test compares the exact key set of every card, service, area, rating and review, and scans the serialized answer for every kind of secret. On the profile, a contact detail the business turned off is **absent from the answer**, not hidden by CSS; the hours the profile shows follow the same switch, while the booking page still gets the hours it needs to offer slots.
+
+The application parses each answer again (`src/db/public-queries.ts`) and draws it; `src/server/public-site.ts` memoises each reader for **one request** on primitive arguments, so a page and its metadata ask once and nothing is shared between visitors.
+
+### Search: what is matched, filtered and ranked
+
+A visitor's words are **tokenized by deterministic code** (no `Intl`, no locale): lower case, letters and digits only, filler words dropped, no repeats, at most eight words of at most forty characters. The database cleans them again (`app_marketplace_tokens`), so what reaches a query is only `[a-z0-9]{1,40}`: a hostile search is ordinary words or nothing, never SQL, a pattern or an error (tests send injection strings, regular-expression characters, `%`, `_`, backslashes, NUL, emoji and 5,000-character searches). **Every word must be found**, matched from the **start** of a word in: the business name, the name or type of one of the Services it **shows**, or one of its configured areas (city word, state code or ZIP prefix). A Service the business does not show, and a Service that is internal or switched off, is not matched.
+
+Filters (each in the address): a **Service** (by its address), a **type of work** (the five categories), a **way of booking** (a fact about one Service that is bookable online, on a listing that offers booking: the same Service must have both) and a **place** (a ZIP, a city and state, or a city). A filter value that is not valid **matches nothing**; it is never an error. "Availability" is deliberately not a filter: Climvia does not know a provider's real availability, so it claims none.
+
+**Ranking is deterministic and has no invented signal.** Hard filters first; then, in order: how many of the words matched a shown Service, how many matched the business name, the average **public** rating (no reviews last), the number of public reviews, the business name, and the listing id as the last tie-break. Nothing is sponsored, boosted, randomised or time-dependent, and the same search is the same list every time. **Pages hold twelve providers** (the SQL clamps size to 1..24 and the page to 1..100), each page has its own address, a page past the end says so, and a page number that makes no sense is the first page.
+
+Where the search is made: PostgreSQL only (indexes on the area keys, the ZIP and the listing's Services; narrow projections; the counts and facets are four set queries, not one per provider, so there is no N+1). There is no external search service, and none is needed at this scale.
+
+### Pages, SEO and what a crawler is told
+
+- A search with words or filters has an address that can be shared; a search that only names a Service and/or a place **redirects to the clean page** (`/marketplace?service=ac-repair&location=78704` → `/marketplace/services/ac-repair/78704`), and empty parameters are tidied away.
+- **Indexable**: the Marketplace itself, and a Service, place or Service-in-place page that lists at least one provider and is the first page. Each has a title (`HVAC service in Austin, TX · Climvia Marketplace`), a description built from the **real** number of providers, and an absolute `canonical` on the platform's origin (`BETTER_AUTH_URL`). **`noindex`**: a search with words or filters, a later page, a place that was not understood, and any page with nobody on it. An address that is not a Service or a place at all (malformed, upper-case, too long) is the plain "not found" with status 404, not an empty page. A profile is indexable with its canonical set to its own address, whatever a visitor was looking at when they arrived (the query it carries is not a different page); a booking page is `noindex`.
+- **`/sitemap.xml`** lists `/marketplace`, the Service pages, the place pages, the Service-in-place pages and the profiles **that the discovery function says exist**: a suspended, hidden or unpublished provider is in no entry, and no combination is made up (a Service and a place appear together only when one provider has both). It is bounded (5,000 profiles, 500 Services, 500 places, 2,000 combinations), contains no search page and no query string, and is a different answer after every change because it is never cached.
+- **`/robots.txt`** allows `/marketplace` (exactly), `/marketplace/`, `/listings/`, `/sites/` and `/assets/`, disallows everything else, and names the sitemap. The workspace, the console and the sign-in pages are not offered.
+- **Not built:** structured data (JSON-LD). It is a later, separate decision, because it would restate a rating and prices as claims to a search engine.
+
+### The pages themselves
+
+The design is the product's own ("warm operational clarity": linen canvas, deep teal, Inter), pushed to be consumer-facing. A teal hero carries the search (**What do you need? / Where?**), the Service and place chips are the real facets, and each provider card is a **nameplate**, the rating-plate of an air handler: four ruled cells (Rating, Price, Booking, Serves) of facts the provider really has. A card that does not have a fact says so ("No reviews yet", "Not listed", "Not online"). There is no "Verified", no badge, no availability, response time, provider count, savings, urgency or AI claim anywhere; a test scans the page for those words. The filters are ordinary links (each a search of its own, the one in use marked `aria-current`) and fold behind one button on a phone; the search is a plain `GET` form that works before any script has run; every control is reachable and operable with the keyboard; focus is visible; nothing animates beyond a colour change, and reduced motion is respected. Every page is held to the structural and contrast checks of the route crawl (`accessibility.spec.ts`), has no sideways scroll at 390 px, and logs nothing to the console.
+
+### The profile
+
+The profile is the Marketplace's page about a business: its logo and name, its rating (a link to its reviews), its description, the Services it shows each with its price, length and a **Marketplace booking link** (for a Service that is bookable online, when the listing offers booking), the places it works, the contact details and hours it chose to show, and its public reviews. It links to the business's **website** only when the business has a published one and chose the action, and it is a different page at a different address: the profile is the directory's, the website is the business's. A business with no published website shows no website or contact button at all (not a button that goes nowhere). Where the visitor came from (the Service and place on the results page) rides on the address of the profile and its booking links, validated as addresses, and nowhere else.
+
+### Booking from the Marketplace, and its attribution
+
+A Marketplace booking uses **the existing public booking architecture** and a second, equally narrow door:
+
+1. The page (`/listings/<address>/book/<service>`) reads the one Service through `app_public_listing_booking`: the listing must be published, not suspended and offering booking, and the Service one that listing shows **and** the business offers for online booking; anything else is "not found".
+2. The journey is the same `BookingJourney` the website uses (same slots, same intake, same confirmation), so the rules cannot drift; it names no business.
+3. `submitMarketplaceBookingAction` has **no session by design** and is held to the same order as the website's: parse the request, rate-limit the visitor's address (a key of its own), look up the listing **as a visitor sees it**, check the slot against that business's hours, and only then write. It refuses a customer's own domain. **It names a listing and a Service and nothing else**: not an organization, a source, a status or a number; extra fields in the request are not read.
+4. `app_public_create_marketplace_booking` finds the business and the Service **from the listing** and writes through `app_insert_public_booking`, the one internal function that writes a public booking (shared with the website's booking function, never executable by the runtime role): its `source` is chosen **by the function** (`Marketplace`), never by a request. The booking is the business's own, with no customer record, no job, quote, invoice or payment, and no payment is taken. A repeat of the same submission or of the same person asking for the same time is the first booking.
+
+**Attribution is persisted and server-derived** (migration `0024`): `bookings.marketplace_listing_id` (a composite foreign key that is cleared, not cascaded, when a listing is deleted: the booking and its source stay) and `bookings.discovery_service` / `discovery_location` (what the visitor was looking at: kept only if they have the shape of an address, informational, never used to decide anything). The business sees the source in its Bookings and a **Marketplace bookings** count on its Marketplace screen, counted from the stored bookings (all that are recorded as coming from the Marketplace, whatever their age). **The Analytics module is unchanged** and its canonical baseline is untouched: it reports no booking source today, and no history is invented. A booking made through the website stays a Website booking. Notifications, payments and commissions do not exist here.
+
+### How a business configures its listing
+
+The business's own page (`/marketplace-listing`, edit at `/marketplace-listing/edit`) manages: the description and cover; which contact details show; the **Services shown** and their order; the **Service areas** (add a city and state or a ZIP, optionally name it, change, reorder and remove; a form that checks each place as the server does and says what to fix: "choose a US state for the city", "Austin, TX is already listed", "enter a five-digit US ZIP code"); the customer actions; and published or hidden. Owners and admins edit (`marketplace:manage`); a member reads, sees the areas and the Marketplace bookings count, and the edit address sends them back. The server parses the whole configuration again, replaces the Services and the areas as sets in **one transaction** under a lock on the listing row, and answers with what was stored; forged ids of another business have nowhere to go (the request carries none). The unsaved-changes guard covers the areas like everything else on the page.
+
+When the platform has suspended the listing the business sees **that**, not why: a badge ("Suspended by Climvia"), a notice that customers cannot find, open or book from it, that its content is saved, and that publishing again will not make it public until the suspension is lifted. **The internal reason, the administrator and the time are never sent to the business's pages** (`app_listing_suspended()` returns a boolean, for a member of the active business only; the runtime role has no privilege on the moderation table). There is no email or notification, and no appeal path (Phase 19C).
+
+### The Platform console
+
+Marketplace Listings now shows, for every listing, the Services it shows, the **service areas** it listed, whether it is **in the Marketplace** (published, allowed and showing a Service), and a link to its **public profile** while it has one; the suspend and allow actions are unchanged and remain the **only** write authority over a listing's public availability. Reviews shows whether each review is public or private (read-only: hiding a public review is not built).
+
+### Tests
+
+`marketplace-discovery-rules.spec.ts` (every normal form, the parsing, tokenizing, addresses and the database's city key), `marketplace-discovery-database.spec.ts` (what each public function answers and leaves out, filters, ranking, pages and their clamps, facets, the sitemap, the profile, booking and attribution, Row Level Security on the areas, the moderation record and the review table), and `marketplace-discovery.spec.ts` (the pages as a visitor and a business use them: search, filters, pages, empty and mistyped searches, clean pages, SEO, sitemap, robots, a customer's domain, the profile, booking and the replayed action, suspension everywhere, the tenant's area editor, the notice and the count, a phone, and no leakage). The route inventory, the public-boundary probe (the restricted-role server now serves the Marketplace too) and the server-boundaries pins were extended; the specs that named the tenant routes use their new addresses.
+
+### What this does not do, and what Phase 19C needs
+
+Not built: consumer accounts (a visitor books as a guest), payments, commissions, Stripe Connect, payouts and subscriptions; email or SMS (to a business about a booking, a visitor about a confirmation, or a business about a suspension); geographic radius and geocoding (the seam is above); an availability filter or claim; structured data; review collection, a customer's consent step that makes a review public, and review moderation; provider verification of any kind; the public landing page at `/` (the signed-in Overview still is `/`, an anonymous visitor is still sent to Log in, and "Business signup" and "Business login" are still `/signup` and `/login`); and an appeal or contact path for a suspended business.
+
+Phase 19C needs: (1) the **public landing** (`/` for visitors, with the workspace Overview branched by session, and `PUBLIC_PREFIXES`, the sidebar, the route inventory and every `next=/` redirect updated with it), linking the Marketplace and the business sign-up and log-in with their purposes clear; (2) a way for a **suspended business to learn why and ask for review** (a tenant-visible field that is not the internal reason, and a contact path); (3) **review collection with consent**, the writer of `reviews.visibility`, and review moderation on top of `app_review_is_public`; (4) **notifications** (booking received, booking confirmed, suspension); (5) a **decision on structured data** and on the sitemap's size beyond 5,000 profiles (an index of sitemaps); (6) the AWS deployment with the proxy, TLS and DNS for the platform's own name (still deferred), after which `BETTER_AUTH_URL`'s origin is what every canonical address and the sitemap use.

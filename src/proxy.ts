@@ -13,10 +13,10 @@ import { hostConfig } from "@/lib/domain-config";
  *
  * Left alone on purpose: the auth endpoints, the Log in and Sign up pages (a cookie that no longer maps to a session must
  * still be able to reach them, or the person would be bounced between pages forever; the pages themselves send a truly
- * signed-in visitor on), and the PUBLISHED websites (/sites/<address>) and Marketplace listings (/listings/<address>), which must stay
- * reachable without a Climvia account, and the logos they draw (/assets/<id>, which serves only a logo a business has chosen: the route asks
+ * signed-in visitor on), and the PUBLISHED websites (/sites/<address>), the public Marketplace (/marketplace, its Service and place pages) and its listings
+ * (/listings/<address>, and the booking page under one), which must stay reachable without a Climvia account, and the logos they draw (/assets/<id>, which serves only a logo a business has chosen: the route asks
  * the database, not this file). Those pages resolve the business from the public address on the server and show published
- * content only. The signed-in previews of a Draft (/website/preview, /marketplace/preview) are NOT public: they need a session cookie
+ * content only. The signed-in previews of a Draft (/website/preview, /marketplace-listing/preview) are NOT public: they need a session cookie
  * here and a verified membership in the page.
  *
  * The first thing it does is look at the HOST, and only the `Host` header (`Forwarded` and `X-Forwarded-Host` are sent by whoever makes the
@@ -31,7 +31,7 @@ import { hostConfig } from "@/lib/domain-config";
  * `/internal/tls-allow` (the reverse proxy asks whether a certificate may be requested for a name; it is refused without its secret, and the proxy
  * does not forward it to the public). On a customer's name neither exists: those paths take the rewrite above like any other.
  */
-const PUBLIC_PREFIXES = ["/api/auth", "/sites", "/listings", "/assets", "/health", "/internal/tls-allow"];
+const PUBLIC_PREFIXES = ["/api/auth", "/sites", "/listings", "/marketplace", "/assets", "/health", "/internal/tls-allow"];
 const AUTH_PAGES = ["/login", "/signup"];
 
 /** Where a customer's domain is served from. */
@@ -44,11 +44,23 @@ const PLATFORM_LOGIN = "/platform-admin/login";
 /** A path that ends in a file extension is never a page. */
 const FILE = /\.[a-zA-Z0-9]+$/;
 
+/** Is the path valid percent-escapes? A page that takes a path segment decodes it, and a segment that is not valid would make the framework answer 500. */
+function decodable(pathname: string): boolean {
+  try {
+    decodeURIComponent(pathname);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   const host = classifyHost(request.headers.get("host"), hostConfig());
   if (host === "refuse") return new NextResponse("Not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+  // An address that is not valid percent-escapes names nothing: it is refused plainly, for the platform's names and a customer's alike, before any page is asked to read it.
+  if (!decodable(pathname)) return new NextResponse("Bad request", { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
   if (host === "custom") {
     if (pathname.startsWith("/assets/")) return NextResponse.next();
     const target = request.nextUrl.clone();

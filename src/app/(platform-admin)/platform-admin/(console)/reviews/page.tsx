@@ -32,8 +32,9 @@ export default async function PlatformReviewsPage({ searchParams }: { searchPara
     <>
       <PageHeader title="Reviews" description="What customers wrote about businesses, across the platform. Read-only." />
       <p className="rounded-card border border-line bg-surface px-4 py-3 text-sm text-ink-muted">
-        Reviews are shown to the business that earned them and to nobody else: no published Site or Marketplace listing displays a review. Suspending or hiding reviews
-        arrives together with public reviews, so there is nothing to moderate on this page today, and no review is changed or removed from here.
+        A review is shown to the business that earned it. It is also shown on that business&apos;s public Marketplace profile only when it is marked public, and
+        never with more than the reviewer&apos;s first name and last initial. Hiding a public review from this page is not part of this release, so no review is
+        changed or removed from here.
       </p>
       <SearchBox
         path="/platform-admin/reviews"
@@ -70,6 +71,7 @@ export default async function PlatformReviewsPage({ searchParams }: { searchPara
                 <TableHeaderCell>Reviewer</TableHeaderCell>
                 <TableHeaderCell>Date</TableHeaderCell>
                 <TableHeaderCell>Reply</TableHeaderCell>
+                <TableHeaderCell>Marketplace</TableHeaderCell>
               </tr>
             </TableHead>
             <TableBody>
@@ -86,6 +88,9 @@ export default async function PlatformReviewsPage({ searchParams }: { searchPara
                   <TableCell className="whitespace-nowrap text-ink-muted">{formatDay(review.submittedOn)}</TableCell>
                   <TableCell>
                     <StatusBadge tone={review.replied ? "positive" : "warning"}>{review.replied ? "Replied" : "Awaiting reply"}</StatusBadge>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge tone={review.public ? "primary" : "neutral"}>{review.public ? "Public" : "Private"}</StatusBadge>
                   </TableCell>
                 </TableRow>
               ))}

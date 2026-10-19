@@ -4,6 +4,7 @@
  * The listing form validates for the person's convenience; these are the enforcement. Pure: no database, no framework.
  */
 import { COVERS, CONTACT_FIELDS, DESCRIPTION_MAX, LISTING_ACTIONS, type ContactField, type CoverId, type ListingAction, type ListingConfig } from "@/data/marketplace";
+import { parseAreas } from "./marketplace-discovery";
 import { textProblem } from "./site-sections";
 import type { Parsed } from "./validation";
 
@@ -49,6 +50,8 @@ export function parseListingConfig(input: unknown): Parsed<ListingConfig> {
   const problem = description.includes("{{") ? "Use plain text. Double braces are not allowed." : textProblem(description);
   if (problem) return fail(problem, { description: problem });
   if (selected.length === 0) return fail("Select at least one Service to show.", { services: "Select at least one Service to show." });
+  const areas = parseAreas(input.areas);
+  if (!areas.ok) return areas;
 
-  return { ok: true, value: { description, cover, order, selected, contact, actions } };
+  return { ok: true, value: { description, cover, order, selected, contact, actions, areas: areas.value } };
 }

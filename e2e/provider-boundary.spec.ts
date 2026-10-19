@@ -7,7 +7,7 @@
  * published Sites and Marketplace listings (`app/(public)`) and Log in, Sign up and set-up (`app/(auth)`) must not be able to reach it, a
  * provider, the session, the workspace or the workspace's data access at all, however a signed-in visitor looks. This builds the import graph
  * from each of those entry points and holds it to that, so the separation is a property of the code and not of what a page happens to show.
- * (public-boundary.spec.ts holds the same line at run time, against a server that is only able to run the seven public database functions.)
+ * (public-boundary.spec.ts holds the same line at run time, against a server that is only able to run the public database functions.)
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -59,6 +59,7 @@ test.describe("a published Site or Marketplace listing cannot reach the workspac
     expect(names).toContain("src/app/(public)/not-found.tsx");
     expect(names.filter((name) => /\/(sites|listings)(\/|$)/.test(name) && name.endsWith("page.tsx"))).toEqual([
       "src/app/(public)/listings/[listingSlug]/[...rest]/page.tsx",
+      "src/app/(public)/listings/[listingSlug]/book/[serviceSlug]/page.tsx",
       "src/app/(public)/listings/[listingSlug]/page.tsx",
       "src/app/(public)/listings/page.tsx",
       "src/app/(public)/sites/[siteSlug]/[...slug]/page.tsx",
@@ -73,7 +74,7 @@ test.describe("a published Site or Marketplace listing cannot reach the workspac
     expect(forbiddenIn(publicEntries, isAny([...WORKSPACE, ...TENANT_DATA]))).toEqual([]);
   });
 
-  test("a public page reaches the database only through the seven public functions", () => {
+  test("a public page reaches the database only through the twelve public functions", () => {
     const seen = reachable(publicEntries);
     // The connection, the table definitions it is built from, the public functions' own queries and the plain mappers they use: no tenant
     // transaction (`tenant.ts`) and no other business's queries.
@@ -81,7 +82,20 @@ test.describe("a published Site or Marketplace listing cannot reach the workspac
     expect(touchesDatabase.sort()).toEqual(["src/db/index.ts", "src/db/public-queries.ts", "src/db/settings-mappers.ts"]);
     const source = readFileSync(join(SRC, "db", "public-queries.ts"), "utf8");
     const calls = [...source.matchAll(/\bapp_[a-z_]+\b/g)].map((match) => match[0]);
-    expect([...new Set(calls)].sort()).toEqual(["app_public_asset", "app_public_create_booking", "app_public_domain", "app_public_listing", "app_public_site", "app_public_site_domain", "app_tls_eligible"]);
+    expect([...new Set(calls)].sort()).toEqual([
+      "app_public_asset",
+      "app_public_create_booking",
+      "app_public_create_marketplace_booking",
+      "app_public_domain",
+      "app_public_listing",
+      "app_public_listing_booking",
+      "app_public_marketplace_facets",
+      "app_public_marketplace_search",
+      "app_public_marketplace_sitemap",
+      "app_public_site",
+      "app_public_site_domain",
+      "app_tls_eligible",
+    ]);
   });
 
   test("no public file reads who is signed in", () => {

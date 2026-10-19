@@ -65,7 +65,7 @@ test.describe("marketplace data", () => {
       expect(text).not.toContain(service.description);
     }
     // Services are held as ids only.
-    expect(Object.keys(APEX_LISTING.config).sort()).toEqual(["actions", "contact", "cover", "description", "order", "selected"]);
+    expect(Object.keys(APEX_LISTING.config).sort()).toEqual(["actions", "areas", "contact", "cover", "description", "order", "selected"]);
   });
 
   test("reordering and selecting Services never mutates the Services themselves", () => {

@@ -19,6 +19,7 @@ const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const PUBLIC_BOOKING_UNAVAILABLE = "This website isn't taking bookings right now.";
+export const PUBLIC_MARKETPLACE_UNAVAILABLE = "This provider isn't taking online bookings right now.";
 export const PUBLIC_BOOKING_SERVICE = "That service isn't available to book online.";
 export const PUBLIC_BOOKING_BUSY = "Too many requests from your connection. Please wait a few minutes and try again.";
 
@@ -36,6 +37,14 @@ export type PublicBookingRequest = {
   notes?: string;
   /** The answers to the Service's single-select intake questions, by question id. */
   answers: Record<string, string>;
+};
+
+/** A booking request from a Marketplace profile: the same details, naming a LISTING (by its public address) instead of a site. */
+export type MarketplaceBookingRequest = Omit<PublicBookingRequest, "siteSlug"> & {
+  listingSlug: string;
+  /** What the visitor was looking at (addresses from the results page they came from). Informational: kept only if it has the shape of an address. */
+  discoveryService?: string;
+  discoveryLocation?: string;
 };
 
 export type ParsedRequest = { ok: true; value: PublicBookingRequest } | { ok: false; error: string; fields?: Record<string, string> };
@@ -131,3 +140,22 @@ export function checkPublicBooking(
 
 /** The reference a visitor is shown for a booking: its number, "BK-1043". */
 export const bookingReferenceOf = (number: number) => `BK-${number}`;
+
+/**
+ * The shape of a Marketplace booking request. It names a listing, never an organization: the database finds the business from the listing and the
+ * Service from that business's own Services. The discovery values are optional and dropped, not refused, when they are not addresses.
+ */
+export function parseMarketplaceBooking(input: unknown): { ok: true; value: MarketplaceBookingRequest } | { ok: false; error: string; fields?: Record<string, string> } {
+  if (!isRecord(input)) return fail("The booking details were not understood.");
+  const listingSlug = typeof input.listingSlug === "string" && input.listingSlug.length <= 63 && SLUG.test(input.listingSlug) ? input.listingSlug : undefined;
+  if (!listingSlug) return fail("The booking details were not understood.");
+  // The same details as a site booking; the listing's address stands where a site's would.
+  const parsed = parsePublicBooking({ ...input, siteSlug: listingSlug });
+  if (!parsed.ok) return parsed;
+  const { serviceSlug, submissionKey, date, start, end, name, phone, email, address, notes, answers } = parsed.value;
+  const slug = (value: unknown) => (typeof value === "string" && value.length <= 80 && SLUG.test(value) ? value : undefined);
+  return {
+    ok: true,
+    value: { listingSlug, serviceSlug, submissionKey, date, start, end, name, phone, email, address, notes, answers, discoveryService: slug(input.discoveryService), discoveryLocation: slug(input.discoveryLocation) },
+  };
+}

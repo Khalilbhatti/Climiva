@@ -26,6 +26,9 @@ export type AppHref =
   | `/website/templates/${string}`
   | `/sites/${string}`
   | `/listings/${string}`
+  | `/marketplace?${string}`
+  | `/marketplace/services/${string}`
+  | `/marketplace/locations/${string}`
   | `/reviews/${string}`
   | `/marketing/${string}`
   | `/marketing/${string}/edit`;

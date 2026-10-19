@@ -35,6 +35,8 @@ import { moveService, toggleService } from "@/lib/marketplace-state";
 import { ListingView } from "./ListingView";
 import { useListingData } from "./listing-data";
 import { useMarketplace } from "./MarketplaceProvider";
+import { ServiceAreaEditor } from "./ServiceAreaEditor";
+import { SuspendedNotice } from "./SuspendedNotice";
 import { useServices } from "@/components/services/ServicesProvider";
 
 const NO_COVER = "none";
@@ -99,7 +101,7 @@ export function ListingEditor() {
     setBusy(false);
     if (!result.ok) return toast(result.error);
     toast("Marketplace listing published.");
-    router.push("/marketplace");
+    router.push("/marketplace-listing");
   }
 
   async function publish() {
@@ -119,7 +121,7 @@ export function ListingEditor() {
         <nav aria-label="Breadcrumb" className="text-xs text-ink-muted">
           <ol className="flex flex-wrap items-center gap-1.5">
             <li>
-              <Link href="/marketplace" className="hover:text-primary">
+              <Link href="/marketplace-listing" className="hover:text-primary">
                 Marketplace
               </Link>
             </li>
@@ -148,7 +150,7 @@ export function ListingEditor() {
           <div className="flex flex-wrap items-center gap-3">
             {setup ? (
               <>
-                <ButtonLink href="/marketplace" variant="secondary">
+                <ButtonLink href="/marketplace-listing" variant="secondary">
                   Back to Marketplace
                 </ButtonLink>
                 <Button onClick={saveAndPublish} disabled={busy}>
@@ -174,7 +176,7 @@ export function ListingEditor() {
                     </span>
                   </>
                 ) : (
-                  <ButtonLink href="/marketplace/preview" variant="secondary">
+                  <ButtonLink href="/marketplace-listing/preview" variant="secondary">
                     Preview listing
                   </ButtonLink>
                 )}
@@ -197,6 +199,11 @@ export function ListingEditor() {
             )}
           </div>
         </div>
+        {listing.suspended && (
+          <div className="mt-3">
+            <SuspendedNotice published={published} />
+          </div>
+        )}
         {setup && (
           <p className="mt-3 flex items-start gap-2 rounded-btn bg-surface-low px-3 py-2 text-xs text-ink-muted">
             <Info aria-hidden className="mt-0.5 size-3.5 shrink-0" />
@@ -352,6 +359,13 @@ export function ListingEditor() {
             </p>
           </SectionCard>
 
+          <SectionCard
+            title="Service areas"
+            description="Where you work. Customers who search by city or ZIP code find your listing only for the places listed here."
+          >
+            <ServiceAreaEditor areas={working.areas} onChange={(areas) => patch({ areas })} />
+          </SectionCard>
+
           <SectionCard title="Customer actions" description="Choose which actions are available from your Marketplace listing.">
             <ul className="divide-y divide-line">
               {LISTING_ACTIONS.map((action) => (
@@ -369,7 +383,7 @@ export function ListingEditor() {
               ))}
             </ul>
             <p className="mt-3 text-xs text-ink-muted">
-              Customer actions lead to your existing Booking and Website pages. Marketplace does not create Jobs, Quotes, or Invoices directly.
+              Booking from your listing opens a booking page for the Service on Climvia Marketplace, and the booking arrives in your Bookings marked as a Marketplace booking. Website and contact actions lead to your website. Marketplace does not create Jobs, Quotes, or Invoices directly.
             </p>
           </SectionCard>
 

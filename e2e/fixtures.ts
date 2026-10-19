@@ -31,13 +31,19 @@ const ORIGIN = process.env.BETTER_AUTH_URL ?? "http://localhost:3460";
  * Resolves once React has taken over the page: the router is running and every control in the top bar and the main area has
  * been attached to. A click or key press that lands before that is silently lost, and a field typed into before it is reset,
  * which is what makes a test pass nine times in ten. Pages without such controls (an error page) resolve at once.
+ *
+ * Content the server streams after the page shell (a Suspense boundary) is not part of the page until React reveals it: until then its fallback
+ * is a `template#B:n` and the finished content waits in a hidden `div#S:n`, outside `main`. Its elements can already be found by id, but a hidden
+ * element cannot take focus (`locator.focus()` waits only for it to exist, and does nothing), so a key pressed then goes to the page body. The
+ * page is not ready while any boundary is unrevealed.
  */
 export async function waitForHydration(page: Page, timeout = 10_000) {
   await page.waitForFunction(
     () => {
       const router = (window as unknown as { next?: { router?: unknown } }).next?.router;
+      const unrevealed = document.querySelector('template[id^="B:"], div[hidden][id^="S:"]');
       const controls = [...document.querySelectorAll("header button, main button, main input, main select, main textarea")];
-      return Boolean(router) && controls.every((control) => Object.keys(control).some((key) => key.startsWith("__reactFiber$")));
+      return Boolean(router) && !unrevealed && controls.every((control) => Object.keys(control).some((key) => key.startsWith("__reactFiber$")));
     },
     undefined,
     { timeout },

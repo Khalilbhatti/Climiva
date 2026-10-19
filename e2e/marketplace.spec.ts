@@ -11,6 +11,20 @@ const toast = (page: Page) => page.locator('div[role="status"]');
 const preview = (page: Page) => page.getByRole("region", { name: "Directory preview" });
 const summary = (page: Page) => page.getByRole("region", { name: "Listing summary" });
 
+/**
+ * Press Save on the listing editor and return only once the save is STORED. Two things that look like that are not:
+ * the "Listing changes saved." toast of an EARLIER save lasts three seconds and outlives a move between pages, so a second save can see a toast at
+ * once; and Save is disabled while a save is still in flight as well as when it is done. What is true only after the server has answered is that the
+ * form is clean again (the provider changes the working copy only with the listing as stored), so the "Unsaved changes" badge is gone. A link followed
+ * before that is, correctly, stopped by the unsaved-changes prompt.
+ */
+async function saveAndWaitUntilStored(page: Page) {
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0);
+  await expect(toast(page)).toContainText("Listing changes saved.");
+  await expect(page.getByRole("button", { name: "Save changes" })).toBeDisabled();
+}
+
 const FIVE = [
   "AC Repair & Diagnostics",
   "Annual Cooling Tune-Up & Maintenance",
@@ -182,19 +196,14 @@ test.describe("Edit listing", () => {
     await page.getByRole("switch", { name: "Show phone" }).click();
     await expect(page.getByRole("complementary", { name: "Listing preview" })).not.toContainText(business.phone);
     await expect(page.getByRole("complementary", { name: "Listing preview" })).toContainText(business.email);
-    await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(toast(page)).toContainText("Listing changes saved.");
-    // The toast of one save can still be on screen when the next one is made: Save disabled again is the sign that this one is stored.
-    await expect(page.getByRole("button", { name: "Save changes" })).toBeDisabled();
+    await saveAndWaitUntilStored(page);
     await primaryNav(page).getByRole("link", { name: /^Marketplace/ }).click();
     await expect(preview(page)).not.toContainText(business.phone);
     await expect(summary(page)).toContainText("Shown");
 
     await page.getByRole("link", { name: "Edit listing" }).click();
     for (const toggle of ["Show email", "Show address", "Show business hours", "Show website"]) await page.getByRole("switch", { name: toggle }).click();
-    await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(toast(page)).toContainText("Listing changes saved.");
-    await expect(page.getByRole("button", { name: "Save changes" })).toBeDisabled();
+    await saveAndWaitUntilStored(page);
     await primaryNav(page).getByRole("link", { name: /^Marketplace/ }).click();
     await expect(summary(page)).toContainText("Not shown");
     await expect(summary(page)).toContainText("Contact details are off");

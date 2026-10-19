@@ -42,6 +42,8 @@ Read [production-handoff.md](production-handoff.md) for the front end, which thi
 32. [Where a business's sample data may live](#32-where-a-businesss-sample-data-may-live)
 33. [Durable assets and Organization Branding](#33-durable-assets-and-organization-branding-phase-18a)
 34. [Custom domains](#34-custom-domains-phase-18b)
+35. [The production container runtime](#35-the-production-container-runtime-phase-18c1)
+36. [Platform administration](#36-platform-administration-phase-19a)
 
 ## 1. Status and scope
 
@@ -1321,6 +1323,7 @@ The workspace's private state (the verified person, the workspaces they belong t
 | `(signed-in)/(preview)` | the signed-in Draft previews: `/website/preview…`, `/marketplace/preview` | no shell |
 | `(public)` | the published Sites (`/sites/<address>…`) and Marketplace listings (`/listings/<address>`) | **nothing**: no providers, no shell, no session |
 | `(auth)` | Log in, Sign up, set-up | nothing (they read the session only to send a signed-in person on) |
+| `(platform-admin)` | Climvia's own console, `/platform-admin…` (§36) | nothing of the workspace: its own layout; the database says whether the person is a platform administrator |
 | `(unmatched)` | an address that matches no route | its own "not found", which draws the shell and providers only for a verified member |
 
 `WorkspaceProviders` verifies the caller first (`requireWorkspaceContext()`: a redirect to Log in or to set one up), then reads the workspace data, then mounts `AppProviders` keyed by the business, so one business's state can never be carried in front of another's. The workspace and the Draft previews are siblings under the one `(signed-in)` layout on purpose: moving between a module and a preview keeps the same providers mounted, which matters while Branding (the accent, the logo) exists only in them, until object storage makes it durable.
@@ -1734,3 +1737,130 @@ All against the real containers, with the same rows, files and certificate compa
 ### What this does not do, and what Phase 18C2 still has to
 
 Nothing was created in AWS, no public certificate was requested, no DNS exists, and no S3 bucket was used (S3 mode is configuration- and unit-tested only). A single instance is **not highly available**: the host, the Docker daemon, the one database and the one proxy are each a single point of failure, and a deploy is a few seconds of replacement. Remaining for 18C2: the instance and its IAM role (IMDSv2, S3 access without keys), the security group (80/443 only, no public 5432, no public SSH if possible), DNS for the application's name, the routing target and the platform wildcard, real certificate issuance (which the permission endpoint only authorizes), secrets from Secrets Manager/SSM onto the instance, EBS and off-instance backups, log collection, and a CI/CD path (prefer OIDC to long-lived keys). A first deployment must also test the public mode of the proxy (`mode.public.caddy`) for the first time.
+
+## 36. Platform administration (Phase 19A)
+
+Phase 19A adds Climvia's own control plane: a small console, at `/platform-admin`, for the people who run the platform (not for the businesses on it). It is separate from everything above. This section says what the authority is, where it comes from and where it cannot come from, how it is granted, what the console shows and may do, how a Marketplace listing is moderated, and what remains.
+
+### The rule: Platform Super Admin != Organization Owner
+
+A **platform super administrator** (`super_admin`) is a person Climvia has chosen to operate the platform. An **Organization owner** is a person who runs one business. They are different kinds of authority, held in different tables, checked by different code, and neither implies the other:
+
+| | Platform super administrator | Organization owner / admin / member |
+| --- | --- | --- |
+| Is about | the platform: every business, read across, and the one moderation action below | one business's workspace |
+| Stored in | `platform_admins` (no `organization_id`) | `organization_memberships` |
+| Granted by | the command line, by an operator with the database owner's credential | the business's owner, in Team |
+| Visible in the workspace | never: there is no link, word or data of it in any workspace page, its code or its data | everything about that business |
+
+An owner of every business on the platform has **no** platform authority. A platform super administrator has **no** access to any business's workspace: the console reads aggregate and profile facts through functions; it never opens a business's customers, bookings, quotes, invoices or payments, and there is **no impersonation** ("log in as a business") anywhere.
+
+Platform authority is **never inferred** from an Organization role, an email address or domain, being the first user, a value the browser sends (a cookie, a header, a query string, a form field, a JSON body), an organization id, or a URL. It comes from one place: the database's answer (`app_is_platform_admin()`) about the user whose session Better Auth just verified.
+
+### The data (migrations `0022` and `0023`)
+
+- `platform_admins`: `id`, `user_id` (foreign key to `auth_user`, `ON DELETE CASCADE`), `role` (`super_admin`, a check), `created_at`, `granted_via` (`cli`, a check: the only way an assignment is made), `granted_by` (the operator's provenance, `cli:<operating-system user>`), and `revoked_at` / `revoked_by` (set together or not at all). A **partial unique index** allows one *active* (`revoked_at IS NULL`) assignment per person; a revoked row is history and a later grant is a new row. The table holds no organization: it is not tenant-owned.
+- `platform_listing_moderation`: one row per listing that has ever been decided (`listing_id` is the primary key and a foreign key to `marketplace_listings`, `ON DELETE CASCADE`): `state` (`allowed` or `suspended`), an optional internal `reason` (allowed only when suspended, at most 500 characters), `decided_by`, `decided_at` and a `revision`. **No row means allowed.**
+- `platform_audit_events`: append-only (below). No foreign key: the record of a person or a listing outlives both.
+
+All three have Row Level Security enabled **with no policy**, and every privilege is revoked from `PUBLIC` and from `climvia_app`. Even a mistaken `GRANT SELECT` would show nobody any row (a test proves it with a throwaway role). Only the database owner reads or writes them directly.
+
+### Granting and revoking: the only way
+
+```bash
+npm run platform-admin:grant  -- --email <address>     # an EXISTING account becomes a platform super administrator
+npm run platform-admin:revoke -- --email <address>     # takes it away; the account and its businesses are untouched
+npm run platform-admin:list                            # who is an administrator now (prints no secret)
+```
+
+- **Public signup never creates an administrator**, whatever the request carries (a test signs up with `role`, `platformAdmin` and similar fields and checks no assignment exists), and no migration, seed, schema default or page writes `platform_admins` (a test scans `drizzle/`, `scripts/` and `src/`). **No real address and no default administrator exists in source, migrations, seed data or docs.**
+- `grant` finds the account by the **exact address after trimming and lower-casing**; an unknown address is refused and **no account is created**; granting someone who already is an administrator changes nothing and says so. It connects as the **database owner** (`DATABASE_ADMIN_URL`) and writes the assignment and its audit event in **one transaction**. `revoke` sets `revoked_at` and **never deletes the account**; revoking someone who is not an administrator changes nothing. Revoking takes effect on the very next request, because every request asks the database again.
+- There is no browser path, API route, Server Action or form that writes an assignment. A deployment has no administrator until an operator runs `grant`.
+
+**Bootstrapping the first administrator** (after the first person has signed up like anyone else):
+
+```bash
+# local development (the dev database):
+npm run platform-admin:grant -- --email <the address they signed up with>
+# the container stack: the tools image holds the same command
+docker compose -f docker-compose.production.yml --env-file .env.production run --rm migrate npm run platform-admin:grant -- --email <the address>
+```
+
+Then they open `/platform-admin/login` and sign in with their ordinary account. The operator is recorded in the audit trail as `cli:<user name on the machine>`. That is provenance, not authentication: the credential that matters is the database owner's.
+
+### Route and authentication boundary
+
+- **Group `(platform-admin)`**, a sibling of `(public)`, `(auth)` and `(signed-in)` (§30): its own layout (no providers, no workspace shell, `noindex`, never cached). It reads **no active organization**, no workspace provider, no tenant data access and no fixture data; a test builds the import graph and holds it, and checks the other direction too: nothing in the workspace, the public pages or the sign-in pages imports, names or links to the console (`platform-admin-boundary.spec.ts`).
+- **`/platform-admin/login`** is the console's door. It uses the ordinary Better Auth sign-in (the same form), then the console asks the database whether that person is an administrator. Signing in proves who someone is; it never decides who may enter. It says nothing about who is an administrator: a signed-in person who is not one sees the same form.
+- **Anonymous** requests to any other `/platform-admin…` address are redirected to the login by `proxy.ts` (an early, cheap check on the session cookie, not the boundary). **A signed-in person who is not an administrator gets the ordinary "not found" page**, the same for every address, which does not reveal that an administrator exists. An administrator gets the console.
+- The real check is `requirePlatformAdmin()` (`src/server/platform-admin.ts`), which every console page, the console layout and the one Server Action call **first**; the database functions check again, so hiding a link was never the protection. A page or action added without it fails the server-boundaries spec.
+- **On a customer's domain** the console does not exist (`proxy.ts` rewrites every path on a customer's host to the customer's site, where `/platform-admin` is a path the site does not have), even with an administrator's cookie.
+
+### Row Level Security and the cross-tenant strategy
+
+Row Level Security is **not** disabled, weakened or bypassed anywhere, and `climvia_app` gains **no** cross-tenant access on its tenant context. The platform reads and writes through **narrow `SECURITY DEFINER` functions**, each with a fixed `search_path`, `EXECUTE` revoked from `PUBLIC` and granted to `climvia_app` alone:
+
+- `app_is_platform_admin()`: true only when the user in `app.user_id` has an active assignment; it answers about the caller and about nobody else.
+- Reads: `app_platform_overview()`, `app_platform_organizations(search, limit, offset)`, `app_platform_organization(id)`, `app_platform_users(…)`, `app_platform_listings(…)`, `app_platform_reviews(…)`, `app_platform_system()`, `app_platform_audit_recent(limit)`. Each begins with the internal guard `app_platform_guard()` (not executable by `climvia_app`), which refuses a caller who is not an administrator with error `42501` (insufficient privilege) before any row is read. Limits and offsets are clamped; a search is matched literally (`%`, `_` and `\` are escaped, 100 characters at most).
+- The one write: `app_platform_set_listing_moderation(listing, state, reason)`: guard, validation, an advisory lock per listing, an idempotent decision, and the audit event in the same transaction.
+
+There is **no generic "run this as administrator" function and no argument that carries SQL**. The functions return only what the console shows: no password, session token, OAuth token, recovery or verification material, domain ownership token or secret of any kind (tests compare every output with the stored secrets). The application's side is `src/db/platform-queries.ts`: it calls only these functions, names no table, and opens the connection as the verified user (`withUser`), so the database sees who is asking.
+
+*What this does not protect against:* anyone who can run arbitrary SQL as `climvia_app` can set `app.user_id` to any value, exactly as they could already read tenant data by setting `app.org_id`. The role's password is held by the application; the protection against SQL injection is the application's parameterised queries and the boundary tests, as it has been since Phase 10. Platform authority adds no new exposure to that, and the owner's credential is never in the application's environment.
+
+### The console
+
+Navigation: **Overview, Organizations, Users, Marketplace Listings, Reviews / Moderation, System**. The pages are dense, quiet and plain (the existing design language), and show nothing that is not real.
+
+- **Overview**: ten counts read now: organizations, users, active memberships, Sites, published Sites, listings, published listings, suspended listings, bookings, reviews. No chart, trend or percentage change, because there is no history behind one. Zero is a valid state and says so.
+- **Organizations**: name, created, members, owners, Services, Sites (and how many are live) and listing status; search by name; page by page. A detail page shows the business profile, activity counts (counts only), people with roles, Services, Sites and the listing. Read-only.
+- **Users**: name, address, created, businesses and roles, and whether the person is a platform administrator; search by name or address. No password, session, token or recovery detail, and no action on an account.
+- **Marketplace Listings**: every listing with what the business chose, the platform's decision and whether it is **public now**; suspend (with an optional internal reason) and allow again.
+- **Reviews / Moderation**: a read-only look at reviews across the platform (search, rating filter). See below for why it is not more.
+- **System**: the build, the environment, readiness (configuration, database, file storage), the PostgreSQL version, how many migrations are applied, the storage driver's **name**, diagnostic counts and the recent platform activity. It reads no setting's value: no connection string, password, key, token, path or ownership token.
+
+### Marketplace moderation
+
+A listing has two independent states, held in two places:
+
+| Who | State | Where |
+| --- | --- | --- |
+| the business | `draft`, `hidden` or `published` | `marketplace_listings.status` (unchanged) |
+| the platform | `allowed` (the default) or `suspended`, with an optional internal reason | `platform_listing_moderation` |
+
+A listing is **public only when both agree**: the business has it `published` and the platform has not `suspended` it. `app_public_listing(slug)` (replaced in migration `0023`; the existing semantics are unchanged and it stays the same public function) returns nothing for a suspended listing, the same "unavailable" as an unpublished one or an address that does not exist, and it adds nothing to what a published listing returned (no reason, no state). Consequently: published and allowed is available; published and suspended is not; unpublished and allowed is not; **allowing again restores a listing only if the business still has it published**; and suspending changes **nothing the business wrote** (the listing row, its text, its Services and its Site are exactly as they were, so a suspension can always be undone). The business is not told in 19A (below).
+
+Every decision that changes something writes an audit event in the same transaction; deciding what is already true changes and records nothing. Concurrent decisions on one listing are serialised.
+
+**Review moderation: not built, deliberately.** Climvia has no *public* review display: a review is shown to the business that earned it and to nobody else, and no published Site or Marketplace listing renders one. Moderating a review would mean changing a business's own record (hiding or deleting something the business owns and may reply to) with nothing public to protect, and no screen design for it. 19A therefore gives the platform a read-only view and **does not pretend otherwise**; moderation arrives with public reviews (19B/19C).
+
+### The audit trail
+
+`platform_audit_events` records: an administrator granted, an administrator revoked, a listing suspended, a listing allowed again. Each has the action, who (`actor_kind`: `cli` for the two grants and revocations, `platform_admin` with the person's id and address for moderation), the target, an optional reason, a small `metadata` object (never a secret) and the time. It is **immutable**: a row trigger refuses `UPDATE` and `DELETE` and a statement trigger refuses `TRUNCATE`, for every role including the owner, and the runtime role has no privilege on the table at all. A tenant cannot write it, and a business never sees it. (Removing it requires dropping the trigger, which is a schema change that shows in a migration.)
+
+### Empty and zero data
+
+The console works on a database that was only migrated: no organization, user, listing or review, and no administrator. Nothing seeds a platform administrator or any business in production; the development seed does not create one either. A test serves a freshly migrated, unseeded database with a second server and checks every page.
+
+### Tests
+
+`platform-admin-database.spec.ts` (the tables closed to the runtime role, function privileges and shapes, authority for every kind of caller, search escaping, moderation semantics and concurrency, audit immutability), `platform-admin-cli.spec.ts` (the three commands as an operator runs them; signup cannot assign), `platform-admin-routes.spec.ts` (anonymous, every kind of member, forged claims, an administrator with and without a business, revocation, a customer's domain, and that no workspace page, RSC payload or script carries the console), `platform-admin-console.spec.ts` (sign-in, real figures, search and paging, the moderation flow end to end including what the business and the public see, the Server Action replayed by people who must not run it, accessibility, contrast and a phone width), `platform-admin-empty.spec.ts` and `platform-admin-boundary.spec.ts` (the import graph in both directions, the query module naming no table, authority asked first, no impersonation). The existing boundary and inventory specs were updated for the new group.
+
+### What this does not do
+
+- No tenant impersonation, no editing of a business, no account or password management, no billing, no email.
+- **No notification to a business** whose listing is suspended: it sees its listing as published, and cannot tell why it is not public. Telling the business (and an appeal path) belongs with the public Marketplace.
+- **No review moderation** (above), and no moderation of a Site: the Marketplace listing is the only thing the platform can hold back.
+- The console has one role (`super_admin`); there are no narrower platform roles, no two-person approval and no session-length limit beyond Better Auth's.
+- The first administrator needs an operator with the owner's database credential.
+
+### What Phase 19B must change for the public landing
+
+The public landing (`/` → Marketplace → Business signup → Business login) is **not built** in 19A. When it is:
+
+- `/` is the signed-in workspace's Overview today (an anonymous visitor is sent to Log in). It must become a public landing page for visitors, with the workspace Overview moved or branched by session, and the proxy's rules (`PUBLIC_PREFIXES`, `AUTH_PAGES`), the route inventory, the sidebar's "Overview" and every `next=/` redirect updated with it.
+- `/listings` is "not found" today (only `/listings/<address>` exists). A public **Marketplace index** needs a public list function in the family of the seven public functions (and the public-boundary and function-count specs updated), and it **must exclude suspended listings the same way `app_public_listing` does**, or moderation would not hold on the index.
+- "Business signup" and "Business login" are today's `/signup` and `/login`; the landing must link them with their purpose clear, and the separate **platform** sign-in at `/platform-admin/login` stays unlinked from any public or workspace page.
+- Telling a business its listing was suspended, and why it may say so, needs a design (and a tenant-visible field that is not the internal reason).
+- Public reviews, and with them review moderation and the audit actions for it.
+- The listing's SEO surface (`sitemap`, `robots`, structured data) must honour suspension.

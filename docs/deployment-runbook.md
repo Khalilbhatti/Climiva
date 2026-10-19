@@ -113,7 +113,27 @@ The local mode requests nothing from a public certificate authority. Its certifi
 | a browser says the certificate is not trusted | the proxy mode | `mode.local.caddy` (a trial) is in use; a deployment must use `mode.public.caddy` |
 | `The destination stream closed early` in the app log | | a browser or the proxy hung up mid-render (React's cancel). Harmless unless it comes with 5xx responses; see §35 |
 | sign-in is rate-limited for everyone | `AUTH_TRUSTED_PROXIES` | it must list the proxy network (`EDGE_SUBNET`), or every client looks like the proxy |
+| a person who should be a platform administrator sees "not found" at `/platform-admin` | `$C run --rm migrate npm run platform-admin:list` | they were never granted, or were revoked, or signed in with a different account than the one granted (§9) |
 
-## 9. Not covered here (Phase 18C2)
+## 9. The platform console and its first administrator
+
+Climvia's own console is at `/platform-admin` (saas-architecture §36). **A new deployment has no platform administrator**: public signup never makes one, and nothing seeds one. An operator grants the first, **after that person has signed up like anyone else** (the grant refuses an address that has no account and never creates one):
+
+```bash
+C="docker compose -f docker-compose.production.yml --env-file .env.production"
+$C run --rm migrate npm run platform-admin:grant  -- --email <the address they signed up with>
+$C run --rm migrate npm run platform-admin:list                       # who is an administrator now
+$C run --rm migrate npm run platform-admin:revoke -- --email <address>  # takes it away; the account and its businesses stay
+```
+
+Then they sign in at `https://<host>/platform-admin/login` with their ordinary account. Notes:
+
+- Granting is the only way, and needs the **database owner's credential** (`DATABASE_ADMIN_URL`, which the `migrate` service holds and the app does not). It is idempotent, safe to repeat, and each grant and revoke is written to the audit trail (shown on the console's System page) with the operator's machine user name.
+- Revoking takes effect on the person's next request. Keep at least two administrators when you can; if the last is revoked the tool says so, and an operator can grant again the same way.
+- **Platform super administrator is not Organization owner.** Being the owner of a business gives no console access, and an administrator has no access to a business's workspace.
+- Do not put a real address in a script, an env file or a note that is committed. The commands take it on the command line each time.
+- The console is not linked from any page, is `noindex`, and does not exist on a customer's domain.
+
+## 10. Not covered here (Phase 18C2)
 
 Creating the instance, its IAM role and security group, DNS, public certificates, Secrets Manager/SSM, off-instance backup storage and its schedule, log collection and alarms, and CI/CD. A single instance is not highly available: the host, the Docker daemon, the one database and the one proxy are each a single point of failure.

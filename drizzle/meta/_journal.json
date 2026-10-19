@@ -155,6 +155,20 @@
       "when": 1791917816895,
       "tag": "0021_tls_eligibility",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792421392654,
+      "tag": "0022_platform_admin",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792421398918,
+      "tag": "0023_platform_admin_rls",
+      "breakpoints": true
     }
   ]
 }

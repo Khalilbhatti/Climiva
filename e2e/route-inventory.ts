@@ -79,7 +79,9 @@ export const NOT_FOUND_ONLY_PATTERNS = ["/[...unknown]", "/sites", "/listings", 
 
 export function pagePatterns(): { pattern: string; shell: boolean }[] {
   return pageFiles(APP_DIR)
-    .filter((file) => !relative(APP_DIR, file).split(sep).includes("(auth)"))
+    // (auth): covered by auth.spec.ts and onboarding.spec.ts. (platform-admin): Climvia's own console, 404 for every workspace user; it has its own
+    // specs (platform-admin-*.spec.ts) that sign in as an administrator and hold every page to the same standard.
+    .filter((file) => !relative(APP_DIR, file).split(sep).some((part) => part === "(auth)" || part === "(platform-admin)"))
     .map((file) => {
       const parts = relative(APP_DIR, file).split(sep).slice(0, -1);
       const shell = !parts.includes("(public)") && !parts.includes("(preview)");

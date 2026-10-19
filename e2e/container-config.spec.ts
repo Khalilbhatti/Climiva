@@ -138,7 +138,8 @@ test.describe("the image", () => {
     expect(DOCKERFILE).not.toMatch(/^ENV [^\n]*(PASSWORD|SECRET|TOKEN|KEY|DATABASE_URL|DATABASE_ADMIN_URL)/m);
     expect(DOCKERFILE).not.toMatch(/^ARG [^\n]*(PASSWORD|SECRET|TOKEN|KEY)/m);
     expect(DOCKERFILE).not.toMatch(/AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY/);
-    // The tools image gets the migration, status, roles, fingerprint and configuration check, not the seed or any of its data.
+    // The tools image gets the migration, status, roles, fingerprint and configuration check, and the platform-administrator commands (the only way the first
+    // administrator is granted on a real deployment), not the seed or any of its data.
     const toolsCopies = lines(stages.tools).filter((line) => line.startsWith("COPY "));
     expect(toolsCopies.join("\n")).toContain("scripts/db/lib.ts scripts/db/migrate.ts scripts/db/status.ts scripts/db/roles.ts scripts/db/fingerprint.ts");
     expect(toolsCopies.join("\n")).not.toMatch(/seed|reset|prepare-test|reporting/);

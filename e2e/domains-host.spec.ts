@@ -222,7 +222,7 @@ test.describe("a customer's domain shows that business's published site, and onl
 });
 
 test.describe("a customer's domain is a public surface only", () => {
-  const PRIVATE = ["/settings", "/settings/branding", "/analytics", "/customers", "/bookings", "/schedule", "/website", "/website/builder", "/website/preview", "/website/templates", "/website/domain", "/marketplace", "/marketplace/preview", "/team", "/login", "/signup", "/api/auth/get-session", "/api/auth/sign-in/email", "/api/branding", "/sites/apexclimate", "/sites", "/listings/apex-climate-heating-air", "/listings", "/custom-site", "/custom-site/services", "/_next/data/x/index.json", "/robots.txt", "/sitemap.xml"];
+  const PRIVATE = ["/settings", "/settings/branding", "/analytics", "/customers", "/bookings", "/schedule", "/website", "/website/builder", "/website/preview", "/website/templates", "/website/domain", "/marketplace", "/marketplace/preview", "/team", "/platform-admin", "/platform-admin/login", "/platform-admin/organizations", "/login", "/signup", "/api/auth/get-session", "/api/auth/sign-in/email", "/api/branding", "/sites/apexclimate", "/sites", "/listings/apex-climate-heating-air", "/listings", "/custom-site", "/custom-site/services", "/_next/data/x/index.json", "/robots.txt", "/sitemap.xml"];
 
   test("the workspace, the sign-in pages, the Builder, the previews and every API are not there, whoever asks and however", async ({ workerTenant }) => {
     const { host, headline } = await apexHost(workerTenant);

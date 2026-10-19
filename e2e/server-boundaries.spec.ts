@@ -182,7 +182,7 @@ test.describe("every Server Action authorizes its caller", () => {
     // signOutAction only ends the caller's own session: it needs no workspace and is safe when already signed out. submitPublicBookingAction is
     // the visitor's: it has no session by design and is held to its own rules in "a visitor's booking" below.
     const exempt = new Set(["signOutAction", "submitPublicBookingAction"]);
-    const CHECKS = /resolveWorkspace\(|getSessionUser\(|manager\(|authorize\(|requireMember\(/;
+    const CHECKS = /resolveWorkspace\(|getSessionUser\(|manager\(|authorize\(|requireMember\(|requirePlatformAdmin\(/;
     for (const path of actionFiles) {
       const source = read(path);
       const exported = [...source.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)];
@@ -204,7 +204,7 @@ test.describe("every Server Action authorizes its caller", () => {
       for (const [, name, body] of source.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)) {
         const opens = body.search(/withTenant\(|withUser\(/);
         if (opens === -1) continue;
-        const checks = body.search(/resolveWorkspace\(|getSessionUser\(|manager\(|authorize\(|requireMember\(/);
+        const checks = body.search(/resolveWorkspace\(|getSessionUser\(|manager\(|authorize\(|requireMember\(|requirePlatformAdmin\(/);
         expect(checks, `${name} in ${posix(path)} opens a transaction without checking the session`).toBeGreaterThanOrEqual(0);
         expect(checks, `${name} in ${posix(path)} checks the session after it opens a transaction`).toBeLessThan(opens);
       }
@@ -321,7 +321,7 @@ test.describe("every Server Action authorizes its caller", () => {
     const path = join(SRC, "server", "actions", "public-booking.ts");
     const source = read(path).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     // The only action file that does not authorize is this one (the workspace actions resolve the session in their own ways).
-    const anonymous = actionFiles.filter((file) => !/authorize\(|resolveWorkspace\(|getSessionUser\(|requireMember\(/.test(read(file))).map(posix);
+    const anonymous = actionFiles.filter((file) => !/authorize\(|resolveWorkspace\(|getSessionUser\(|requireMember\(|requirePlatformAdmin\(/.test(read(file))).map(posix);
     expect(anonymous).toEqual(["src/server/actions/public-booking.ts"]);
     expect([...source.matchAll(/export async function (\w+)\(/g)].map(([, name]) => name)).toEqual(["submitPublicBookingAction"]);
     // The request is parsed and rate limited before anything is looked up, and the answer is a reference, a status and whether it repeated one.
@@ -569,12 +569,13 @@ test.describe("authentication safeguards stay on", () => {
 test.describe("secrets and deployment files", () => {
   const tracked = () => execFileSync("git", ["ls-files"], { cwd: ROOT, encoding: "utf8" }).split(/\r?\n/).filter(Boolean);
 
-  test("only .env.example is committed; .env files are ignored", () => {
+  test("only the two example files (.env.example, .env.production.example) are committed; .env files are ignored", () => {
     const envFiles = tracked().filter((path) => /(^|\/)\.env(\.|$)/.test(path));
-    expect(envFiles.filter((path) => path !== ".env.example")).toEqual([]);
+    expect(envFiles.filter((path) => path !== ".env.example" && path !== ".env.production.example")).toEqual([]);
     const ignore = read(join(ROOT, ".gitignore"));
     expect(ignore).toMatch(/^\.env\*$/m);
     expect(ignore).toMatch(/^!\.env\.example$/m);
+    expect(ignore).toMatch(/^!\.env\.production\.example$/m);
   });
 
   test(".env.example holds placeholders, not real secrets", () => {

@@ -70,6 +70,8 @@ services:
     image: climvia-tools:${APP_VERSION:-local}
     # Runs once per deploy, applies every migration that is pending and provisions the restricted role, then exits. The app starts only if it succeeded.
     # It is also the way to run the other one-off database commands:  docker compose run --rm migrate npm run db:status
+    # and the way the first platform super administrator is granted (to an account that already exists):
+    #   docker compose run --rm migrate npm run platform-admin:grant -- --email <address>
     command: ["npm", "run", "db:migrate"]
     restart: "no"
     environment:

@@ -99,9 +99,21 @@ The files are runtime data: back the directory up with the database, and `npm ru
 | `npm run db:studio` | opens drizzle-kit Studio |
 | `npm run db:test:prepare` | recreates the separate `climvia_test` database, migrates and seeds it (run for you by `npm run test:e2e`) |
 
+### Platform administrators
+
+Climvia's own console (`/platform-admin`) is for the people who run the platform, not for the businesses on it. **A platform super administrator is not an Organization owner**, and nothing creates one automatically: public signup never does, the seed does not, and no address is written in the code. After a person has signed up like anyone else, an operator grants them access from the command line (it needs the database owner's credential in `DATABASE_ADMIN_URL`):
+
+| Script | Does |
+| --- | --- |
+| `npm run platform-admin:grant -- --email <address>` | makes an **existing** account a platform super administrator (an unknown address is refused; running it again changes nothing) |
+| `npm run platform-admin:revoke -- --email <address>` | takes it away at once; the account and its businesses are untouched |
+| `npm run platform-admin:list` | shows who is an administrator now |
+
+They then sign in at `/platform-admin/login` with their ordinary account. In the container stack the same commands run through the tools image (`docker compose run --rm migrate npm run platform-admin:grant -- --email <address>`). See [docs/saas-architecture.md](docs/saas-architecture.md#36-platform-administration-phase-19a) and [docs/deployment-runbook.md](docs/deployment-runbook.md).
+
 ### Development accounts
 
-All use the `SEED_PASSWORD` from your `.env`.
+All use the `SEED_PASSWORD` from your `.env`. None of them is a platform administrator.
 
 | Email | Workspaces |
 | --- | --- |

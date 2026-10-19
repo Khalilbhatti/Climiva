@@ -37,6 +37,10 @@ const AUTH_PAGES = ["/login", "/signup"];
 /** Where a customer's domain is served from. */
 const CUSTOM_SITE = "/custom-site";
 
+/** The platform console (Climvia's own administration) and its sign-in page. On a customer's domain these are just paths the site does not have. */
+const PLATFORM_ROOT = "/platform-admin";
+const PLATFORM_LOGIN = "/platform-admin/login";
+
 /** A path that ends in a file extension is never a page. */
 const FILE = /\.[a-zA-Z0-9]+$/;
 
@@ -57,6 +61,13 @@ export function proxy(request: NextRequest) {
   if (FILE.test(pathname)) return NextResponse.next();
 
   const hasSession = Boolean(getSessionCookie(request));
+
+  // The platform console has its own sign-in page, and a visitor without a session is sent THERE, not to the workspace's. This is only the early,
+  // cheap redirect: whether a signed-in person is a platform administrator is decided by every console page, layout and action against the database.
+  if (pathname === PLATFORM_LOGIN) return NextResponse.next();
+  if (pathname === PLATFORM_ROOT || pathname.startsWith(`${PLATFORM_ROOT}/`)) {
+    return hasSession ? NextResponse.next() : NextResponse.redirect(new URL(PLATFORM_LOGIN, request.url));
+  }
 
   if (AUTH_PAGES.includes(pathname)) return NextResponse.next();
   if (PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) return NextResponse.next();

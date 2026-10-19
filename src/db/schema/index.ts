@@ -15,3 +15,4 @@ export * from "./marketing";
 export * from "./reporting";
 export * from "./marketplace";
 export * from "./assets";
+export * from "./platform";

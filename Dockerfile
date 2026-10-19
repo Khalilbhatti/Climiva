@@ -28,7 +28,7 @@ COPY . .
 ENV NEXT_OUTPUT=standalone
 RUN npm run build
 
-# ── tools: only what the one-off database commands need (migrate, status, roles, fingerprint, config check) ──────
+# ── tools: only what the one-off database commands need (migrate, status, roles, fingerprint, config check, platform administrators) ──
 # NODE_ENV=production here as well: the demo seed refuses to run under it, and its data (scripts/db/seed-data) is not copied in anyway.
 FROM deps AS tools
 ENV NODE_ENV=production
@@ -38,6 +38,7 @@ COPY src ./src
 COPY scripts/check-config.ts ./scripts/check-config.ts
 COPY scripts/deploy ./scripts/deploy
 COPY scripts/db/lib.ts scripts/db/migrate.ts scripts/db/status.ts scripts/db/roles.ts scripts/db/fingerprint.ts ./scripts/db/
+COPY scripts/platform-admin ./scripts/platform-admin
 USER node
 CMD ["npm", "run", "db:migrate"]
 

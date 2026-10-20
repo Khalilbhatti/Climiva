@@ -22,7 +22,7 @@ import {
   getRecordedPaymentsCount,
 } from "../src/data/financials";
 import { getPublicActiveServices } from "../src/data/services";
-import { getPageStatus, getPrimaryDomain, getShownServices, hasUnpublishedChanges, orderedPages, platformHost, type DomainRecord } from "../src/data/website";
+import { getPageStatus, getPlatformAddress, getPrimaryAddress, getShownServices, hasUnpublishedChanges, orderedPages, type DomainRecord } from "../src/data/website";
 import { DEFAULT_TEMPLATE_KEY } from "../src/db/default-template";
 import { validateTemplateDefinition } from "../src/lib/site-template";
 import { parseNewPlan, planSlug, visitsOf } from "../src/lib/maintenance-rules";
@@ -261,8 +261,9 @@ test.describe("website data", () => {
 test.describe("website state", () => {
   test("the baseline is published, with the Climvia address primary and nothing to publish", () => {
     expect(SITE.published).toBe(true);
-    expect(getPrimaryDomain(SITE.site, SITE.domain)).toBe("apexclimate.climvia.com");
-    expect(platformHost("apexclimate")).toBe("apexclimate.climvia.com");
+    // With no environment a Site is written as a path on whatever origin the visitor is on; with a configured origin, in full. No product domain is in it.
+    expect(getPrimaryAddress(SITE.site, SITE.domain)).toBe("/sites/apexclimate");
+    expect(getPlatformAddress(SITE.site, { ...SITE.domain, addressing: { origin: "https://example.duckdns.org", customScheme: "https" } })).toBe("https://example.duckdns.org/sites/apexclimate");
     expect(orderedPages(SITE.draft).every((page) => getPageStatus(SITE, page.key) === "published")).toBe(true);
     expect(hasUnpublishedChanges(SITE)).toBe(false);
   });
@@ -314,11 +315,13 @@ test.describe("website state", () => {
       lastCheckedAt: null,
       verification: null,
     });
-    expect(getPrimaryDomain(SITE.site, { domains: [], routingTarget: null })).toBe("apexclimate.climvia.com");
-    expect(getPrimaryDomain(SITE.site, { domains: [claim("active", true)], routingTarget: null })).toBe("www.apexclimateair.com");
+    const addressing = { origin: "https://example.duckdns.org", customScheme: "https" } as const;
+    expect(getPrimaryAddress(SITE.site, { domains: [], routingTarget: null, addressing })).toBe("https://example.duckdns.org/sites/apexclimate");
+    expect(getPrimaryAddress(SITE.site, { domains: [claim("active", true)], routingTarget: null, addressing })).toBe("https://www.apexclimateair.com");
+    expect(getPrimaryAddress(SITE.site, { domains: [claim("active", true)], routingTarget: null, addressing: { origin: "http://localhost:3460", customScheme: "http" } })).toBe("http://www.apexclimateair.com");
     // A claim that is not active, or is active without being the main one, does not change the main address.
     for (const other of [claim("pending_verification", false), claim("verified", false), claim("disabled", false), claim("active", false)]) {
-      expect(getPrimaryDomain(SITE.site, { domains: [other], routingTarget: null })).toBe("apexclimate.climvia.com");
+      expect(getPrimaryAddress(SITE.site, { domains: [other], routingTarget: null, addressing })).toBe("https://example.duckdns.org/sites/apexclimate");
     }
     expect(DEFAULT_TEMPLATE_KEY).toBe("climvia-starter");
   });

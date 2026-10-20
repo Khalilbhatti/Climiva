@@ -11,11 +11,12 @@ import { request } from "node:http";
 import { join, resolve } from "node:path";
 import type { Pool } from "pg";
 import { verificationRecordName, verificationRecordValue } from "../src/lib/domain-rules";
-import { PLATFORM_DOMAIN, type HostConfig } from "../src/lib/hostname";
+import type { HostConfig } from "../src/lib/hostname";
 import { fixtureResolver } from "../src/lib/dns-resolver";
 
 /** The platform's names as the test server is configured (playwright.config.ts sets CUSTOM_DOMAIN_TARGET). */
-export const TEST_HOST_CONFIG: HostConfig = { platformDomain: PLATFORM_DOMAIN, appHosts: [], customDomainTarget: "sites.climvia.com" };
+// A deployment that answers on a domain of its own (APP_HOSTS) and has a name for customers to point at; the tests use the product's own as examples.
+export const TEST_HOST_CONFIG: HostConfig = { appHosts: ["climvia.com"], customDomainTarget: "sites.climvia.com" };
 
 /** A name nobody else is using, so parallel workers and repeated runs never collide on the global uniqueness of a hostname. */
 export const uniqueHost = (tag = "site"): string => `${tag}-${randomBytes(4).toString("hex")}.example.test`;

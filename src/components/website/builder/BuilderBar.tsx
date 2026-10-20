@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowLeft, Eye, LayoutTemplate, PanelLeft, PanelRight, Redo2, Rocket, RotateCcw, Save, SquareArrowOutUpRight, Undo2 } from "lucide-react";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { findPage, getPrimaryDomain, hasUnpublishedChanges, pagePath } from "@/data/website";
+import { findPage, getPrimaryAddress, hasUnpublishedChanges, pagePath } from "@/data/website";
 import { cn } from "@/lib/cn";
 import { publicSiteHref } from "@/lib/site-domain";
 import { previewHref } from "../site-links";
@@ -23,7 +23,7 @@ export function BuilderBar() {
   const livePage = page && website.live ? findPage(website.live, page.key) : undefined;
   const nothingToPublish = published && !hasUnpublishedChanges(website);
   const canPublish = !b.readOnly && !b.dirty && !b.stale && !nothingToPublish && !b.publishing;
-  const address = getPrimaryDomain(website.site, website.domain);
+  const address = getPrimaryAddress(website.site, website.domain);
 
   return (
     <div className="border-b border-line bg-surface">

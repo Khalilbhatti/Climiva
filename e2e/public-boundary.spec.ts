@@ -75,6 +75,26 @@ async function fetchAll(origin: string, viewer: Viewer, paths: string[]): Promis
   }
 }
 
+/**
+ * One page, asked of two clients that are to be sent the same one. A Marketplace page carries counts of what every other test is publishing at that moment, so
+ * the reference client is asked just before AND just after the other one; when those two are not the same page the data moved in between and the question is
+ * asked again. When they are, the other client's answer is returned to be compared strictly with the reference's. A real difference between the clients is the
+ * same every time, so it is never explained away, and a page that never holds still throws.
+ */
+async function askedWhenStill(reference: Awaited<ReturnType<typeof client>>, other: Awaited<ReturnType<typeof client>>, path: string): Promise<{ reference: Answer; other: Answer }> {
+  const ask = async (api: Awaited<ReturnType<typeof client>>): Promise<Answer> => {
+    const response = await api.get(path, { maxRedirects: 0 });
+    return { status: response.status(), body: await response.text() };
+  };
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const before = await ask(reference);
+    const answer = await ask(other);
+    const after = await ask(reference);
+    if (before.status === after.status && before.body === after.body) return { reference: before, other: answer };
+  }
+  throw new Error(`${path}: the page never held still long enough to be compared`);
+}
+
 const SERVICE = "annual-cooling-tune-up";
 const APEX_SITE = ["/sites/apexclimate", "/sites/apexclimate/services", "/sites/apexclimate/about", "/sites/apexclimate/contact", "/sites/apexclimate/booking", `/sites/apexclimate/booking/${SERVICE}`];
 const NORTHSTAR_SITE = ["/sites/northstar", "/sites/northstar/services"];
@@ -141,10 +161,21 @@ test.describe("a published Site or listing is the same page for a visitor and fo
   });
 
   test("and they get the very same page: byte for byte what a visitor is sent, for the Site, its booking page, the listing and every not found", async () => {
-    const anonymous = await fetchAll(ORIGIN, "anonymous", everyPublicPath());
-    for (const viewer of SIGNED_IN) {
-      const answers = await fetchAll(ORIGIN, viewer, everyPublicPath());
-      for (const [path, answer] of answers) expect(answer.body === anonymous.get(path)!.body, `${viewer} is sent a different ${path} from a visitor`).toBe(true);
+    const visitor = await client(ORIGIN, "anonymous");
+    try {
+      for (const viewer of SIGNED_IN) {
+        const member = await client(ORIGIN, viewer);
+        try {
+          for (const path of everyPublicPath()) {
+            const { reference, other } = await askedWhenStill(visitor, member, path);
+            expect(other.body === reference.body, `${viewer} is sent a different ${path} from a visitor`).toBe(true);
+          }
+        } finally {
+          await member.dispose();
+        }
+      }
+    } finally {
+      await visitor.dispose();
     }
   });
 
@@ -348,15 +379,24 @@ test.describe("a server whose database role can run the public functions and not
   });
 
   test("every public page serves from it, for a visitor and for everyone signed in, exactly as it does on the normal server", async () => {
-    const normal = await fetchAll(ORIGIN, "anonymous", everyPublicPath());
-    for (const viewer of VIEWERS) {
-      const answers = await fetchAll(probeOrigin, viewer, everyPublicPath());
-      for (const [path, answer] of answers) {
-        expect(answer.status, `${viewer} ${path}`).toBe(normal.get(path)!.status);
-        // The only thing that may differ is the server's own address (a canonical link names the platform's origin, which is each server's BETTER_AUTH_URL).
-        const sent = answer.body.replaceAll(probeOrigin, ORIGIN);
-        expect(sent === normal.get(path)!.body, `${viewer} is sent a different ${path} by the restricted server: ${firstDifference(normal.get(path)!.body, sent)}`).toBe(true);
+    const normalApi = await client(ORIGIN, "anonymous");
+    try {
+      for (const viewer of VIEWERS) {
+        const restrictedApi = await client(probeOrigin, viewer);
+        try {
+          for (const path of everyPublicPath()) {
+            const { reference, other } = await askedWhenStill(normalApi, restrictedApi, path);
+            expect(other.status, `${viewer} ${path}`).toBe(reference.status);
+            // The only thing that may differ is the server's own address (a canonical link names the platform's origin, which is each server's BETTER_AUTH_URL).
+            const sent = other.body.replaceAll(probeOrigin, ORIGIN);
+            expect(sent === reference.body, `${viewer} is sent a different ${path} by the restricted server: ${firstDifference(reference.body, sent)}`).toBe(true);
+          }
+        } finally {
+          await restrictedApi.dispose();
+        }
       }
+    } finally {
+      await normalApi.dispose();
     }
   });
 

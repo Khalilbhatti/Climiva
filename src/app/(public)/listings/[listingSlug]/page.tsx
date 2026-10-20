@@ -4,7 +4,8 @@ import Link from "next/link";
 import { ListingFrame } from "@/components/marketplace/ListingFrame";
 import { ListingView, type ListingViewData } from "@/components/marketplace/ListingView";
 import { PublicHeader } from "@/components/public/PublicHeader";
-import { platformHost } from "@/data/website";
+import { siteAddressing } from "@/lib/domain-config";
+import { platformSiteUrl } from "@/lib/site-domain";
 import { platformOrigin } from "@/lib/domain-config";
 import { discoveryHref, readDiscoveryContext } from "@/lib/marketplace-discovery";
 import { summarizeHours } from "@/lib/settings-state";
@@ -51,7 +52,7 @@ export default async function PublicListingPage({ params, searchParams }: PagePr
     logo: listing.logo,
     hours: summarizeHours(listing.hours, listing.timeFormat),
     services: listing.services,
-    website: listing.siteSlug ? platformHost(listing.siteSlug) : null,
+    website: listing.siteSlug ? platformSiteUrl(listing.siteSlug, siteAddressing()) : null,
     // The actions lead to the business's published website, when it has one.
     site: listing.siteSlug
       ? { base: `/sites/${listing.siteSlug}`, pages: listing.sitePages.map((page) => ({ key: page.key, title: page.title, slug: page.slug, type: page.type })) }

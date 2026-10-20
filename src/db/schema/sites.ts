@@ -17,8 +17,8 @@
  * There is no `organization.website` field anywhere, and no rule that an organization has one Site. Each organization has ONE PRIMARY site
  * (`is_primary`, at most one per organization): the one the Website module edits until a Sites screen exists.
  *
- * A Site's public identity is `platform_slug`: globally unique, lower-case, the same in `/sites/<platform_slug>` and in
- * `<platform_slug>.climvia.com`. Public pages resolve Site -> owning organization on the server; no organization id ever comes from a
+ * A Site's public identity is `platform_slug`: globally unique, lower-case, the last part of its address on the platform, `<origin>/sites/<platform_slug>`
+ * (the origin is the deployment's, from configuration). Public pages resolve Site -> owning organization on the server; no organization id ever comes from a
  * browser. Custom domains are not columns of a Site: they are claims in `site_domains` (below), several per Site, each with its own
  * state, and they never replace the platform address.
  */
@@ -76,7 +76,7 @@ export const sites = pgTable(
     name: text("name").notNull(),
     /** Unique within the organization. */
     slug: text("slug").notNull(),
-    /** The public identity, unique across ALL sites: `/sites/<platform_slug>` and `<platform_slug>.climvia.com`. */
+    /** The public identity, unique across ALL sites: the address `/sites/<platform_slug>` on the platform's origin. */
     platformSlug: text("platform_slug").notNull(),
     /** The organization's primary site: the one the Website module edits. At most one per organization. */
     isPrimary: boolean("is_primary").notNull().default(false),

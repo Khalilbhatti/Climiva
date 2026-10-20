@@ -1,6 +1,6 @@
 "use client";
 
-import { orderedPages, platformHost } from "@/data/website";
+import { getPlatformAddress, orderedPages } from "@/data/website";
 import { getListingServices, type ListingConfig } from "@/data/marketplace";
 import { areaDisplay } from "@/lib/marketplace-discovery";
 import { useServices } from "@/components/services/ServicesProvider";
@@ -30,7 +30,7 @@ export function useListingData(config: ListingConfig): ListingViewData {
     hours,
     services: getListingServices(config, catalog),
     areas: config.areas.map(areaDisplay),
-    website: website ? platformHost(website.site.platformSlug) : null,
+    website: website ? getPlatformAddress(website.site, website.domain) : null,
     site: website
       ? { base: PREVIEW_BASE, pages: orderedPages(website.draft).filter((page) => page.visible).map((page) => ({ key: page.key, title: page.title, slug: page.slug, type: page.type })) }
       : null,

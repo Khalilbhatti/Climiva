@@ -16,7 +16,7 @@
  *
  * Fixtures: none. The approved Apex Climate Heating & Air site is seed data (scripts/db/seed-data/website.ts).
  */
-import { PLATFORM_DOMAIN } from "@/lib/hostname";
+import { customSiteUrl, platformSiteUrl, type SiteAddressing } from "@/lib/site-domain";
 import type { DomainStatus } from "@/lib/domain-rules";
 import type { Props, SectionType } from "@/lib/site-sections";
 import type { SiteTheme } from "@/lib/site-theme";
@@ -80,8 +80,6 @@ export type VersionModel = {
 
 /* ───────────────────────── addresses and domains ───────────────────────── */
 
-/** A Site's platform address: `<platform-slug>.climvia.com` (PLATFORM_DOMAIN, lib/hostname). A custom domain never replaces it. */
-export const platformHost = (platformSlug: string) => `${platformSlug}.${PLATFORM_DOMAIN}`;
 
 /** One custom domain a Site's business has claimed, and how far the claim has got (lib/domain-rules). */
 export type DomainRecord = {
@@ -107,12 +105,14 @@ export type DomainState = {
   domains: DomainRecord[];
   /** Where a customer points their DNS (CUSTOM_DOMAIN_TARGET), or null until production routing is configured. */
   routingTarget: string | null;
+  /** How to write the Site's addresses in full (the platform's configured origin); absent where there is no environment, which writes them as paths. */
+  addressing?: SiteAddressing;
 };
 
 export type SiteIdentity = {
   id: string;
   name: string;
-  /** The public identity of the site: globally unique, the same in `/sites/<platformSlug>` and `<platformSlug>.climvia.com`. */
+  /** The public identity of the site: globally unique, the last part of its address on the platform, `<origin>/sites/<platformSlug>`. */
   platformSlug: string;
 };
 
@@ -130,8 +130,14 @@ export type WebsiteState = {
 /** The Site's main custom domain, if one is active. Active in Climvia says nothing about DNS or certificates (lib/domain-rules ACTIVATION_NOTE). */
 export const primaryDomainOf = (domain: DomainState): DomainRecord | undefined => domain.domains.find((record) => record.isPrimary && record.status === "active");
 
+/** The Site's address on the platform, written in full: `<configured origin>/sites/<slug>`. A custom domain never replaces it. */
+export const getPlatformAddress = (site: SiteIdentity, domain: DomainState) => platformSiteUrl(site.platformSlug, domain.addressing);
+
 /** The address shown as the site's main one: its main active custom domain, or the platform address. */
-export const getPrimaryDomain = (site: SiteIdentity, domain: DomainState) => primaryDomainOf(domain)?.hostname ?? platformHost(site.platformSlug);
+export const getPrimaryAddress = (site: SiteIdentity, domain: DomainState) => {
+  const custom = primaryDomainOf(domain);
+  return custom ? customSiteUrl(custom.hostname, domain.addressing) : getPlatformAddress(site, domain);
+};
 
 /** The site's pages in the order they are shown. */
 export const orderedPages = (version: VersionModel): PageModel[] => [...version.pages].sort((a, b) => a.sortOrder - b.sortOrder);

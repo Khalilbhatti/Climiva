@@ -11,7 +11,7 @@
 #   * Certificates for a customer's domain are requested ON DEMAND, and only after the application answers "yes" to that question: the name must
 #     be an ACTIVE domain of a PUBLISHED site. A name nobody activated gets no certificate and no handshake, so pointing any name at this server
 #     can not make it ask a public certificate authority for one.
-#   * Platform subdomains (<site>.climvia.com) are NOT served here yet: they need a wildcard certificate (DNS validation) and DNS that does not
+#   * Platform subdomains (<site>.<platform-domain>) are NOT served here yet: they need a wildcard certificate (DNS validation) and DNS that does not
 #     exist. The block for them is at the end of this file, commented out.
 #
 # Settings (from the compose file, which reads .env.production): PUBLIC_HOST, ACME_EMAIL, TLS_ASK_TOKEN. How certificates are obtained is chosen
@@ -63,7 +63,8 @@
 
 (access_log) {
 	# Who asked for what and what was answered: no body, and no cookie or credential. A review link's address IS its secret (/review/<secret>), so that
-	# part of the address is not written down, in the request or in a Referer that carries it.
+	# part of the address is not written down: not in the request, not in a Referer that carries it, and not in the two headers the framework's own
+	# navigation sends with the page's address and route (Next-Url, Next-Router-State-Tree), which are of no use in a log.
 	log {
 		output stdout
 		format filter {
@@ -74,6 +75,8 @@
 				resp_headers>Set-Cookie delete
 				request>uri regexp "/review/[A-Za-z0-9_-]+" "/review/REDACTED"
 				request>headers>Referer regexp "/review/[A-Za-z0-9_-]+" "/review/REDACTED"
+				request>headers>Next-Url delete
+				request>headers>Next-Router-State-Tree delete
 			}
 		}
 	}
@@ -119,7 +122,7 @@ http:// {
 }
 
 # ── platform subdomains: NOT served yet. Needs DNS for the platform domain and a wildcard certificate, which are infrastructure (Phase 18C2). ──
-# *.climvia.com {
+# *.<platform-domain> {
 # 	tls {
 # 		dns <provider> ...
 # 	}

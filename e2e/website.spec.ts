@@ -1,6 +1,6 @@
 import type { Page } from "playwright/test";
 import { business } from "../scripts/db/seed-data/apex";
-import { expect, test } from "./fixtures";
+import { expect, siteAddress, test } from "./fixtures";
 import { SERVICES } from "./apex-data";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
@@ -12,7 +12,7 @@ const card = (page: Page, name: string) => page.getByRole("region", { name });
 
 test.describe("Website overview", () => {
   test("Published: header, tabs, status tiles, publishing, address and checklist", async ({ page, workerTenant }) => {
-    const host = `${workerTenant.platformSlug}.climvia.com`;
+    const host = siteAddress(workerTenant.platformSlug);
     await page.goto("/website");
     await expect(page.getByRole("heading", { level: 1, name: "Website" })).toBeVisible();
     await expect(page.getByText("Manage your public website, service pages, booking experience, and domain.")).toBeVisible();
@@ -441,7 +441,7 @@ test.describe("Publishing", () => {
 
     await page.getByRole("button", { name: "Publish website" }).first().click();
     await expect(toast(page)).toContainText("Website published.");
-    await expect(main(page)).toContainText(`Live at ${workerTenant.platformSlug}.climvia.com`);
+    await expect(main(page)).toContainText(`Live at ${siteAddress(workerTenant.platformSlug)}`);
     // And visitors can open it again.
     const open = await page.goto(`/sites/${workerTenant.platformSlug}`);
     expect(open?.status()).toBe(200);
@@ -469,7 +469,7 @@ test.describe("Domain", () => {
     await page.goto("/website/domain");
     await expect(websiteTabs(page).getByRole("link", { name: "Domain" })).toHaveAttribute("aria-current", "page");
     const climvia = card(page, "Website address");
-    await expect(climvia).toContainText(`${workerTenant.platformSlug}.climvia.com`);
+    await expect(climvia).toContainText(siteAddress(workerTenant.platformSlug));
     await expect(climvia).toContainText("Primary website address");
     await expect(climvia).toContainText("cannot be removed");
     await expect(card(page, "Custom domains")).toContainText("No custom domain connected");

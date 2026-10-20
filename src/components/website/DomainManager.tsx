@@ -9,7 +9,7 @@ import { Modal } from "@/components/ui/Modal";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
 import { useCan } from "@/components/workspace/WorkspaceProvider";
-import { getPrimaryDomain, platformHost, primaryDomainOf, type DomainRecord } from "@/data/website";
+import { getPlatformAddress, getPrimaryAddress, primaryDomainOf, type DomainRecord } from "@/data/website";
 import { ACTIVATION_NOTE, DOMAIN_STATUS_LABEL, OWNERSHIP_OUTCOME_TEXT, routingAdvice } from "@/lib/domain-rules";
 import { HOSTNAME_PROBLEM_TEXT, normalizeHostname } from "@/lib/hostname";
 import { publicSiteHref } from "@/lib/site-domain";
@@ -118,7 +118,7 @@ export function DomainManager() {
   const [busy, setBusy] = useState(false);
 
   const { domains, routingTarget } = website.domain;
-  const CLIMVIA_DOMAIN = platformHost(website.site.platformSlug);
+  const CLIMVIA_DOMAIN = getPlatformAddress(website.site, website.domain);
   const view = website.published ? publicSiteHref(website.site.platformSlug) : previewHref();
   const mainCustom = primaryDomainOf(website.domain);
 
@@ -366,7 +366,7 @@ export function DomainManager() {
 
       <p className="flex items-center gap-2 px-1 text-xs text-ink-muted">
         <Globe aria-hidden className="size-3.5" />
-        Current primary address: <span className="font-mono text-ink">{getPrimaryDomain(website.site, website.domain)}</span>
+        Current primary address: <span className="font-mono break-all text-ink">{getPrimaryAddress(website.site, website.domain)}</span>
       </p>
 
       <Modal

@@ -11,8 +11,12 @@
  * `_climvia-verification.<name>` still fits in the 253 characters DNS allows. What is stored and looked up is only this ASCII form.
  */
 
-/** The domain every Site's platform address lives under (`<platform-slug>.climvia.com`), and which nobody else can claim. */
-export const PLATFORM_DOMAIN = "climvia.com";
+/**
+ * The product's own name as a domain. A business may never claim it or anything under it, whatever the deployment: the database refuses it too
+ * (the CHECK `site_domains_hostname_reserved`, migration 0019), so the application can say so in words. It is a reservation and nothing more: no address
+ * is built from it and no request is routed because of it. Where a deployment serves the platform is configuration (lib/domain-config).
+ */
+export const BRAND_DOMAIN = "climvia.com";
 
 /** 253 is the DNS limit; the verification record adds `_climvia-verification.` (22 characters) in front of the name. */
 export const MAX_HOSTNAME_LENGTH = 231;
@@ -117,9 +121,7 @@ export function readRequestHost(header: string | null | undefined): RequestHost 
 
 /** The platform's own names, from the environment (see src/lib/domain-config). */
 export type HostConfig = {
-  /** The domain every platform address lives under (`climvia.com`): it and everything beneath it is the platform's. */
-  platformDomain: string;
-  /** Every other name this application answers on (APP_HOSTS), already normalized. */
+  /** Every name this application answers on (APP_HOSTS and the host of BETTER_AUTH_URL), already normalized; each and everything beneath it is the platform's. */
   appHosts: readonly string[];
   /** The name customers point their DNS at (CUSTOM_DOMAIN_TARGET), already normalized, or null. */
   customDomainTarget: string | null;
@@ -129,7 +131,7 @@ const under = (host: string, base: string) => host === base || host.endsWith(`.$
 
 /** The names that must never be claimed: the platform's own, and the ones the application is served on. */
 export function platformBases(config: HostConfig): string[] {
-  return [config.platformDomain, ...config.appHosts, ...(config.customDomainTarget ? [config.customDomainTarget] : [])];
+  return [...config.appHosts, ...(config.customDomainTarget ? [config.customDomainTarget] : [])];
 }
 
 /** Development and internal names the DATABASE also refuses (see the CHECK on site_domains). */
@@ -140,7 +142,7 @@ export type ReservedReason = "platform" | "internal";
 /** Why a normalized name may not be claimed by a business, or null. Enforced on the server and again by the database. */
 export function reservedReason(hostname: string, config: HostConfig): ReservedReason | null {
   if (INTERNAL.test(hostname)) return "internal";
-  return platformBases(config).some((base) => under(hostname, base)) ? "platform" : null;
+  return [BRAND_DOMAIN, ...platformBases(config)].some((base) => under(hostname, base)) ? "platform" : null;
 }
 
 /**

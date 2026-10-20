@@ -474,7 +474,7 @@ test.describe("a customer's own domain is that customer's website at its root, a
 
   test("a deployment's own name is the platform's however it is spelled, and one name's neighbours are not (a duckdns-style single host)", async () => {
     // The names the platform answers on come from configuration (APP_HOSTS and the host of BETTER_AUTH_URL), so a deployment at a name like
-    // `climvia.duckdns.org` needs no code change: it is the platform, a different name under the same provider is a customer's candidate, and nobody can
+    // `example.duckdns.org` needs no code change: it is the platform, a different name under the same provider is a customer's candidate, and nobody can
     // claim the platform's own. (The rules themselves are held in entry-rules.spec.ts; here the running server answers for the name it is configured with.)
     const platform = await rawRequest(ORIGIN, "/", { host: `localhost:${PORT}` });
     expect(platform.status).toBe(200);

@@ -9,6 +9,21 @@ import { randomBytes } from "node:crypto";
 import type { Pool } from "pg";
 import { makeBusiness, type Business } from "./assets-helpers";
 
+const usedZips = new Set<string>();
+/**
+ * A five-digit ZIP for a test that must be the only provider in its place. Drawn from 10000 to 69999 so it can never be a standing sample business's (Austin
+ * is 787xx, Denver 802xx), and never drawn twice in one worker; another worker draws the same one with a chance of 1 in 60000 per pair.
+ */
+export function uniqueZip(): string {
+  for (;;) {
+    const zip = String(10000 + Math.floor(Math.random() * 60000));
+    if (!usedZips.has(zip)) {
+      usedZips.add(zip);
+      return zip;
+    }
+  }
+}
+
 export type AreaSpec = { city?: string; state?: string; postal?: string; label?: string };
 export type ReviewSpec = { rating: number; text?: string; reviewer?: string; visibility?: "public" | "private"; on?: string };
 

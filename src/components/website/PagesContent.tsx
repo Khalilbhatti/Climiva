@@ -7,7 +7,7 @@ import { useServices } from "@/components/services/ServicesProvider";
 import { ButtonLink } from "@/components/ui/Button";
 import { cardClasses } from "@/components/ui/Card";
 import { formatCityStateZip } from "@/lib/format";
-import { getPageStatus, getPrimaryDomain, getShownServices, orderedPages, pagePath, type PageType } from "@/data/website";
+import { getPageStatus, getPrimaryAddress, getShownServices, orderedPages, pagePath, type PageType } from "@/data/website";
 import { editorHref, previewHref } from "./site-links";
 import { PageStatusBadge } from "./site-ui";
 import { useWebsiteState } from "./WebsiteProvider";
@@ -37,7 +37,7 @@ export function PagesContent() {
               </h2>
               <p className="mt-0.5 text-sm text-ink-muted">
                 {website.published ? "Pages currently available on " : "Pages that will be available on "}
-                <span className="font-mono text-ink">{getPrimaryDomain(website.site, website.domain)}</span>
+                <span className="font-mono break-all text-ink">{getPrimaryAddress(website.site, website.domain)}</span>
               </p>
             </div>
             <span className="shrink-0 rounded-full bg-surface-low px-2.5 py-1 text-xs font-semibold text-ink-muted">{summary}</span>

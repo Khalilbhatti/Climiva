@@ -29,8 +29,8 @@ export function KpiCard({ label, value, icon: Icon, hint, hintDot = false, tone 
       </div>
       <div className={cn("text-3xl font-bold tracking-tight", positive ? "text-positive" : "text-ink")}>{value}</div>
       <div className="mt-2 flex items-center gap-1.5 text-xs text-ink-muted">
-        {hintDot && <span aria-hidden className="inline-block size-1.5 rounded-full bg-positive" />}
-        {hint}
+        {hintDot && <span aria-hidden className="inline-block size-1.5 shrink-0 rounded-full bg-positive" />}
+        <span className="min-w-0 [overflow-wrap:anywhere]">{hint}</span>
       </div>
     </>
   );

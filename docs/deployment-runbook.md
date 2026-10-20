@@ -43,7 +43,7 @@ $C run --rm migrate npm run db:status   # are the database's migrations current?
 $C down                                 # stop and remove containers; volumes stay
 ```
 
-The proxy's access log never records a review link's secret: `/review/<secret>` is written as `/review/REDACTED`, in the request address and in a `Referer` that carries it (`deploy/caddy/Caddyfile`, `(access_log)`). After changing that file, run `$C exec proxy caddy validate --config /etc/caddy/Caddyfile` before restarting the proxy.
+The proxy's access log never records a review link's secret: `/review/<secret>` is written as `/review/REDACTED`, in the request address and in a `Referer` that carries it, and the two headers the framework's navigation sends with the page's address (`Next-Url`, `Next-Router-State-Tree`) are dropped from the log (`deploy/caddy/Caddyfile`, `(access_log)`). After changing that file, run `$C exec proxy caddy validate --config /etc/caddy/Caddyfile` before restarting the proxy.
 
 **Never** `down -v`, `docker volume rm` or `docker system prune --volumes` on a host that holds real data: they delete the database, the uploaded logos and the certificates. No script here does.
 
@@ -64,7 +64,7 @@ Take both at the same time (the dump holds the logos' metadata, not their bytes)
 deploy/scripts/restore-drill.sh [dump]   # restore into <db>_drill beside the real one, compare every table, drop the copy
 ```
 
-It prints `N tables compared, 0 differences` and `restore drill PASSED`, or the tables that differ. The comparison is a row count and an md5 of all rows per table (`npm run db:fingerprint`), so it needs the app quiet for an exact result; sessions and rate limits can differ if people are signing in.
+It prints `N tables and 16 kinds of catalog object compared, 0 differences` and `restore drill PASSED`, or the tables that differ. The comparison is a row count and an md5 of all rows per table (`npm run db:fingerprint`), so it needs the app quiet for an exact result; sessions and rate limits can differ if people are signing in.
 
 ## 5. Restoring (disaster recovery)
 

@@ -31,7 +31,7 @@ import {
   type BookingTabId,
 } from "@/data/operations";
 import { BOOKING_METHOD_LABEL, getServiceById } from "@/data/services";
-import { getPrimaryDomain, orderedPages } from "@/data/website";
+import { getPrimaryAddress, orderedPages } from "@/data/website";
 import { formatLocalDateTime, formatTimeRange, formatWeekdayDate } from "@/lib/dates";
 import { BookingDrawer } from "./BookingDrawer";
 import { CreateBookingModal } from "./CreateBookingModal";
@@ -126,7 +126,7 @@ export function BookingsView() {
 
   async function copyBookingLink() {
     if (!website || !bookingPage) return;
-    const url = `https://${getPrimaryDomain(website.site, website.domain)}/${bookingPage.slug}`;
+    const url = `${getPrimaryAddress(website.site, website.domain)}/${bookingPage.slug}`;
     try {
       await navigator.clipboard.writeText(url);
       toast("Booking link copied to clipboard.");

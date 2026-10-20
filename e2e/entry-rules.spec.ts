@@ -1,5 +1,5 @@
 /**
- * Phase 19C, the rules that need no server: where a login may send someone, which names a deployment answers on (a `climvia.duckdns.org`-style single
+ * Phase 19C, the rules that need no server: where a login may send someone, which names a deployment answers on (a `example.duckdns.org`-style single
  * host included, with no hostname in the code), the structured data a page may carry, the review link's secret, what a customer's review form may send,
  * and what the source says about the landing and the entry module. Pure functions and source reads: no database, no network.
  */
@@ -59,14 +59,14 @@ test.describe("the return address after Log in", () => {
 
 /* ───────────────────────────── a deployment's own names ───────────────────────────── */
 
-test.describe("a deployment at a single host such as climvia.duckdns.org", () => {
-  const env = { BETTER_AUTH_URL: "https://climvia.duckdns.org" };
+test.describe("a deployment at a single host such as example.duckdns.org", () => {
+  const env = { BETTER_AUTH_URL: "https://example.duckdns.org" };
   const config = hostConfig(env);
 
   test("the host of BETTER_AUTH_URL is the platform's own; nothing else is configured and no name is in the code", () => {
-    expect(config.appHosts).toEqual(["climvia.duckdns.org"]);
-    expect(platformOrigin(env)).toBe("https://climvia.duckdns.org");
-    expect(platformOrigin({ BETTER_AUTH_URL: "https://climvia.duckdns.org:8443/" })).toBe("https://climvia.duckdns.org:8443");
+    expect(config.appHosts).toEqual(["example.duckdns.org"]);
+    expect(platformOrigin(env)).toBe("https://example.duckdns.org");
+    expect(platformOrigin({ BETTER_AUTH_URL: "https://example.duckdns.org:8443/" })).toBe("https://example.duckdns.org:8443");
     expect(platformOrigin({})).toBeNull();
     expect(platformOrigin({ BETTER_AUTH_URL: "not a url" })).toBeNull();
     // The name of a free DNS provider is an example in a test and a document, never a decision in the application.
@@ -75,18 +75,20 @@ test.describe("a deployment at a single host such as climvia.duckdns.org", () =>
   });
 
   test("the platform's host serves the platform; a neighbour under the same provider is a customer's candidate, and the platform's own name cannot be claimed", () => {
-    for (const host of ["climvia.duckdns.org", "climvia.duckdns.org:443", "CLIMVIA.DUCKDNS.ORG", "climvia.duckdns.org.", "localhost", "localhost:3460", "127.0.0.1:3460", "[::1]:3460"]) expect(classifyHost(host, config), host).toBe("platform");
-    for (const host of ["other.duckdns.org", "climvia.duckdns.org.evil.example", "xclimvia.duckdns.org", "duckdns.org", "customer.example.com"]) expect(classifyHost(host, config), host).toBe("custom");
-    for (const host of ["", " ", "a..b", "exa mple.com", "http://climvia.duckdns.org", "climvia.duckdns.org/x"]) expect(classifyHost(host, config), host).toBe("refuse");
-    expect(reservedReason("climvia.duckdns.org", config)).toBe("platform");
-    expect(reservedReason("www.climvia.duckdns.org", config)).toBe("platform");
+    for (const host of ["example.duckdns.org", "example.duckdns.org:443", "EXAMPLE.DUCKDNS.ORG", "example.duckdns.org.", "localhost", "localhost:3460", "127.0.0.1:3460", "[::1]:3460"]) expect(classifyHost(host, config), host).toBe("platform");
+    for (const host of ["other.duckdns.org", "example.duckdns.org.evil.example", "xexample.duckdns.org", "duckdns.org", "customer.example.com"]) expect(classifyHost(host, config), host).toBe("custom");
+    for (const host of ["", " ", "a..b", "exa mple.com", "http://example.duckdns.org", "example.duckdns.org/x"]) expect(classifyHost(host, config), host).toBe("refuse");
+    expect(reservedReason("example.duckdns.org", config)).toBe("platform");
+    expect(reservedReason("www.example.duckdns.org", config)).toBe("platform");
     expect(reservedReason("other.duckdns.org", config)).toBeNull();
   });
 
   test("a second name is added by configuration alone (APP_HOSTS), and a different host for the application later changes nothing else", () => {
-    const later = hostConfig({ BETTER_AUTH_URL: "https://app.climvia.example", APP_HOSTS: "climvia.duckdns.org, www.climvia.example" });
-    expect([...later.appHosts].sort()).toEqual(["app.climvia.example", "climvia.duckdns.org", "www.climvia.example"]);
-    for (const host of ["app.climvia.example", "climvia.duckdns.org", "www.climvia.example", "anything.climvia.com"]) expect(classifyHost(host, later), host).toBe("platform");
+    const later = hostConfig({ BETTER_AUTH_URL: "https://app.climvia.example", APP_HOSTS: "example.duckdns.org, www.climvia.example" });
+    expect([...later.appHosts].sort()).toEqual(["app.climvia.example", "example.duckdns.org", "www.climvia.example"]);
+    for (const host of ["app.climvia.example", "example.duckdns.org", "www.climvia.example"]) expect(classifyHost(host, later), host).toBe("platform");
+    // The product's own domain is not assumed to be the deployment's: a name under it is a customer's candidate (and then nothing) unless it is listed.
+    expect(classifyHost("anything.climvia.com", later)).toBe("custom");
     expect(classifyHost("customer.example.com", later)).toBe("custom");
   });
 
@@ -96,26 +98,26 @@ test.describe("a deployment at a single host such as climvia.duckdns.org", () =>
       NODE_ENV: "production",
       DATABASE_URL: "postgres://climvia_app:Zk3pQ9vLw2XnR7sTb4Yc@db:5432/climvia",
       BETTER_AUTH_SECRET: "k9Fh2Lw7QxPz4VnR8sTb3YcJd6MeUa1G",
-      BETTER_AUTH_URL: "https://climvia.duckdns.org",
+      BETTER_AUTH_URL: "https://example.duckdns.org",
       AUTH_TRUSTED_PROXIES: "172.30.0.0/24",
-      CUSTOM_DOMAIN_TARGET: "sites.climvia.duckdns.org",
+      CUSTOM_DOMAIN_TARGET: "sites.example.duckdns.org",
       TLS_ASK_TOKEN: "Qm7Vx2Lp9Rk4Zt6Wc1Hb8NsDf3Ya5JgE",
       ASSET_STORAGE_DRIVER: "local",
       ASSET_LOCAL_DIR: "/data/assets",
     };
     expect(productionConfigProblems(good)).toEqual([]);
     // It cannot be the application's own address, and an address with a path or no https is not an origin.
-    expect(productionConfigProblems({ ...good, CUSTOM_DOMAIN_TARGET: "climvia.duckdns.org" }).some((problem) => problem.startsWith("CUSTOM_DOMAIN_TARGET"))).toBe(true);
-    expect(productionConfigProblems({ ...good, BETTER_AUTH_URL: "http://climvia.duckdns.org" }).some((problem) => problem.startsWith("BETTER_AUTH_URL"))).toBe(true);
-    expect(productionConfigProblems({ ...good, BETTER_AUTH_URL: "https://climvia.duckdns.org/app" }).some((problem) => problem.startsWith("BETTER_AUTH_URL"))).toBe(true);
+    expect(productionConfigProblems({ ...good, CUSTOM_DOMAIN_TARGET: "example.duckdns.org" }).some((problem) => problem.startsWith("CUSTOM_DOMAIN_TARGET"))).toBe(true);
+    expect(productionConfigProblems({ ...good, BETTER_AUTH_URL: "http://example.duckdns.org" }).some((problem) => problem.startsWith("BETTER_AUTH_URL"))).toBe(true);
+    expect(productionConfigProblems({ ...good, BETTER_AUTH_URL: "https://example.duckdns.org/app" }).some((problem) => problem.startsWith("BETTER_AUTH_URL"))).toBe(true);
   });
 
   test("a review link is built from that configured address, never from the request that asks for it", () => {
     const token = newReviewToken();
     const before = process.env.BETTER_AUTH_URL;
     try {
-      process.env.BETTER_AUTH_URL = "https://climvia.duckdns.org";
-      expect(reviewLinkUrl(token)).toBe(`https://climvia.duckdns.org/review/${token}`);
+      process.env.BETTER_AUTH_URL = "https://example.duckdns.org";
+      expect(reviewLinkUrl(token)).toBe(`https://example.duckdns.org/review/${token}`);
       delete process.env.BETTER_AUTH_URL;
       expect(reviewLinkUrl(token)).toBe(`/review/${token}`);
     } finally {
@@ -130,8 +132,8 @@ test.describe("a deployment at a single host such as climvia.duckdns.org", () =>
 test.describe("structured data says only what is true and public", () => {
   test("the landing names Climvia and its search, from the configured origin, and nothing without one", () => {
     expect(landingStructuredData(null)).toBeNull();
-    const data = landingStructuredData("https://climvia.duckdns.org");
-    expect(JSON.stringify(data)).toContain("https://climvia.duckdns.org/marketplace?q={search_term_string}");
+    const data = landingStructuredData("https://example.duckdns.org");
+    expect(JSON.stringify(data)).toContain("https://example.duckdns.org/marketplace?q={search_term_string}");
     expect(JSON.stringify(data)).not.toMatch(/aggregateRating|review|price|telephone|address|openingHours/i);
   });
 

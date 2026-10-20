@@ -93,7 +93,7 @@ test.describe("the sample business belongs to Apex alone", () => {
   test("Taylor's Website and Marketplace are Northstar's own: its address, its listing, none of Apex's", async ({ openAs }) => {
     const { page, problems } = await openAs("taylor");
     for (const [path, name, shown] of [
-      ["/website", "Website", "northstar.climvia.com"],
+      ["/website", "Website", `${ORIGIN}/sites/northstar`],
       ["/marketplace-listing", "Marketplace", NORTHSTAR.name],
     ] as const) {
       await page.goto(path);

@@ -32,7 +32,7 @@ const normalize = (input: unknown) => {
   return result.ok ? result.hostname : `rejected:${result.problem}`;
 };
 
-const CONFIG: HostConfig = { platformDomain: "climvia.com", appHosts: ["app.example.io"], customDomainTarget: "sites.example.io" };
+const CONFIG: HostConfig = { appHosts: ["climvia.com", "app.example.io"], customDomainTarget: "sites.example.io" };
 
 test.describe("one normalizer for every hostname", () => {
   test("upper case, a trailing dot and surrounding space are normalized to one spelling", () => {
@@ -155,8 +155,9 @@ test.describe("reading and classifying a request's Host", () => {
 
   test("the environment supplies the configuration: APP_HOSTS, the host of BETTER_AUTH_URL and the routing target", () => {
     const config = hostConfig({ APP_HOSTS: "App.Example.io, staging.example.io ,not a host, ,single", BETTER_AUTH_URL: "https://app.example.org:8443", CUSTOM_DOMAIN_TARGET: "Sites.Example.io" });
-    expect(config).toEqual({ platformDomain: "climvia.com", appHosts: ["app.example.io", "staging.example.io", "app.example.org"], customDomainTarget: "sites.example.io" });
-    expect(hostConfig({})).toEqual({ platformDomain: "climvia.com", appHosts: [], customDomainTarget: null });
+    expect(config).toEqual({ appHosts: ["app.example.io", "staging.example.io", "app.example.org"], customDomainTarget: "sites.example.io" });
+    // No product domain is assumed: nothing is the platform's but what the deployment names.
+    expect(hostConfig({})).toEqual({ appHosts: [], customDomainTarget: null });
     expect(hostConfig({ BETTER_AUTH_URL: "not a url" }).appHosts).toEqual([]);
     expect(canonicalScheme({})).toBe("https");
     expect(canonicalScheme({ CUSTOM_DOMAIN_URL_SCHEME: "http" })).toBe("http");

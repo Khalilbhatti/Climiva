@@ -30,6 +30,7 @@ import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { hasUnpublishedChanges, type PageModel, type PageType, type SectionModel, type VersionModel, type VersionSettings, type WebsiteState } from "@/data/website";
 import { refuse } from "@/lib/refusal";
 import { problemFields } from "@/lib/site-builder-fields";
+import type { SiteAddressing } from "@/lib/site-domain";
 import { PAGE_RULES, STALE_DRAFT } from "@/lib/site-builder-rules";
 import { isSectionType, readProps } from "@/lib/site-sections";
 import { validateContent, validateTemplateDefinition, type ContentPage, type SiteContent } from "@/lib/site-template";
@@ -137,11 +138,14 @@ async function loadVersionModels(tx: Tx, organizationId: string, siteId: string,
   );
 }
 
+/** What a caller says about a Site's domains: whether it may see verification records, where customers point their DNS, and how addresses are written in full. */
+export type DomainView = { reveal: boolean; routingTarget: string | null; addressing?: SiteAddressing };
+
 /**
  * What the Website module holds for one site: its Draft and, while it is published, the Published snapshot visitors see. Null when the
  * site has no Draft yet (a site made before this phase, or one the business has not created a website for).
  */
-export async function loadWebsiteState(tx: Tx, organizationId: string, site: SiteRow, domains: { reveal: boolean; routingTarget: string | null }): Promise<WebsiteState | null> {
+export async function loadWebsiteState(tx: Tx, organizationId: string, site: SiteRow, domains: DomainView): Promise<WebsiteState | null> {
   const versions = await tx
     .select()
     .from(siteVersions)
@@ -151,7 +155,7 @@ export async function loadWebsiteState(tx: Tx, organizationId: string, site: Sit
   const live = site.publishedVersionId ? versions.find((version) => version.id === site.publishedVersionId) : undefined;
   const [[draftModel, liveModel], domain] = await Promise.all([
     loadVersionModels(tx, organizationId, site.id, live ? [draft, live] : [draft]),
-    loadDomainState(tx, organizationId, site.id, domains.reveal, domains.routingTarget),
+    loadDomainState(tx, organizationId, site.id, domains.reveal, domains.routingTarget, domains.addressing),
   ]);
   return {
     site: { id: site.id, name: site.name, platformSlug: site.platformSlug },
@@ -163,7 +167,7 @@ export async function loadWebsiteState(tx: Tx, organizationId: string, site: Sit
 }
 
 /** The primary site's website state, or null (no primary site, or no Draft yet). */
-export async function loadPrimaryWebsite(tx: Tx, organizationId: string, domains: { reveal: boolean; routingTarget: string | null }): Promise<WebsiteState | null> {
+export async function loadPrimaryWebsite(tx: Tx, organizationId: string, domains: DomainView): Promise<WebsiteState | null> {
   const site = await findPrimarySite(tx, organizationId);
   return site ? loadWebsiteState(tx, organizationId, site, domains) : null;
 }

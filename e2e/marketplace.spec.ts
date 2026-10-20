@@ -1,6 +1,7 @@
 import type { Page } from "playwright/test";
 import { business } from "../scripts/db/seed-data/apex";
 import { insertActiveClaim, uniqueHost } from "./domain-helpers";
+import { siteAddress } from "./fixtures";
 import { expect, test } from "./saas";
 import { SERVICES } from "./apex-data";
 
@@ -70,7 +71,7 @@ test.describe("Marketplace listing", () => {
     await expect(card).toContainText(business.phone);
     await expect(card).toContainText(business.email);
     await expect(card).toContainText("4820 East Riverside Dr, Suite 110, Austin, TX 78741");
-    await expect(card).toContainText(`${workerTenant.platformSlug}.climvia.com`);
+    await expect(card).toContainText(siteAddress(workerTenant.platformSlug));
     await expect(card).toContainText("Information shown here is connected to your primary Business Settings.");
 
     const listing = preview(page);
@@ -425,9 +426,9 @@ test.describe("Directory preview", () => {
     const host = uniqueHost("listing");
     await insertActiveClaim(db, workerTenant.organizationId, host);
     await page.goto("/marketplace-listing");
-    await expect(page.getByRole("region", { name: "Business information" })).toContainText(`${workerTenant.platformSlug}.climvia.com`);
+    await expect(page.getByRole("region", { name: "Business information" })).toContainText(siteAddress(workerTenant.platformSlug));
     await expect(page.getByRole("region", { name: "Business information" })).not.toContainText(host);
-    await expect(preview(page)).toContainText(`${workerTenant.platformSlug}.climvia.com`);
+    await expect(preview(page)).toContainText(siteAddress(workerTenant.platformSlug));
   });
 });
 

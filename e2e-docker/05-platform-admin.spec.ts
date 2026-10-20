@@ -11,6 +11,7 @@
  *
  * It signs its own person up, so it can run after 02 (when a business exists) or on its own on a new database.
  */
+import { readFileSync } from "node:fs";
 import { expect, test, type BrowserContext, type Page } from "playwright/test";
 import { completeOnboarding, PASSWORD, signUp, waitsForHydration } from "../e2e/saas";
 import { compose, composeResult, get, one, sql, stack } from "./stack";
@@ -34,6 +35,10 @@ test.afterAll(async () => {
 
 test("a new deployment has no platform administrator, and the tables are closed to the application's own role", async () => {
   expect(Number(one("select count(*) from platform_admins"))).toBe(0);
+  // The first person ever to sign up (the owner of the first business) was made no administrator by being first.
+  const first = JSON.parse(readFileSync(".data/docker-state.json", "utf8")) as { email: string };
+  expect(Number(one(`select count(*) from auth_user where email = '${first.email}'`))).toBe(1);
+  expect(Number(one(`select count(*) from platform_admins a join auth_user u on u.id = a.user_id where u.email = '${first.email}'`))).toBe(0);
   expect(Number(one("select count(*) from platform_audit_events"))).toBe(0);
   expect(Number(one("select count(*) from platform_listing_moderation"))).toBe(0);
   // Asked from inside the real application container, with its own connection: the restricted role has no privilege on the three tables, and the

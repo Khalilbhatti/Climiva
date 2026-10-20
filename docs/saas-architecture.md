@@ -1025,7 +1025,7 @@ Onboarding creates the first Site in the same transaction as the organization: `
 
 ### Public identity: the platform address
 
-A Site's public identity is `platform_slug`: globally unique, lower-case words joined by hyphens, at most 63 characters, never a name the platform keeps for itself (`www`, `app`, `api`, `admin`, `login`, `sites`, `listings`, `climvia` … : `RESERVED_PLATFORM_SLUGS`), checked by the database. It is the same string in `/sites/<platform_slug>` (where it is served today) and in `<platform_slug>.climvia.com` (what the workspace shows as the Site's address; **nothing resolves that host yet**, §20). It is **collision-safe and not taken from the business's name as typed**: the first Site of a new business starts from the organization's own address (itself unique and numbered when two businesses share a name), a second business that already has it (or a reserved name) gets `-2`, `-3` …, and a Site made without one gets the organization's address plus six random characters from a database trigger. Two businesses with the same name get two different public addresses (tested).
+A Site's public identity is `platform_slug`: globally unique, lower-case words joined by hyphens, at most 63 characters, never a name the platform keeps for itself (`www`, `app`, `api`, `admin`, `login`, `sites`, `listings`, `climvia` … : `RESERVED_PLATFORM_SLUGS`), checked by the database. It is the last part of the Site's address on the platform, `<origin>/sites/<platform_slug>`, where the origin is the deployment's own (from `BETTER_AUTH_URL`; §39): that is where the Site is served and what the workspace shows as its address. It is **collision-safe and not taken from the business's name as typed**: the first Site of a new business starts from the organization's own address (itself unique and numbered when two businesses share a name), a second business that already has it (or a reserved name) gets `-2`, `-3` …, and a Site made without one gets the organization's address plus six random characters from a database trigger. Two businesses with the same name get two different public addresses (tested).
 
 ### The Template model
 
@@ -1633,7 +1633,7 @@ After verification the Domain Manager says where to point DNS: a subdomain gets 
 ### Resolving a request by its Host
 
 1. **The proxy** (`src/proxy.ts`, which Next.js 16 runs on Node) looks at the `Host` header first, and only that header. `Forwarded`, `X-Forwarded-Host` and the like are sent by whoever makes the request, so they choose nothing; a trusted-proxy setting would have to be introduced and documented in Phase 18C before any of them is honoured (a spec scans the source for it).
-2. `classifyHost` (`lib/hostname`) makes it **platform** (the `climvia.com` domain and beneath, `APP_HOSTS`, the host of `BETTER_AUTH_URL`, `CUSTOM_DOMAIN_TARGET`, every IP address and every one-label name such as `localhost` or a container's service name), **custom** (any other multi-label name) or **refuse** (not a usable Host). Platform requests continue through the existing rules unchanged. Any deployment must therefore list every name it answers on in `APP_HOSTS` or those requests get a plain "not found".
+2. `classifyHost` (`lib/hostname`) makes it **platform** (the names in `APP_HOSTS` and the host of `BETTER_AUTH_URL`, each with everything beneath it, `CUSTOM_DOMAIN_TARGET`, every IP address and every one-label name such as `localhost` or a container's service name), **custom** (any other multi-label name) or **refuse** (not a usable Host). Platform requests continue through the existing rules unchanged. Any deployment must therefore list every name it answers on in `APP_HOSTS` or those requests get a plain "not found".
 3. A **custom** request is rewritten (the browser's address does not change) to the internal route `src/app/(public)/custom-site/[[...slug]]`, before any session logic: on a customer's name the sign-in pages, the workspace, the Builder, the previews and every API do not exist (`/settings`, `/login` and `/api/branding` there are only pages the site does not have). The one path passed through is `/assets/<id>`, the public logo, which asks the database for itself and ignores the host. Every other path, file paths included, takes the rewrite.
 4. The route asks `getRequestSite()` (`server/request-host`), which makes one call to the public SQL function **`app_public_domain(hostname)`**: SECURITY DEFINER, executable by the runtime role and nobody else, returning only the Site's public identity (`platformSlug`) and the name its pages should call themselves (`canonicalHost`), and only for an **active** claim of a **published** Site. No token, id, organization, status, other claim or Draft is returned. The route then renders the page through the **same** `PublicSiteRoute` and `getPublicSite` as `/sites/<slug>`, with links at the root of the host (`base` is empty). An unknown name, a pending/verified/disabled/removed claim, a private Site or a hidden page is the same plain "not found"; **nothing ever falls back to a sample or standing business**. The request's session is never read; a signed-in person gets the same bytes as a stranger. Pages are dynamic and uncached, so one name can not be given another's content.
 5. **Booking** on a customer's name derives the Site from the Host: the Server Action ignores the `siteSlug` the browser sends there and resolves the active domain, so a form posted to one business's name can only book that business's Services (a Service of another business is refused, a forged organization is ignored, a repeat finds the first booking). The platform route's behaviour is unchanged. Both entry paths end in the same `app_public_create_booking`, which finds the organization from the Site again.
@@ -1657,7 +1657,7 @@ The application supplies **verified, active hostnames** and **safe Host → Site
 
 ### What this does not do
 
-Real internet DNS and TLS are not exercised (the DNS client is tested against the fixture and a never-answering address only). `<slug>.climvia.com` is still not a routed hostname (platform requests to it are the platform's). The Marketplace listing's "View website" still leads to the platform path. Docker, AWS, Route 53, CloudFront and certificates are untouched.
+Real internet DNS and TLS are not exercised (the DNS client is tested against the fixture and a never-answering address only). A Site is shown at `<origin>/sites/<slug>` (§39); no `<slug>.<domain>` hostname is routed. The Marketplace listing's "View website" still leads to the platform path. Docker, AWS, Route 53, CloudFront and certificates are untouched.
 
 ## 35. The production container runtime (Phase 18C1)
 
@@ -1706,7 +1706,7 @@ The application tells a customer's domain from the platform's own names by the r
 
 Other proxy rules: `/internal` is answered 404 on every name, case-insensitively and for encoded and doubled slashes; request bodies above 8 MB (the logo limit is 5 MB) are refused by the proxy; header, body, write and idle timeouts are set; the access log is JSON on stdout with no body, no `Cookie`, no `Authorization`, no `Set-Cookie` (0 session tokens in the log after the session tests); HSTS and `nosniff` are added only when the application did not set them, and the logo route's own `Content-Security-Policy` reaches the browser unchanged. (Caddy applies the "only if absent" test to a whole `header { }` block, so each default is its own directive: found when HSTS vanished from the logo response.) Plain http is redirected to https; a customer's name is served at the root of its host, never under the platform's `/sites` paths.
 
-Platform subdomains (`<site>.climvia.com`) are **not served**: they need DNS that does not exist and a wildcard certificate (DNS validation). The block is in the Caddyfile commented out. A name *beneath* the application's own host is the platform's by design (nobody may claim it), so it is never given a certificate on demand either.
+Platform subdomains (`<site>.<platform-domain>`) are **not served**: they need DNS that does not exist and a wildcard certificate (DNS validation). The block is in the Caddyfile commented out. A name *beneath* the application's own host is the platform's by design (nobody may claim it), so it is never given a certificate on demand either.
 
 ### On-demand TLS authorization
 
@@ -1988,7 +1988,7 @@ Phase 19C needs: (1) the **public landing** (`/` for visitors, with the workspac
 
 ## 38. Public entry, review collection and suspension resolution (Phase 19C)
 
-Phase 19C makes the first-run journey real. A visitor who opens the platform's address now sees **Climvia's own landing page**, not a sign-in screen or somebody's workspace; a business can find its way from there to the Marketplace or to a workspace of its own; a customer can write a review through a link a business gives them, and **only the customer's own consent makes it public**; the platform can hide and restore a public review; and a business whose listing was suspended can learn what Climvia chose to tell it and ask for a second look. It adds no second architecture: the entry page is one more route group, the review link and the suspension request are two more groups of narrow `SECURITY DEFINER` functions, and the single review predicate of §37 gains the one condition review moderation needed. This section says what `/` does for each kind of person, how a business is created and what it finds, how the public pages learn who is looking, how a review is collected, consented to and moderated, how a suspension is resolved, what a search engine is told, how a deployment at a single host such as `climvia.duckdns.org` is configured without a hostname in the code, how a customer's own domain stays isolated, and what Phase 19D must still do.
+Phase 19C makes the first-run journey real. A visitor who opens the platform's address now sees **Climvia's own landing page**, not a sign-in screen or somebody's workspace; a business can find its way from there to the Marketplace or to a workspace of its own; a customer can write a review through a link a business gives them, and **only the customer's own consent makes it public**; the platform can hide and restore a public review; and a business whose listing was suspended can learn what Climvia chose to tell it and ask for a second look. It adds no second architecture: the entry page is one more route group, the review link and the suspension request are two more groups of narrow `SECURITY DEFINER` functions, and the single review predicate of §37 gains the one condition review moderation needed. This section says what `/` does for each kind of person, how a business is created and what it finds, how the public pages learn who is looking, how a review is collected, consented to and moderated, how a suspension is resolved, what a search engine is told, how a deployment at a single host such as `example.duckdns.org` is configured without a hostname in the code, how a customer's own domain stays isolated, and what Phase 19D must still do.
 
 ### The root route
 
@@ -2060,9 +2060,9 @@ The landing is **indexable** (title `Climvia · Find HVAC service. Run the busin
 
 ### A single host, and the names the platform answers on
 
-Nothing in the application names a deployment's hostname (a spec fails if a free DNS provider's name appears in `src`). **The platform's own names are configuration**: the host of `BETTER_AUTH_URL` and the optional `APP_HOSTS`, plus `climvia.com` for the platform's site addresses. To deploy at `https://climvia.duckdns.org` set `BETTER_AUTH_URL=https://climvia.duckdns.org`, give `CUSTOM_DOMAIN_TARGET` a *different* name (for example `sites.climvia.duckdns.org`, which is never claimable because it sits under the platform's own name) and the other settings of §35: the landing, the Marketplace, sign-up and Log in then all work under that one host (`/`, `/marketplace`, `/signup`, `/login`, `/overview`), with no wildcard name needed. Businesses' websites stay at `/sites/<address>` and profiles at `/listings/<address>`. `classifyHost` calls the configured host (and `localhost`) the platform's, any other multi-label name a customer's candidate, and refuses a claim on the platform's own name or anything under it; a spec runs those rules with a `duckdns.org` configuration. The seams for a later `app.<domain>`, `<site>.<domain>` and customer domains are untouched: adding a name is adding it to `APP_HOSTS`. **Not deployed, and nothing about AWS was done in this phase.**
+Nothing in the application names a deployment's hostname (a spec fails if a free DNS provider's name appears in `src`). **The platform's own names are configuration**: the host of `BETTER_AUTH_URL` and the optional `APP_HOSTS`, and nothing else (Phase 19D removed the last assumption of a product domain; §39). To deploy at `https://example.duckdns.org` set `BETTER_AUTH_URL=https://example.duckdns.org`, give `CUSTOM_DOMAIN_TARGET` a *different* name (for example `sites.example.duckdns.org`, which is never claimable because it sits under the platform's own name) and the other settings of §35: the landing, the Marketplace, sign-up and Log in then all work under that one host (`/`, `/marketplace`, `/signup`, `/login`, `/overview`), with no wildcard name needed. Businesses' websites stay at `/sites/<address>` and profiles at `/listings/<address>`. `classifyHost` calls the configured host (and `localhost`) the platform's, any other multi-label name a customer's candidate, and refuses a claim on the platform's own name or anything under it; a spec runs those rules with a `duckdns.org` configuration. The seams for a later `app.<domain>`, `<site>.<domain>` and customer domains are untouched: adding a name is adding it to `APP_HOSTS`. **Not deployed, and nothing about AWS was done in this phase.**
 
-The Website screens still **display** a site's aspirational address as `<address>.climvia.com` (`PLATFORM_DOMAIN`, §34); on a single-host deployment the working address is the `/sites/<address>` link next to it. Making the displayed address configuration-driven is a Phase 19D item.
+*Update (Phase 19D).* The Website screens no longer display `<address>.climvia.com`: a Site's address is written from the same configuration, `<origin>/sites/<address>` (§39).
 
 ### Tests
 
@@ -2072,4 +2072,106 @@ New: `entry-rules.spec.ts` (return addresses, the host rules with a single-host 
 
 Not built: email or SMS (a business is not emailed its review link, a customer is not reminded, a business is not told of a suspension or its answer), consumer accounts, a customer editing or withdrawing a review, a business replying publicly through the Marketplace, review verification of any kind, a ticket system for appeals (one request and one answer, on purpose), impersonation, and any AWS or DNS work.
 
-Phase 19D needs: (1) **delivery**: sending the review link by the channel the request names (an email and SMS provider, with consent, bounce and unsubscribe handling, which is the real reason a link stays valid for 30 days), and notifying a business of a suspension and its answer; (2) the **AWS deployment** and DNS for the platform's own name (still deferred), after which the displayed address of a business's website should come from configuration (`PLATFORM_DOMAIN`); (3) a decision on **review disputes** by businesses (the platform hides reviews today; a business cannot ask for one to be looked at) and on the sitemap's size beyond 5,000 profiles; (4) an operational view of the review-request backlog if the volume warrants it.
+Phase 19D needs: (1) **delivery**: sending the review link by the channel the request names (an email and SMS provider, with consent, bounce and unsubscribe handling, which is the real reason a link stays valid for 30 days), and notifying a business of a suspension and its answer; (2) the **AWS deployment** and DNS for the platform's own name (still deferred; a Site's displayed address already follows `BETTER_AUTH_URL`, §39); (3) a decision on **review disputes** by businesses (the platform hides reviews today; a business cannot ask for one to be looked at) and on the sitemap's size beyond 5,000 profiles; (4) an operational view of the review-request backlog if the volume warrants it.
+
+## 39. Release qualification (Phase 19D)
+
+Phase 19D adds no product feature. It closes the local launch blockers that Phases 18 and 19 left, and it proves the result on the production-shaped stack, so that the build in this repository can be taken to a host later without a change to the source. This section says what changed, what the initial deployment looks like, how each claim was proved, and what is still a deployment task or a known limit.
+
+### A Site's address belongs to the deployment
+
+Before this phase the Website, Pages, Domain and Overview screens, the Business information card, the Marketplace listing and the copied booking link wrote a Site's address as `<slug>.climvia.com`: a name that nothing routed and that the product does not own. Now every one of them writes it from the deployment's configuration, in one place:
+
+- **`<origin>/sites/<slug>`**, where the origin is the scheme, host and port of `BETTER_AUTH_URL` (`siteAddressing()` in `lib/domain-config`, `platformSiteUrl()` in `lib/site-domain`). On a deployment at `https://<name>.duckdns.org` a Site is at `https://<name>.duckdns.org/sites/<slug>`; on the test server it is `http://localhost:3460/sites/<slug>`. With no usable origin it is the path alone, never an invented host.
+- A Site with an **active, primary custom domain** shows that instead (`<CUSTOM_DOMAIN_URL_SCHEME>://<hostname>`), as before; the platform address stays beside it and is never replaced.
+- The state sent to the browser carries the addressing (`DomainState.addressing`, set by the one server function that loads a business's website), so a client component never reads the environment and never guesses.
+- The booking link the Bookings screen copies is the Site's address plus its Booking page, and it opens that page.
+
+**No product domain is assumed anywhere.** `PLATFORM_DOMAIN` and `platformHost()` are gone, and `HostConfig` no longer has a platform domain: the platform is **exactly the names a deployment lists** (`APP_HOSTS` and the host of `BETTER_AUTH_URL`, each with everything beneath it, and `CUSTOM_DOMAIN_TARGET`), plus `localhost`, IP addresses and one-label names. A name under the product's own domain is a customer's candidate, and then nothing, unless the deployment lists it. The one remaining mention is `BRAND_DOMAIN = "climvia.com"` in `lib/hostname`: a **reservation** (a business may not claim it or anything under it), which the database also enforces with the CHECK `site_domains_hostname_reserved` (migration 0019, mirrored in `db/schema/sites.ts`, which cannot change without a migration). No address is built from it and no request is routed because of it. `release-rules.spec.ts` fails if `climvia.com` appears anywhere that ships other than those two places, if a module joins a slug to a domain, or if a hostname of a free DNS provider appears in the source or in the example configuration.
+
+**A purchased domain later is configuration plus one piece of routing.** Adding the domain to `APP_HOSTS` makes it and everything beneath it the platform's and reserved. Serving `<slug>.<domain>` would additionally need a host-to-Site route and a wildcard certificate; it is not built, and `siteAddressing`/`getPrimaryAddress` are the one place the displayed form would change.
+
+### The initial deployment shape
+
+One platform hostname, path-first. For an origin of `https://<name>.duckdns.org`:
+
+| What | Address |
+| --- | --- |
+| Climvia's public landing | `/` |
+| The Marketplace | `/marketplace`, `/marketplace/services/<service>`, `/marketplace/locations/<place>` |
+| A provider's profile and its booking page | `/listings/<slug>`, `/listings/<slug>/book/<service>` |
+| A business's published Website | `/sites/<slug>`, `/sites/<slug>/<page>` |
+| Sign up, Log in, set-up | `/signup`, `/login`, `/onboarding` |
+| A business's workspace (signed in) | `/overview`, `/customers`, `/bookings`, … |
+| A customer's review form (a secret link) | `/review/<secret>` |
+| Platform Admin (separately protected) | `/platform-admin` and its own sign-in `/platform-admin/login` |
+| Probes | `/health/live`, `/health/ready` |
+| A customer's own domain (optional) | the root of that name; only the customer's Site and Booking |
+
+Configuration needs no source edit: `BETTER_AUTH_URL=https://<name>.duckdns.org`, `PUBLIC_HOST=<name>.duckdns.org`, and `CUSTOM_DOMAIN_TARGET` set to a **different** name (for example `sites.<name>.duckdns.org`; it is only shown in a custom domain's DNS instructions and can never be claimed). Custom domains are optional and can be absent at launch.
+
+### The host matrix
+
+`host-matrix.spec.ts` asks the running server every kind of Host about every kind of path, and the Docker part 3 repeats the customer-domain half through the real proxy.
+
+| Host | Landing, Marketplace, profile, `/sites/<slug>`, Log in, Sign up | Workspace, set-up | Console | Review page, session answer, API, health, certificate question | Its own Site |
+| --- | --- | --- | --- | --- | --- |
+| The platform's name (or `localhost`, an IP address) | served | redirected to Log in | redirected to the console's sign-in | the review page is a plain not found unless the secret is a link; the rest answer or refuse as designed | `/sites/<slug>` |
+| A customer's **active** domain | plain not found | plain not found | plain not found | plain not found (also with a valid session cookie, a POST, or the certificate secret) | served at the root |
+| A pending, verified, disabled, removed or unknown name; a lookalike of the platform's; a name that is not a name | plain not found, root included | same | same | same | none |
+
+Only the `Host` header chooses. `X-Forwarded-Host`, `Forwarded` and the like are read by nothing, in either direction (proved on both host kinds). The platform's `/internal/tls-allow` answers only with its secret, and on a customer's name it does not exist.
+
+### Proof on the production stack
+
+The Docker suite (`npm run test:docker`, 78 tests in nine files numbered 01 to 10 (the lifecycle part, once 04, runs last as 09), one worker, a database that starts empty) is the qualification of the build as it ships:
+
+1. `01-fresh` an empty database, the restricted role, the hardening, the networks, the migration safe to repeat.
+2. `02-business` an anonymous visitor finds the landing and an empty Marketplace; the first person signs up from **List Your Business**, sets a business up and lands on a workspace with nothing in it but five next steps; a Service, the modules, logos through `sharp`, a published Site.
+3. `03-domains` a customer's domain through the real proxy and real handshakes.
+4. `05-platform-admin` an ordinary account (the first one included) is no administrator; the tool in the tools image grants and revokes; the console works while it lasts.
+5. `06-public-entry` the landing through the proxy, and a review link's address is `REDACTED` in the proxy's log.
+6. `07-marketplace-journey` the first business sets the Marketplace up with a place and publishes; a visitor finds it; three guests book and each booking is attributed (Marketplace, the listing, what was searched for); three review links are shown once, stored only as SHA-256, thirty days, one use; a yes (an unchecked box) makes a review public and the rating counts only public ones; an administrator hides and restores a review and the rating follows; a suspended listing is gone from search, profile, booking page and sitemap, the business reads the message and not the reason, asks again, and **asking lifts nothing**; revoking closes the console at the next request; no secret is in any log (the proxy's log writes the address as `REDACTED` and drops the two headers the framework's navigation sends with it, `Next-Url` and `Next-Router-State-Tree`, which the first run of this part found carrying the secret).
+7. `08-backup-restore` below.
+8. `09-lifecycle` below. 9. `10-images` below.
+
+### Backup and restore of the current schema
+
+`db:fingerprint --compare` now digests, besides every table's rows, **sixteen kinds of object that protect the data**: columns, constraints, indexes, triggers, Row Level Security switches and policies, functions (their SECURITY DEFINER flag, `search_path`, owner, privileges and body), table and column privileges, schema and default privileges, sequences, enum types, extensions and the migration journal. Two things PostgreSQL prints differently for the same meaning are made the same before comparing, because a drill that cries wolf is as useless as one that cannot fail: a privilege list that was never set is the owner's defaults (`acldefault`), and a CHECK constraint's expression is compared by what it says, not by how deeply its ANDs are nested (a restored copy prints `(a AND b AND c)` where the migration made `((a AND b) AND c)`; `scripts/db/constraint-text.ts`). A changed constant, operator, column or AND/OR is still a difference. When two databases differ it prints the objects that differ. `fingerprint-catalog.spec.ts` proves it can fail: it copies a migrated database and changes one thing in the copy (a revoked grant, a function made SECURITY INVOKER, a dropped `search_path`, Row Level Security switched off or forced, a dropped or widened policy, a granted privilege, a column, a constraint, an index, the journal, a row), and each change must be named.
+
+`08-backup-restore` takes the operator's own `backup.sh` of the running stack (which, after the journey, holds the Phase 19 data: a listing with its service area, attributed bookings, public and private reviews, requests, a hidden-then-restored review, an answered suspension, an administrator granted and revoked, and the audit trail), checks that a plain-SQL dump holds no review secret and no password, restores with the operator's `restore.sh` into a database that did not exist (and refuses to restore over one that has data), compares the two with the fingerprint, and then **asks the restored database the same questions as the source, as the application's own restricted role from inside the real application container**, and requires identical answers that are also the right ones: no context sees nothing, a business sees its own rows and another business's id sees none, a write into another business is refused (`42501`), the platform tables and functions refuse an ordinary account and a revoked administrator and answer a granted one, the public functions return the public projection only (the public review, never the private one), a review link made before the backup still opens and a used one is still used, and the next booking number continues. It ends with `restore-drill.sh` itself, which must pass and leave nothing behind.
+
+### Persistence, health and shutdown
+
+`09-lifecycle` runs last, so everything the other parts made is protected. Its snapshot is a digest of **every table** (sessions and one-time codes aside) plus the files and the certificate, and it must be unchanged after: an app restart, a database restart, a proxy restart (the same certificate), the whole stack down and up with no volume removed, an image rebuild with the app container recreated (a new build, the same data), a graceful stop (a request in progress is finished, exit code 0, not killed), and a failed migration (the running app is not touched). With the database stopped `/health/ready` answers 503 with three words and nothing else, `/health/live` stays 200 and the container is not restarted, and readiness returns when the database does. Nothing durable lives in the application container: it is read-only, and uploads, certificates and data are on three volumes.
+
+### The images
+
+`10-images` looks inside the web and tools images the stack runs, from outside them, in throwaway read-only containers with no network: no environment file, dump, report, trace, upload, Git metadata, editor setting or reference design; no sample business; none of the stack's own secrets and no review secret; no cloud credential or private key in the application's own files; an environment of fixed switches only; a build history with no secret and no seed; the web image runs as `10001:10001` and the tools image as `node`. The running container is read-only, drops every capability, cannot gain privilege, publishes no port, and `sharp` re-encodes an image in it.
+
+### Dependency review
+
+The registry's advisories were checked for every package in the lockfile (the same request `npm audit` makes; this machine blocks Node's network access, so it was made with Python). **No critical advisory, and no high advisory in anything the runtime image holds.** Findings:
+
+| Package | Severity | Reaches | Verdict |
+| --- | --- | --- | --- |
+| `esbuild` ≤ 0.24.2 (0.18.20 under `@esbuild-kit`, a dependency of `drizzle-kit`; GHSA-67mh-4wv8-2f99) | moderate | the tools image only (`drizzle-kit`, `tsx` are development tools there); not the web image | Not applicable: the flaw is in esbuild's **development server**, which nothing starts. No fix by upgrade without a `drizzle-kit` major change; left as it is. |
+| `braces` ≤ 3.0.3 (GHSA-vfj7-8cjw-p6xm) | high | development only (`eslint-config-next` → `fast-glob` → `micromatch`); in neither image's runtime | Not applicable: a stack exhaustion from deeply nested patterns in a lint-time glob; no attacker-controlled pattern reaches it. |
+
+### Known MVP limitations (documented, not scoped in)
+
+- **Customers cannot be added in the application.** The Customers screen lists, and nothing in the application writes a customer (the runtime role may not; `core-data-isolation.spec.ts` holds that), a guest's booking keeps the guest's contact details on the booking and leaves its customer empty, and onboarding creates none. A review is requested from a customer, so a business that signed up today has no one to ask until its customers are imported by an operator (the journey in `07-marketplace-journey` does exactly that, once, and says so). **Decide before real businesses are invited:** an "Add customer" screen, or a customer made from a booking, is a small feature and is not part of this phase.
+- **Review links are handed over by the business.** No email or SMS is sent; the link is shown once and a new one can be made.
+- A business **cannot dispute** a review the platform hid; it is told which one is hidden, not why.
+- The Marketplace sitemap lists at most **5,000** profiles.
+- The workspace is **desktop and tablet first** (768 to 1440 px, the sidebar does not collapse); the public, sign-in, set-up, review and console pages are held at 390 px.
+- No consumer accounts on the Marketplace, no commission or payment, no radius or geospatial search.
+- **One server**: the single-host stack is not highly available; a restart interrupts requests for seconds (a graceful stop finishes the ones in progress).
+
+### Still a deployment task
+
+The host and its DNS name, the firewall and ports, the certificate for the platform's name (the public ACME mode of the proxy), the `.env.production` file with real secrets, a real mailbox for `ACME_EMAIL`, off-machine copies of `backup.sh` and `backup-assets.sh` output and their schedule, log collection and an alert on `/health/ready`, and the first `platform-admin:grant`. None of it is in this repository, and none was done.
+
+### Tests
+
+New: `host-matrix.spec.ts` (every kind of Host against every kind of path), `release-rules.spec.ts` (a Site's address from configuration, the platform as exactly the names a deployment lists, no hostname or product domain in what ships, the single-host production rules), `site-address.spec.ts` (every screen writes the same address, it opens the Site, the booking link opens the Booking page), `fingerprint-catalog.spec.ts` (the restore comparison fails on each of sixteen kinds of change and does not fail on a difference of printing), `release-accessibility.spec.ts` (landing, Marketplace, profile, booking, Sign up, Log in, set-up, the review form, the console and the business's Marketplace management, at 390 px or the workspace's narrowest width and by keyboard), and Docker parts `06` to `10`. `public-boundary`'s page comparisons now compare a page only when the normal server's answer from just before and just after is the same page, and the discovery specs draw their ZIP codes from a shared helper (`uniqueZip`). The whole suite at the end of the phase was 3696 tests in 131 spec files, none failing and none skipped, and 78 Docker tests.

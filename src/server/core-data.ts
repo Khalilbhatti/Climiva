@@ -14,7 +14,7 @@ import { loadPrimaryWebsite } from "@/db/site-queries";
 import { getPeriodReport } from "@/db/reporting-queries";
 import { withTenant } from "@/db/tenant";
 import { monthTotalsOf, presetRange } from "@/lib/analytics-rules";
-import { hostConfig } from "@/lib/domain-config";
+import { hostConfig, siteAddressing } from "@/lib/domain-config";
 import { can } from "@/lib/policy";
 import { requireWorkspaceContext, resolveWorkspace } from "./workspace";
 
@@ -52,7 +52,7 @@ export const getCoreSnapshot = cache(async (): Promise<CoreSnapshot | null> => {
     const reviews = await loadReviews(tx, organizationId, organization.timezone);
     const marketing = await loadMarketing(tx, organizationId, organization.timezone);
     // A domain's verification record goes only to the people who may manage the website.
-    const website = await loadPrimaryWebsite(tx, organizationId, { reveal: can(role, "website:manage"), routingTarget: hostConfig().customDomainTarget });
+    const website = await loadPrimaryWebsite(tx, organizationId, { reveal: can(role, "website:manage"), routingTarget: hostConfig().customDomainTarget, addressing: siteAddressing() });
     const marketplace = await loadMarketplace(tx, organizationId, services, organization.timezone);
     const adjustments = await loadReportingAdjustments(tx, organizationId);
     const month = monthTotalsOf(await getPeriodReport(tx, organizationId, presetRange("this-month", snapshot.clock.today)));

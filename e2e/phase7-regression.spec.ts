@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "playwright/test";
-import { expect, test } from "./fixtures";
+import { expect, siteAddress, test } from "./fixtures";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
 const kpis = (page: Page) => page.getByRole("region", { name: "Key metrics" });
@@ -57,7 +57,7 @@ test.describe("the Overview baseline is unchanged", () => {
     await expect(card).toContainText("Mon–Fri: 7:30 AM–6:00 PM");
     await expect(card).toContainText("Sat: 8:00 AM–2:00 PM");
     await expect(card).toContainText("Sun: Closed");
-    await expect(card).toContainText(`${workerTenant.platformSlug}.climvia.com`);
+    await expect(card).toContainText(siteAddress(workerTenant.platformSlug));
     await expect(card.getByRole("link", { name: /Manage Settings/ })).toHaveAttribute("href", "/settings");
     await expect(page.getByRole("tablist")).toHaveCount(0);
     await expect(page.getByRole("list", { name: "Weekly Bookings and completed Jobs" })).toHaveCount(0);

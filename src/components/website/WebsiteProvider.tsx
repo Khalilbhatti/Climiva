@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { useHoursRows, useBusiness, useSettings } from "@/components/settings/SettingsProvider";
 import { useServices } from "@/components/services/ServicesProvider";
-import { getPrimaryDomain, orderedPages, platformHost, type PageModel, type VersionModel, type WebsiteState } from "@/data/website";
+import { getPrimaryAddress, orderedPages, type PageModel, type VersionModel, type WebsiteState } from "@/data/website";
 import type { ActionResult } from "@/lib/action-result";
 import type { OwnershipOutcome } from "@/lib/domain-rules";
 import type { SiteContent } from "@/lib/site-template";
@@ -102,16 +102,10 @@ export function useWebsiteState(): WebsiteState {
   return website;
 }
 
-/** The address shown as the main one: the main ACTIVE custom domain if there is one, otherwise the platform address. Null with no website. */
+/** The address shown as the main one, written in full: the main ACTIVE custom domain if there is one, otherwise the platform address. Null with no website. */
 export function useSiteAddress(): string | null {
   const { website } = useWebsite();
-  return website ? getPrimaryDomain(website.site, website.domain) : null;
-}
-
-/** The platform address (`<slug>.climvia.com`) of the business's primary site, or null with no website. */
-export function usePlatformAddress(): string | null {
-  const { website } = useWebsite();
-  return website ? platformHost(website.site.platformSlug) : null;
+  return website ? getPrimaryAddress(website.site, website.domain) : null;
 }
 
 /**

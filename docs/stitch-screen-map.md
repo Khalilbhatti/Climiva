@@ -557,6 +557,8 @@ Baseline: **apexclimate.climvia.com** (Climvia, primary, cannot be removed) and 
 the Remove custom domain modal restores apexclimate.climvia.com as primary; Connect custom domain accepts any well-formed hostname. There is **no DNS, verification, certificate or registrar step**, and domain changes never
 touch content or the published flag. Publishing needs no custom domain.
 
+*Update (Phase 19D).* The Climvia address is no longer written `<address>.climvia.com`: the Website, Pages and Domain screens, the Business information card, the Marketplace listing and the booking link all write it from the deployment's configured origin, `<origin>/sites/<address>` (saas-architecture §39).
+
 ### Deliberate changes to earlier work
 
 - `e2e/shell.spec.ts`: Create maintenance plan now goes to `/maintenance-plans?new=1`; `/maintenance-plans` and `/website` are no longer placeholders.

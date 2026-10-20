@@ -195,6 +195,12 @@ test.describe("the reverse proxy configuration", () => {
     expect(CADDYFILE).toMatch(/request>headers>Cookie delete/);
     expect(CADDYFILE).toMatch(/request>headers>Authorization delete/);
     expect(CADDYFILE).toMatch(/resp_headers>Set-Cookie delete/);
+    // A review link's address is its secret: the log writes it as REDACTED in the request and in a Referer, and drops the two headers the framework's own
+    // navigation sends with the page's address and route (Next-Url and Next-Router-State-Tree), which would carry it too.
+    expect(CADDYFILE).toMatch(/request>uri regexp "\/review\/\[A-Za-z0-9_-\]\+" "\/review\/REDACTED"/);
+    expect(CADDYFILE).toMatch(/request>headers>Referer regexp "\/review\/\[A-Za-z0-9_-\]\+" "\/review\/REDACTED"/);
+    expect(CADDYFILE).toMatch(/request>headers>Next-Url delete/);
+    expect(CADDYFILE).toMatch(/request>headers>Next-Router-State-Tree delete/);
     expect(CADDYFILE).toContain("-Server");
     // The application's own policy on the logo route is never overwritten: defaults only, one directive each.
     expect(CADDYFILE).toMatch(/header \?Strict-Transport-Security /);
@@ -209,8 +215,8 @@ test.describe("the reverse proxy configuration", () => {
     expect(CADDY_DIRECTIVES).not.toMatch(/local_certs|acme_ca\s|tls internal/);
     expect(COMPOSE).toContain("${CADDY_MODE_FILE:-./deploy/caddy/mode.public.caddy}");
     // The platform's wildcard (needs DNS validation and DNS that does not exist yet) is described, not enabled.
-    expect(CADDYFILE).toMatch(/^# \*\.climvia\.com \{/m);
-    expect(CADDYFILE.replace(/^#.*$/gm, "")).not.toContain("*.climvia.com");
+    expect(CADDYFILE).toMatch(/^# \*\.<platform-domain> \{/m);
+    expect(CADDYFILE.replace(/^#.*$/gm, "")).not.toMatch(/\*\.<platform-domain>|climvia\.com/);
   });
 });
 

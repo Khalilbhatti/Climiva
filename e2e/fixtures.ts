@@ -13,7 +13,7 @@ type TestTenant = {
   organizationId: string;
   email: string;
   password: string;
-  /** The public address of this copy's primary site (`/sites/<platformSlug>`, `<platformSlug>.climvia.com`) and of its Marketplace listing. */
+  /** The public address of this copy's primary site (`/sites/<platformSlug>`) and of its Marketplace listing. */
   platformSlug: string;
   listingSlug: string;
 };
@@ -26,6 +26,9 @@ type WorkerFixtures = {
 type TestFixtures = { consoleGuard: ConsoleGuard; resetTenant: void };
 
 const ORIGIN = process.env.BETTER_AUTH_URL ?? "http://localhost:3460";
+
+/** A Site's address as the screens write it: the configured origin, then `/sites/<platform slug>`. */
+export const siteAddress = (platformSlug: string) => `${ORIGIN}/sites/${platformSlug}`;
 
 /**
  * Resolves once React has taken over the page: the router is running and every control in the top bar and the main area has

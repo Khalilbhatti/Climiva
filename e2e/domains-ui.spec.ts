@@ -10,6 +10,7 @@ import { insertActiveClaim, publishTxt, setDns, uniqueHost } from "./domain-help
 import { verificationRecordName, verificationRecordValue } from "../src/lib/domain-rules";
 import { adminDb } from "../scripts/db/lib";
 import { makeBusiness } from "./assets-helpers";
+import { siteAddress } from "./fixtures";
 import { ORIGIN, expect, test } from "./saas";
 
 const toast = (page: Page) => page.locator('div[role="status"][aria-live="polite"]');
@@ -212,7 +213,7 @@ test.describe("serving, the main address, disabling and removing", () => {
     await expect(custom(page)).toContainText("Active in Climvia");
     await expect(custom(page).getByText("Primary", { exact: true })).toBeVisible();
     await expect(page.getByText("Current primary address:")).toContainText(host);
-    await expect(region(page, "Website address")).toContainText(`${workerTenant.platformSlug}.climvia.com`);
+    await expect(region(page, "Website address")).toContainText(siteAddress(workerTenant.platformSlug));
     await expect(region(page, "Website address").getByRole("button", { name: "Make primary" })).toBeVisible();
     for (const area of [custom(page), region(page, "Website address")]) await expect(area).not.toContainText(/\b(live|connected|secure|ssl)\b/i);
     // The overview and the Business information card use it as the website address.
@@ -226,9 +227,9 @@ test.describe("serving, the main address, disabling and removing", () => {
     await custom(page).getByRole("button", { name: "Activate" }).click();
     await expect(custom(page)).toContainText("Active in Climvia");
     await region(page, "Website address").getByRole("button", { name: "Make primary" }).click();
-    await expect(toast(page)).toContainText(`${workerTenant.platformSlug}.climvia.com is now the primary website address.`);
+    await expect(toast(page)).toContainText(`${siteAddress(workerTenant.platformSlug)} is now the primary website address.`);
     await expect(region(page, "Website address")).toContainText("Primary website address");
-    await expect(page.getByText("Current primary address:")).toContainText(`${workerTenant.platformSlug}.climvia.com`);
+    await expect(page.getByText("Current primary address:")).toContainText(siteAddress(workerTenant.platformSlug));
     expect((await db.query("select status, is_primary from site_domains where hostname = $1", [host])).rows[0]).toEqual({ status: "active", is_primary: false });
     await custom(page).getByRole("button", { name: "Make primary" }).click();
     await expect(page.getByText("Current primary address:")).toContainText(host);
@@ -315,7 +316,7 @@ test.describe("serving, the main address, disabling and removing", () => {
 test.describe("no domain is made up", () => {
   test("a business that has never added a domain sees its Climvia address and an empty state, and the overview offers to connect one", async ({ page, workerTenant }) => {
     await page.goto("/website/domain");
-    await expect(region(page, "Website address")).toContainText(`${workerTenant.platformSlug}.climvia.com`);
+    await expect(region(page, "Website address")).toContainText(siteAddress(workerTenant.platformSlug));
     await expect(region(page, "Website address")).toContainText("Primary website address");
     await expect(custom(page)).toContainText("No custom domain connected");
     await expect(page.locator("main")).not.toContainText(/apexclimateair|example\.test|Configured|Pending verification/);

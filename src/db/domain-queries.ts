@@ -35,6 +35,7 @@ import {
   verificationRecordValue,
 } from "@/lib/domain-rules";
 import { HOSTNAME_PROBLEM_TEXT, RESERVED_DOMAIN_TEXT, normalizeHostname, reservedReason, type HostConfig } from "@/lib/hostname";
+import type { SiteAddressing } from "@/lib/site-domain";
 import { refuse } from "@/lib/refusal";
 import type { Tx } from "./index";
 import { siteDomains, sites, type SiteDomainRow } from "./schema";
@@ -68,14 +69,14 @@ function recordOf(row: SiteDomainRow, reveal: boolean): DomainRecord {
   };
 }
 
-/** A Site's claims that have not been removed, oldest first. `reveal` says whether the caller may see the verification record. */
-export async function loadDomainState(tx: Tx, organizationId: string, siteId: string, reveal: boolean, routingTarget: string | null): Promise<DomainState> {
+/** A Site's claims that have not been removed, oldest first. `reveal` says whether the caller may see the verification record; `addressing` is how its addresses are written. */
+export async function loadDomainState(tx: Tx, organizationId: string, siteId: string, reveal: boolean, routingTarget: string | null, addressing?: SiteAddressing): Promise<DomainState> {
   const rows = await tx
     .select()
     .from(siteDomains)
     .where(and(eq(siteDomains.organizationId, organizationId), eq(siteDomains.siteId, siteId), ne(siteDomains.status, "removed")))
     .orderBy(asc(siteDomains.createdAt), asc(siteDomains.id));
-  return { domains: rows.map((row) => recordOf(row, reveal)), routingTarget };
+  return { domains: rows.map((row) => recordOf(row, reveal)), routingTarget, ...(addressing ? { addressing } : {}) };
 }
 
 /* ───────────────────────── helpers ───────────────────────── */

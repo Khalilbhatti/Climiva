@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { useBrandStyle } from "@/components/settings/SettingsProvider";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { getPrimaryDomain, orderedPages } from "@/data/website";
+import { getPrimaryAddress, orderedPages } from "@/data/website";
 import { themeAttributes, themeStyle } from "@/lib/site-theme";
 import { PreviewModeSwitch } from "../PreviewModeSwitch";
 import { DEFAULT_PREVIEW_MODE, previewMode, type PreviewModeId } from "../preview-modes";
@@ -42,7 +42,7 @@ export function PreviewShell({ children }: { children: ReactNode }) {
           </Link>
           <span className="flex min-w-0 flex-1 items-center gap-2 text-xs text-ink-muted">
             <span className="truncate font-mono">
-              {getPrimaryDomain(website.site, website.domain)}
+              {getPrimaryAddress(website.site, website.domain)}
               {sitePath}
             </span>
             <StatusBadge tone="primary">Preview</StatusBadge>

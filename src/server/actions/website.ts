@@ -17,7 +17,7 @@ import {
 import { withTenant } from "@/db/tenant";
 import { NOT_ALLOWED_WEBSITE, failure, ok, type ActionResult } from "@/lib/action-result";
 import { resolverFromEnv } from "@/lib/dns-resolver";
-import { hostConfig } from "@/lib/domain-config";
+import { hostConfig, siteAddressing } from "@/lib/domain-config";
 import { DOMAIN_IN_USE, DOMAIN_STALE, type OwnershipOutcome } from "@/lib/domain-rules";
 import { Refusal, refuse } from "@/lib/refusal";
 import { isRecord } from "@/lib/validation";
@@ -41,7 +41,7 @@ import { constraintOf, isIntegrityViolation } from "../db-errors";
 type Answer = { website: WebsiteState | null; versionNumber?: number; domainCheck?: OwnershipOutcome };
 
 /** The browser gets a domain's verification record only because the caller just passed the website:manage check. */
-const domains = () => ({ reveal: true, routingTarget: hostConfig().customDomainTarget });
+const domains = () => ({ reveal: true, routingTarget: hostConfig().customDomainTarget, addressing: siteAddressing() });
 
 type Work = { tx: Tx; organizationId: string; siteId: string; userId: string };
 

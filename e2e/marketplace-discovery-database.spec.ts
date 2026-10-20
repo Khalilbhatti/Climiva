@@ -10,7 +10,7 @@ import { randomBytes } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { expect, test } from "playwright/test";
 import { adminDb } from "../scripts/db/lib";
-import { SAMPLE_SERVICES, allow, makeProvider, suspend, type Provider } from "./marketplace-helpers";
+import { SAMPLE_SERVICES, allow, makeProvider, suspend, uniqueZip, type Provider } from "./marketplace-helpers";
 
 let app: Pool;
 let admin: Pool;
@@ -50,7 +50,7 @@ const slugs = (rows: Json[]) => rows.map((row) => row.slug as string);
 /** A word that only this run's providers have, in their names. */
 const family = () => `fam${randomBytes(4).toString("hex")}`;
 /** A ZIP code no other test or seed uses. */
-const zip = () => String(60000 + Math.floor(Math.random() * 9000) + 1000);
+const zip = uniqueZip;
 
 /** The fields of a card, and of what is inside it: nothing else is ever sent. */
 const CARD_KEYS = ["areaCount", "areas", "canBook", "categories", "description", "logo", "name", "rating", "service", "serviceCount", "slug"];

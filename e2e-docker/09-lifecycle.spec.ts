@@ -1,6 +1,8 @@
 /**
- * Docker side, part 4: what happens to a running business when the stack is restarted, recreated, rebuilt, starved of its database or given a bad
- * configuration. Everything is done to the REAL containers; "survives" means the same rows, the same files and the same certificate afterwards.
+ * Docker side, part 9 (it runs last, so it protects everything the other parts made): what happens to a running business when the stack is restarted,
+ * recreated, rebuilt, starved of its database or given a bad configuration. Everything is done to the REAL containers; "survives" means the same rows
+ * in EVERY table (a digest of the whole database, the Phase 19 Marketplace, review, moderation and platform tables included), the same files and the
+ * same certificate afterwards.
  *
  *   restart the app / the database / the proxy · stop the database and bring it back · take the whole stack down and up (no volume removed) ·
  *   rebuild the image and recreate the app · stop the app gracefully · refuse to start on a bad configuration · refuse to be ready without its file
@@ -14,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "playwright/test";
 import { PASSWORD } from "../e2e/saas";
-import { compose, composeResult, docker, get, handshake, multipart, one, until, stack } from "./stack";
+import { compose, composeResult, docker, get, handshake, multipart, one, sql, until, stack } from "./stack";
 
 test.describe.configure({ mode: "serial", timeout: 300_000 });
 
@@ -33,12 +35,23 @@ const ready = async () => (await get(stack.publicHost, "/health/ready")).status 
 const waitReady = (seconds = 120) => until(ready, seconds, "the application to be ready");
 const version = async () => (JSON.parse((await get(stack.publicHost, "/health/live")).body) as { version: string }).version;
 
+/**
+ * A digest of every table's rows, in one question to the database: the tables that change only because somebody signed in (sessions, one-time codes) are
+ * the only ones left out. Asking it twice with nothing happening in between gives the same answer, so a difference is a change in what is stored.
+ */
+const DATABASE_DIGEST = `
+  select md5(string_agg(t.table_name || ':' || (xpath('/row/c/text()', query_to_xml(format('select md5(coalesce(string_agg(x::text, E''\n'' order by x::text), '''')) as c from public.%I x', t.table_name), false, true, '')))[1]::text, ',' order by t.table_name)),
+         count(*)
+    from information_schema.tables t
+   where t.table_schema = 'public' and t.table_type = 'BASE TABLE' and t.table_name not in ('auth_session', 'auth_verification')`;
+
 /** Everything a restart must not change. */
 async function snapshot() {
   const site = await get(domain.active, "/");
   const asset = await get(stack.publicHost, `/assets/${logo.id}`);
   const shake = await handshake(domain.active);
   return {
+    database: sql(DATABASE_DIGEST)[0].join(" tables "),
     organizations: one("select count(*) from organizations"),
     users: one("select count(*) from auth_user"),
     bookings: one("select count(*) from bookings"),
@@ -67,12 +80,17 @@ async function signsIn(): Promise<boolean> {
 
 let before: Awaited<ReturnType<typeof snapshot>>;
 
-test("the state to protect: one business, three logos, a published Site on a customer's name with a certificate", async () => {
+test("the state to protect: a business with three logos, a published Site on a customer's name with a certificate, a listed Marketplace profile with its bookings and reviews, and the platform's trail", async () => {
   await waitReady(30);
   before = await snapshot();
-  expect(before.organizations).toBe("1");
-  expect(before.users).toBe("1");
+  // Whatever the earlier parts made is here, and the digest says how much of it: every table of the schema, Phase 19's included.
+  expect(before.database).toMatch(/^[0-9a-f]{32} tables [5-9]\d$/);
+  expect(Number(before.organizations)).toBeGreaterThanOrEqual(1);
+  expect(Number(before.users)).toBeGreaterThanOrEqual(1);
   expect(Number(before.bookings)).toBeGreaterThanOrEqual(1);
+  for (const table of ["marketplace_listings", "marketplace_service_areas", "reviews", "review_requests", "platform_audit_events", "platform_admins", "platform_listing_moderation", "platform_review_moderation"]) {
+    expect(Number(one(`select count(*) from ${table}`)), table).toBeGreaterThan(0);
+  }
   expect(before.siteShowsBusiness).toBe(true);
   expect(before.logoSha).toBe(logo.sha);
   expect(before.certificate).toBe(domain.certificate);

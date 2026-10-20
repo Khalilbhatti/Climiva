@@ -1,13 +1,16 @@
 /**
  * Docker side, part 2: a real first user on the empty production database, through the proxy.
  *
- *   - the first person signs up and sets a business up (the onboarding writes the organization, owner, hours and first Site in one transaction);
+ *   - an anonymous visitor finds Climvia's landing and an empty Marketplace, and looking creates nothing;
+ *   - the first person signs up from the landing's "List Your Business" and sets a business up (the onboarding writes the organization, owner, hours and
+ *     first Site in one transaction), and lands on a workspace with nothing in it but things to do;
  *   - a Service is added, the workspace's modules read the database as the restricted role, the Builder opens;
  *   - a logo is uploaded as PNG, JPEG and WebP: `sharp`, inside the read-only production container, re-encodes each, the files land on the persistent
  *     volume, and the public route serves them with the asset's own Content-Security-Policy;
  *   - the Site is published and is served on the platform's address.
  *
- * The state this leaves (one business, one owner, three logos, a published Site) is what the lifecycle tests (04) restart, recreate and restore.
+ * The state this leaves (one business, one owner, three logos, a published Site) is what the later parts build on (07 lists it on the Marketplace) and the
+ * lifecycle tests (09) restart and recreate.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -43,10 +46,35 @@ test.afterAll(async () => {
   await context.close();
 });
 
-test("the first person signs up and sets up a business on the empty database", async () => {
+test("an anonymous visitor finds the landing and an empty Marketplace, and looking creates nothing", async () => {
+  const landing = await get(stack.publicHost, "/");
+  expect(landing.status).toBe(200);
+  expect(landing.body).toContain("Find HVAC service. Run the business behind it.");
+  const marketplace = await get(stack.publicHost, "/marketplace");
+  expect(marketplace.status).toBe(200);
+  expect(marketplace.body).toContain("No providers are listed yet");
+  const sitemap = await get(stack.publicHost, "/sitemap.xml");
+  expect(sitemap.body).toContain(`<loc>${stack.origin}/</loc>`);
+  expect(sitemap.body).not.toContain("/listings/");
+  for (const table of ["auth_user", "organizations", "auth_session", "marketplace_listings", "platform_admins"]) expect(Number(one(`select count(*) from ${table}`)), table).toBe(0);
+  // Nothing from the sample businesses is in a production database, and nothing is made by looking.
+  expect(Number(one("select count(*) from organizations where fixture_set is not null or slug in ('apex-climate-heating-air', 'northstar-heating-cooling')"))).toBe(0);
+});
+
+test("the first person signs up from the landing and sets up a business on the empty database", async () => {
   expect(Number(one("select count(*) from organizations"))).toBe(0);
+  await page.goto("/");
+  await page.getByRole("main").getByRole("link", { name: "List Your Business" }).first().click();
+  await expect(page).toHaveURL(/\/signup$/);
   email = await signUp(page, { name: "Dana Owner" });
   await completeOnboarding(page, { name: BUSINESS });
+  await expect(page).toHaveURL(/\/overview$/);
+  // A workspace with nothing in it but things to do: a welcome and five next steps, no sample record and no invented figure.
+  await expect(page.getByRole("heading", { level: 2, name: "Your workspace is ready" })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Next steps" }).getByRole("link")).toHaveCount(5);
+  expect(await page.locator("main").innerText()).not.toMatch(/Apex|Northstar|Sarah Mitchell|NaN|undefined|\$\d/);
+  expect(Number(one("select count(*) from customers"))).toBe(0);
+  expect(Number(one("select count(*) from team_members"))).toBe(1);
   expect(sql("select name, slug from organizations")).toEqual([[BUSINESS, SLUG]]);
   expect(sql("select role from organization_memberships m join auth_user u on u.id = m.user_id where u.email = '" + email + "'")).toEqual([["owner"]]);
   expect(sql("select slug, platform_slug, status from sites")).toEqual([["main", SLUG, "draft"]]);

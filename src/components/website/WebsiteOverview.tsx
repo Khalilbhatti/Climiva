@@ -32,7 +32,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useToast } from "@/components/ui/Toast";
 import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { WEEK_ORDER } from "@/data/settings";
-import { findPage, getPrimaryDomain, getShownServices, hasUnpublishedChanges, orderedPages, platformHost, primaryDomainOf, type VersionModel } from "@/data/website";
+import { findPage, getPlatformAddress, getPrimaryAddress, getShownServices, hasUnpublishedChanges, orderedPages, primaryDomainOf, type VersionModel } from "@/data/website";
 import { DOMAIN_STATUS_LABEL } from "@/lib/domain-rules";
 import { DOMAIN_TONE } from "./domain-ui";
 import { publicSiteHref } from "@/lib/site-domain";
@@ -140,8 +140,8 @@ export function WebsiteOverview() {
   const home = homeKey ? findPage(shownVersion, homeKey) : undefined;
   const shown = getShownServices(shownVersion.settings.serviceDisplay, catalog);
   const bookable = shown.filter((service) => service.visibility === "public-booking");
-  const primary = getPrimaryDomain(website.site, website.domain);
-  const platform = platformHost(website.site.platformSlug);
+  const primary = getPrimaryAddress(website.site, website.domain);
+  const platform = getPlatformAddress(website.site, website.domain);
   const pending = hasUnpublishedChanges(website);
   const pages = orderedPages(website.draft);
   const published = website.published;
@@ -187,7 +187,7 @@ export function WebsiteOverview() {
             title="Customer-facing preview"
             aside={<span className="text-xs text-ink-muted">{published ? "Live website" : "Draft · not published"}</span>}
           >
-            <BrowserFrame address={`https://${primary}`} note={published ? "Live" : "Private"}>
+            <BrowserFrame address={primary} note={published ? "Live" : "Private"}>
               <div inert {...themeAttributes(shownVersion.theme)} style={{ ...brandStyle, ...themeStyle(shownVersion.theme) }} className="@container h-80 overflow-hidden bg-surface">
                 <SiteHeader view={view} />
                 {home && <SiteRenderer page={home} view={view} embedded />}
@@ -300,7 +300,7 @@ export function WebsiteOverview() {
                   </Button>
                 )}
                 <p className="mt-3 rounded-btn bg-surface-low px-3 py-2 text-xs text-ink-muted">
-                  Publishing makes the website accessible to customers at <strong className="text-ink">{platform}</strong>. Publishing does not
+                  Publishing makes the website accessible to customers at <strong className="break-all text-ink">{platform}</strong>. Publishing does not
                   change your Bookings, Services, Customers, Jobs, Invoices, or Payments.
                 </p>
               </>
@@ -312,8 +312,12 @@ export function WebsiteOverview() {
               <li className="rounded-btn bg-surface-low px-4 py-3">
                 <p className="text-micro font-semibold tracking-wider text-ink-muted uppercase">Climvia address</p>
                 <div className="mt-0.5 flex items-center justify-between gap-3">
-                  <p className="font-mono text-sm font-semibold text-ink">{platform}</p>
-                  {!primaryDomainOf(domain) && <StatusBadge tone="positive">Primary</StatusBadge>}
+                  <p className="min-w-0 font-mono text-sm font-semibold break-all text-ink">{platform}</p>
+                  {!primaryDomainOf(domain) && (
+                    <span className="shrink-0">
+                      <StatusBadge tone="positive">Primary</StatusBadge>
+                    </span>
+                  )}
                 </div>
               </li>
               {domain.domains.map((record) => (

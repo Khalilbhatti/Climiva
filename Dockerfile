@@ -37,7 +37,7 @@ COPY drizzle ./drizzle
 COPY src ./src
 COPY scripts/check-config.ts ./scripts/check-config.ts
 COPY scripts/deploy ./scripts/deploy
-COPY scripts/db/lib.ts scripts/db/migrate.ts scripts/db/status.ts scripts/db/roles.ts scripts/db/fingerprint.ts ./scripts/db/
+COPY scripts/db/lib.ts scripts/db/migrate.ts scripts/db/status.ts scripts/db/roles.ts scripts/db/fingerprint.ts scripts/db/constraint-text.ts ./scripts/db/
 COPY scripts/platform-admin ./scripts/platform-admin
 USER node
 CMD ["npm", "run", "db:migrate"]

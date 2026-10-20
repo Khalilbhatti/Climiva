@@ -60,8 +60,8 @@ export function BusinessInfoCard() {
           <p className="mt-0.5 text-xs text-ink-muted">{formatCityStateZip(business.address)}</p>
           {address && (
             <p className="mt-2 flex min-h-5 items-center gap-1.5 text-xs text-ink-muted">
-              <Globe aria-hidden className="size-3.5" />
-              {address}
+              <Globe aria-hidden className="size-3.5 shrink-0" />
+              <span className="min-w-0 break-all">{address}</span>
             </p>
           )}
         </div>

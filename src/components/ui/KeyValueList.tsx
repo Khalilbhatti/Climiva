@@ -30,7 +30,7 @@ export function KeyValueList({ items, layout = "rows", className }: KeyValueList
       {items.map((item) => (
         <div key={item.label} className="flex items-baseline justify-between gap-4">
           <dt className="text-ink-muted">{item.label}</dt>
-          <dd className="text-right font-medium text-ink">{item.value}</dd>
+          <dd className="min-w-0 text-right font-medium text-ink [overflow-wrap:anywhere]">{item.value}</dd>
         </div>
       ))}
     </dl>

@@ -12,7 +12,7 @@ import { Pool } from "pg";
 import { adminDb } from "../scripts/db/lib";
 import { anonymous } from "./assets-helpers";
 import { insertActiveClaim, rawRequest, uniqueHost } from "./domain-helpers";
-import { SAMPLE_SERVICES, allow, makeProvider, suspend, type Provider } from "./marketplace-helpers";
+import { SAMPLE_SERVICES, allow, makeProvider, suspend, uniqueZip, type Provider } from "./marketplace-helpers";
 import { makePlatformAdmin } from "./platform-admin-helpers";
 import { captureAction, withFirstArgument } from "./replay";
 import { NOT_SIGNED_IN, ORIGIN, expect, expectAccessible, test } from "./saas";
@@ -30,7 +30,7 @@ test.afterAll(async () => {
 });
 
 const word = () => `fam${randomBytes(4).toString("hex")}`;
-const zip = () => String(60000 + Math.floor(Math.random() * 9000) + 1000);
+const zip = uniqueZip;
 const address = () => `fd00:${randomBytes(2).toString("hex")}:${randomBytes(2).toString("hex")}::1`;
 
 const providers = (page: Page) => page.locator('ul[aria-label="Providers"] > li');

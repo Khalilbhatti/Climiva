@@ -8,10 +8,13 @@ import { ROUTE_INVENTORY } from "./route-inventory";
 test.describe("signed out", () => {
   test.use({ storageState: NOT_SIGNED_IN });
 
-  test("the workspace address sends a visitor to Log in", async ({ page }) => {
-    await page.goto("/");
-    await expect(page).toHaveURL(/\/login$/);
+  test("the workspace address sends a visitor to Log in, and the front door is the public landing", async ({ page }) => {
+    await page.goto("/overview");
+    await expect(page).toHaveURL(/\/login\?next=%2Foverview$/);
     await expect(page.getByRole("heading", { level: 1, name: "Log in" })).toBeVisible();
+    await page.goto("/");
+    await expect(page).toHaveURL(`${ORIGIN}/`);
+    await expect(page.getByRole("heading", { level: 1, name: "Find HVAC service. Run the business behind it." })).toBeVisible();
   });
 
   test("a deep link goes to Log in and remembers where it was going", async ({ page }) => {
@@ -217,9 +220,9 @@ test.describe("signed in", () => {
 
   test("visiting Log in or Sign up while signed in goes on to the workspace", async ({ page }) => {
     await page.goto("/login");
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/overview$/);
     await page.goto("/signup");
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/overview$/);
     await expect(page.getByRole("heading", { level: 1, name: "Workspace Overview" })).toBeVisible();
   });
 
@@ -238,10 +241,15 @@ test.describe("signed in", () => {
 
     expect((await db.query("select 1 from auth_session where token = $1", [token])).rowCount).toBe(0);
     expect((await context.cookies()).filter((cookie) => cookie.name.endsWith("session_token") && cookie.value)).toEqual([]);
-    for (const path of ["/", "/settings", "/customers"]) {
+    for (const path of ["/overview", "/settings", "/customers"]) {
       await page.goto(path);
       await expect(page).toHaveURL(/\/login/);
     }
+    // The front door is the public landing again, with nothing of the workspace in it.
+    await page.goto("/");
+    await expect(page).toHaveURL(`${ORIGIN}/`);
+    await expect(page.getByRole("heading", { level: 1, name: "Find HVAC service. Run the business behind it." })).toBeVisible();
+    await expect(page.getByText("Apex")).toHaveCount(0);
     await context.close();
   });
 
@@ -295,11 +303,16 @@ test.describe("signed in", () => {
       extraHTTPHeaders: { "x-forwarded-for": clientAddresses() },
     });
     const page = waitsForHydration(await context.newPage());
-    for (const path of ["/", "/customers", "/settings"]) {
+    for (const path of ["/overview", "/customers", "/settings"]) {
       await page.goto(path);
       await expect(page).toHaveURL(/\/login/);
       await expect(page.getByText("Apex")).toHaveCount(0);
     }
+    // At the front door a forged cookie is simply a visitor: the landing, with no workspace.
+    await page.goto("/");
+    await expect(page).toHaveURL(`${ORIGIN}/`);
+    await expect(page.getByRole("heading", { level: 1, name: "Find HVAC service. Run the business behind it." })).toBeVisible();
+    await expect(page.getByText("Apex")).toHaveCount(0);
     await context.close();
   });
 });

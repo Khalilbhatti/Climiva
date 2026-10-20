@@ -78,7 +78,7 @@ test.describe("workspace switcher", () => {
     const { page } = await openAs("casey");
     await page.goto("/");
     await switcher(page).click();
-    await page.route("**/", (route) => (route.request().headers()["next-action"] ? route.abort() : route.continue()));
+    await page.route("**/overview", (route) => (route.request().headers()["next-action"] ? route.abort() : route.continue()));
     await panel(page, "Workspaces").getByRole("button", { name: /Northstar/ }).click();
     await expect(panel(page, "Workspaces").getByRole("alert")).toContainText("We couldn't reach the server");
     await expect(switcher(page)).toContainText("Apex Climate Heating & Air");
@@ -176,10 +176,10 @@ test.describe("account menu", () => {
     const { page } = await openAs("alex");
     await page.goto("/");
     await userButton(page).click();
-    await page.route("**/", (route) => (route.request().headers()["next-action"] ? route.abort() : route.continue()));
+    await page.route("**/overview", (route) => (route.request().headers()["next-action"] ? route.abort() : route.continue()));
     await panel(page, "Account").getByRole("button", { name: "Log out" }).click();
     await expect(panel(page, "Account").getByRole("alert")).toContainText("you are still logged in");
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/overview$/);
     await expect(panel(page, "Account").getByRole("button", { name: "Log out" })).toBeEnabled();
   });
 });

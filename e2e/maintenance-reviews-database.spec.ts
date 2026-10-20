@@ -377,7 +377,8 @@ test.describe("the structure", () => {
     ).rows;
     expect(indexes.length).toBeGreaterThan(20);
     // The few that lead with the plan are unique keys that already live inside one plan (whose own key leads with the business).
-    const planLevel = new Set(["plan_coverage_key_unique", "plan_coverage_order_unique", "plan_visits_order_unique"]);
+    // And a review link's hash: it is looked up by the secret alone, before any business is known (that is what a customer holds), so it is unique across them all.
+    const planLevel = new Set(["plan_coverage_key_unique", "plan_coverage_order_unique", "plan_visits_order_unique", "review_requests_token_hash_unique"]);
     for (const index of indexes.filter((item) => !planLevel.has(item.indexname))) expect(index.indexdef, index.indexname).toMatch(/\((organization_id|"organization_id")[,)]/);
   });
 
@@ -979,7 +980,7 @@ test.describe("the application's transaction rolls back as a whole", () => {
   });
 
   test("the application's functions refuse a review or a customer of another business as 'not found', never as a leak", async () => {
-    const refusal = async (change: (context: ReviewContext) => Promise<void>) =>
+    const refusal = async (change: (context: ReviewContext) => Promise<unknown>) =>
       withTenant({ userId: user.alex, organizationId: apex }, async (tx) => {
         const refs = await loadRefs(tx, apex);
         await change({ tx, organizationId: apex, refs, stamp: new Date("2030-01-02T18:00:00Z"), actorUserId: user.alex, authorName: "Alex Morgan" });

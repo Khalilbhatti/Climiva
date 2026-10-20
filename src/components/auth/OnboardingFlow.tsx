@@ -49,7 +49,7 @@ const STEP_FIELDS: Record<number, (keyof BusinessErrors)[]> = {
  * transaction (the organization, the person as its owner, the weekly hours and a first site). It creates nothing else: no
  * customers, services, jobs, bookings or money. Everything here can be changed later in Settings.
  */
-export function OnboardingFlow({ cancelHref }: { cancelHref?: "/" }) {
+export function OnboardingFlow({ cancelHref }: { cancelHref?: "/overview" }) {
   const [step, setStep] = useState(0);
   const [business, setBusiness] = useState<BusinessInfo>({ name: "", phone: "", email: "", address: { street: "", city: "", state: "", postalCode: "" } });
   const [timeZone, setTimeZone] = useState<TimeZoneId>("America/Chicago");
@@ -111,7 +111,7 @@ export function OnboardingFlow({ cancelHref }: { cancelHref?: "/" }) {
       return;
     }
     // A full page load into the new workspace: no state from any earlier workspace can carry over.
-    hardNavigate("/");
+    hardNavigate("/overview");
   }
 
   return (

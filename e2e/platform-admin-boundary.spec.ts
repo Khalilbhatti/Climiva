@@ -61,7 +61,10 @@ test.describe("the console cannot reach the workspace", () => {
 
 test.describe("the workspace, the public pages and the sign-in pages know nothing of the console", () => {
   test("no file outside the console imports a console module or names the console, its tables or its functions", () => {
-    const allowed = new Set(["src/proxy.ts", "src/db/schema/index.ts"]);
+    // Three files outside the console say anything about it, each for one reason and each held to that reason in the test below: the entry module asks the database
+    // whether the CALLER is an administrator (the front door must not make one create a business), the public header shows an administrator a link to the console,
+    // and the return-address rule refuses the console as a place the ordinary sign-in may send anyone.
+    const allowed = new Set(["src/proxy.ts", "src/db/schema/index.ts", "src/server/entry.ts", "src/components/public/PublicSessionNav.tsx", "src/lib/safe-path.ts"]);
     const offenders: string[] = [];
     for (const file of walk(SRC)) {
       const name = posix(file);
@@ -70,6 +73,24 @@ test.describe("the workspace, the public pages and the sign-in pages know nothin
       if (/platform-admin|platform-queries|platform_admin|platformAdmin|PlatformAdmin|app_platform_|app_is_platform_admin|super_admin|platform_listing_moderation|platform_audit_events/.test(code)) offenders.push(name);
     }
     expect(offenders).toEqual([]);
+  });
+
+  test("the three other files that mention it do exactly one thing each: ask about the caller, link an administrator, and refuse a return address", () => {
+    const entry = strip(read("src/server/entry.ts"));
+    expect(entry).toContain('import { isPlatformAdmin } from "@/db/platform-queries";');
+    expect(entry).not.toMatch(/app_platform_|setListingModeration|setReviewModeration|keepListingSuspended|updateListingMessage|platformListings|platformReviews|platformOverview|platformAudit/);
+    // The answer is about the caller alone: the function takes the verified user's own id, never one from a request.
+    expect(entry.match(/isPlatformAdmin\(([^)]*)\)/g)).toEqual(["isPlatformAdmin(user.id)", "isPlatformAdmin(user.id)"]);
+
+    const island = strip(read("src/components/public/PublicSessionNav.tsx"));
+    expect([...island.matchAll(/platform-admin[^"']*/g)].map((match) => match[0])).toEqual(["platform-admin", "platform-admin"]);
+    expect(island).toMatch(/state\?\.platformAdmin/);
+    expect(island).not.toMatch(/@\/db|@\/server|platform-queries|app_platform_/);
+
+    const safePath = strip(read("src/lib/safe-path.ts"));
+    expect(safePath).toMatch(/value === "\/platform-admin"/);
+    expect(safePath).toMatch(/return undefined/);
+    expect(safePath).not.toMatch(/@\/db|@\/server|redirect\(|NextResponse/);
   });
 
   test("the only files that mention the console outside it are the proxy's route rules and the schema's export", () => {

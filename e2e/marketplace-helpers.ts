@@ -96,19 +96,21 @@ export async function makeProvider(label: string, handles: { db: MakeBusinessDb;
   return { business, listingId, slug, token, name };
 }
 
-/** The platform's decision on a listing, written the way the console does. */
-export async function suspend(pool: Pool, listingId: string, reason = "Test suspension"): Promise<void> {
+/** The platform's decision on a listing, written the way the console does (a new suspension starts its lifecycle afresh, with its own start time). */
+export async function suspend(pool: Pool, listingId: string, reason = "Test suspension", tenantMessage: string | null = null): Promise<void> {
   await pool.query(
-    `insert into platform_listing_moderation (listing_id, state, reason, decided_by) values ($1, 'suspended', $2, 'test-administrator')
-     on conflict (listing_id) do update set state = 'suspended', reason = excluded.reason, decided_at = now(), revision = platform_listing_moderation.revision + 1`,
-    [listingId, reason],
+    `insert into platform_listing_moderation (listing_id, state, reason, tenant_message, suspended_at, decided_by) values ($1, 'suspended', $2, $3, now(), 'test-administrator')
+     on conflict (listing_id) do update set state = 'suspended', reason = excluded.reason, tenant_message = excluded.tenant_message, suspended_at = now(), decided_at = now(),
+       revision = platform_listing_moderation.revision + 1, review_state = 'none', review_requested_at = null, review_requested_by = null, review_note = null, review_resolved_at = null, review_outcome = null`,
+    [listingId, reason, tenantMessage],
   );
 }
 
 export async function allow(pool: Pool, listingId: string): Promise<void> {
   await pool.query(
     `insert into platform_listing_moderation (listing_id, state, reason, decided_by) values ($1, 'allowed', null, 'test-administrator')
-     on conflict (listing_id) do update set state = 'allowed', reason = null, decided_at = now(), revision = platform_listing_moderation.revision + 1`,
+     on conflict (listing_id) do update set state = 'allowed', reason = null, tenant_message = null, suspended_at = null, decided_at = now(), revision = platform_listing_moderation.revision + 1,
+       review_state = 'none', review_requested_at = null, review_requested_by = null, review_note = null, review_resolved_at = null, review_outcome = null`,
     [listingId],
   );
 }

@@ -31,6 +31,16 @@ export function ReviewStatusBadge({ review }: { review: Pick<Review, "response">
   return <StatusBadge tone={status === "awaiting" ? "warning" : "positive"}>{REVIEW_STATUS_LABEL[status]}</StatusBadge>;
 }
 
+/**
+ * Whether a review is on the business's public Marketplace profile. The customer decides (a review is private unless they chose to make it public) and
+ * the business cannot change it; the platform may hide a public review, and then it says so (not why).
+ */
+export function ReviewVisibilityBadge({ review }: { review: Pick<Review, "public" | "platformHidden"> }) {
+  if (!review.public) return <StatusBadge tone="neutral">Private</StatusBadge>;
+  if (review.platformHidden) return <StatusBadge tone="danger">Hidden from Marketplace by Climvia</StatusBadge>;
+  return <StatusBadge tone="primary">Public on Marketplace</StatusBadge>;
+}
+
 /** "#JB-204 · AC Repair & Diagnostics", a link to the Job record. */
 export function RelatedJobChip({ jobId, children }: { jobId: string; children?: ReactNode }) {
   const dir = useDirectory();

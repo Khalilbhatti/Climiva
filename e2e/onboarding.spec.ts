@@ -314,12 +314,12 @@ test.describe("creating the workspace", () => {
 test.describe("adding another business", () => {
   test("someone who already has a workspace is sent past set-up unless they ask for another", async ({ page }) => {
     await page.goto("/onboarding");
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/overview$/);
     await openForm(page, "/onboarding?new=1");
     await expect(page.getByRole("heading", { level: 1, name: "Set up your business" })).toBeVisible();
     await expect(page.getByText("Add another business workspace. Your other workspaces stay as they are.")).toBeVisible();
     await page.getByRole("link", { name: "Cancel" }).click();
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/overview$/);
   });
 
   test("a second business becomes the active one and the first is left alone", async ({ browser, db, clientAddresses }) => {

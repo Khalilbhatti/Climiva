@@ -2,7 +2,7 @@
  * The PUBLIC read and write paths: what a visitor without a session can reach.
  *
  * A visitor has no session, no membership and no organization, so none of the tenant queries (which run inside `withTenant`, under Row
- * Level Security) apply to them. They go through these SQL functions (migrations 0013, 0018, 0020, 0021 and 0025), which are the only place a request with no
+ * Level Security) apply to them. They go through these SQL functions (migrations 0013, 0018, 0020, 0021, 0025 and 0027), which are the only place a request with no
  * membership touches tenant rows:
  *
  *   app_public_site(platform_slug, page_slug)   a PUBLISHED site as a visitor sees it
@@ -17,6 +17,8 @@
  *   app_public_marketplace_sitemap()            the pages a search engine may be told about (migration 0025)
  *   app_public_listing_booking(slug, service)   what the Marketplace booking page needs for one Service of one listing (migration 0025)
  *   app_public_create_marketplace_booking(...)  one booking of source "Marketplace" (migration 0025)
+ *   app_public_review_request(token)            whether a review link can still be used, and whose it is (migration 0027)
+ *   app_public_submit_review(token, ...)        a customer's review, written through the link they hold (migration 0027)
  *
  * The functions take a PUBLIC IDENTITY, find the owning organization themselves, and return a small projection built field by field. They
  * run as the runtime role with no tenant context: nothing here uses an organization id, and the runtime role has no more privilege than
@@ -496,4 +498,35 @@ export async function createMarketplaceBooking(input: MarketplaceBookingInput): 
   }
   const reason = raw.reason === "listing" || raw.reason === "service" || raw.reason === "details" ? raw.reason : "unknown";
   return { ok: false, reason };
+}
+
+/* ───────────────────────── a review a customer writes (migration 0027) ───────────────────────── */
+
+/**
+ * What the review page may show a visitor who holds a review link: whether the link can still be used, the business it is for and, while it can, the name the
+ * review would be shown under. The link is a secret the database looks up by its hash; nothing else identifies the request, and a secret that is not a link
+ * is `null` (a visitor cannot tell a wrong secret from an unknown one).
+ */
+export type ReviewLinkView = { state: "open"; business: string; displayName: string } | { state: "completed" | "expired"; business: string };
+
+export async function loadReviewLink(token: string): Promise<ReviewLinkView | null> {
+  if (typeof token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
+  const result = await getDb().execute<{ link: unknown }>(sql`select app_public_review_request(${token}) as link`);
+  const raw = result.rows[0]?.link;
+  if (!isJson(raw) || !str(raw.business)) return null;
+  if (raw.state === "open") return { state: "open", business: str(raw.business), displayName: str(raw.displayName, "Customer") };
+  if (raw.state === "completed" || raw.state === "expired") return { state: raw.state, business: str(raw.business) };
+  return null;
+}
+
+export type ReviewSubmitOutcome = { result: "submitted"; public: boolean } | { result: "completed" | "expired" | "invalid" };
+
+/** Write the customer's review through the link they hold. The business, the customer and the Job come from the link's request inside the database. */
+export async function submitReview(token: string, rating: number, text: string, showPublicly: boolean): Promise<ReviewSubmitOutcome> {
+  const result = await getDb().execute<{ outcome: unknown }>(sql`select app_public_submit_review(${token}, ${rating}::integer, ${text}, ${showPublicly}) as outcome`);
+  const raw = result.rows[0]?.outcome;
+  if (!isJson(raw)) return { result: "invalid" };
+  if (raw.result === "submitted") return { result: "submitted", public: raw.public === true };
+  if (raw.result === "completed" || raw.result === "expired") return { result: raw.result };
+  return { result: "invalid" };
 }

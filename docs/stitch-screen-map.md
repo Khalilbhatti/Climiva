@@ -51,7 +51,7 @@ Team, Quotes & Invoices and Payments (Phase 4), Maintenance Plans and Website (P
 
 | Group | Module | Route | Status |
 | --- | --- | --- | --- |
-| Overview | Overview | `/` | Built |
+| Overview | Overview | `/overview` (Phase 19C; `/` is now the public landing and sends a business member here) | Built |
 | Operations | Bookings | `/bookings` | **Built (Phase 3)** |
 | | Schedule | `/schedule` | **Built (Phase 3)** |
 | | Jobs | `/jobs` (+ `/jobs/[jobId]`, `/work-details`, `/files`) | **Built (Phase 3)** |
@@ -959,3 +959,22 @@ no asset that is not used.
 
 The onboarding flow (outside the 16 modules, no instruction to build it), any backend, authentication, delivery or processing, and everything in
 [production-handoff.md](production-handoff.md#known-non-blocking-limitations).
+
+
+## Phase 19C: the public entry, and which address is which
+
+Added after the 16 modules; none of it is a Stitch screen (the export has no landing, review form or console), so it follows the product's own tokens and the rules in saas-architecture §38.
+
+| Address | Who it is for | What it is |
+| --- | --- | --- |
+| `/` | a visitor, a platform administrator with no business | the public landing: two doors (Find a Service, List Your Business) and Sign in. A business member is sent to `/overview`; someone with no business is sent to `/onboarding` |
+| `/marketplace` (+ Service, place and Service-in-place pages) | a visitor | the public Marketplace (Phase 19B) |
+| `/listings/[listingSlug]` | a visitor | a provider's profile, with the public header and a separate invitation to businesses |
+| `/review/[token]` | a customer holding a link | the review form (rating, words, an unchecked consent to show it publicly); noindex |
+| `/signup` | a business owner | create an account, then `/onboarding` (set up the business) |
+| `/login` | a business user | log in; returns only to a path on this site; never to the console |
+| `/overview` | a business member | the workspace Overview (it was `/` before Phase 19C); a welcome with five optional next steps for a business with nothing in it |
+| `/marketplace-listing` (+ `/edit`, `/preview`) | a business owner or admin | the business's own Marketplace screens, with a suspension notice, the platform's message and a request for a second look |
+| `/platform-admin/login` | a platform administrator | the console's own sign-in |
+| `/platform-admin`, `/organizations`, `/users`, `/marketplace`, `/reviews`, `/system` | a platform administrator | the console; Marketplace holds the suspension and its answers, Reviews holds hide and restore |
+| `GET /api/session-state` | the public header | three booleans about the caller; not a page |

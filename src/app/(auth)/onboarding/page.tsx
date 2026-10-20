@@ -17,7 +17,7 @@ export default async function OnboardingPage({ searchParams }: PageProps<"/onboa
   const { new: addAnother } = await searchParams;
   const state = await resolveWorkspace();
   const hasWorkspace = state.status === "ready";
-  if (hasWorkspace && addAnother !== "1") redirect("/");
+  if (hasWorkspace && addAnother !== "1") redirect("/overview");
 
   return (
     <AuthShell
@@ -25,7 +25,7 @@ export default async function OnboardingPage({ searchParams }: PageProps<"/onboa
       title="Set up your business"
       description={hasWorkspace ? "Add another business workspace. Your other workspaces stay as they are." : "A few details to create your workspace. You can change all of this later in Settings."}
     >
-      <OnboardingFlow cancelHref={hasWorkspace ? "/" : undefined} />
+      <OnboardingFlow cancelHref={hasWorkspace ? "/overview" : undefined} />
     </AuthShell>
   );
 }

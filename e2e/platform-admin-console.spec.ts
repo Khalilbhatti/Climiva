@@ -263,7 +263,7 @@ test.describe("marketplace moderation", () => {
     expect((await owner.pool.query("select status, description, cover, updated_at from marketplace_listings where id = $1", [listing.id])).rows[0]).toEqual(before);
     const ownerApi = await signedIn(business.owner.email, `fd00:${randomBytes(2).toString("hex")}:9::1`);
     try {
-      for (const path of ["/marketplace-listing", "/marketplace-listing/edit", "/website", "/"]) {
+      for (const path of ["/marketplace-listing", "/marketplace-listing/edit", "/website", "/overview"]) {
         const response = await ownerApi.get(path, { maxRedirects: 0 });
         expect(response.status(), path).toBe(200);
         expect(await response.text(), path).not.toContain(reason);
@@ -305,8 +305,9 @@ test.describe("marketplace moderation", () => {
     const row = page.getByRole("row", { name: new RegExp(listing.slug) });
     await row.getByText("Suspend…").click();
     // The textarea stops typing at 500; take the limit away to send what a script could.
-    await row.locator("textarea").evaluate((element: HTMLTextAreaElement) => element.removeAttribute("maxlength"));
-    await row.locator("textarea").fill("x".repeat(501));
+    const reasonField = row.getByLabel("Internal reason (optional)");
+    await reasonField.evaluate((element: HTMLTextAreaElement) => element.removeAttribute("maxlength"));
+    await reasonField.fill("x".repeat(501));
     await row.getByRole("button", { name: "Suspend listing" }).click();
     await expect(page.getByRole("status")).toContainText("longer than 500 characters");
     expect(await moderation(listing.id)).toBeNull();
@@ -378,13 +379,14 @@ async function makePlatformAdminAndRevoke(): Promise<Account> {
 
 /* ───────────────────────────────── reviews, system ───────────────────────────────── */
 
-test("reviews are read across the platform and cannot be changed from here", async ({ page }) => {
+test("reviews are read across the platform; the one decision is to hide a public review from the Marketplace, and nothing edits or deletes a review", async ({ page }) => {
   await page.goto("/platform-admin/reviews");
   await expect(page.getByRole("heading", { name: /Reviews/, level: 1 })).toBeVisible();
   await expect(page.getByRole("row").nth(1)).toBeVisible();
-  // Read-only: no control changes a review; the page says moderation of public reviews is a later step.
-  await expect(page.getByRole("button", { name: /hide|remove|delete|approve|reject|suspend|respond|reply/i })).toHaveCount(0);
-  await expect(page.getByText(/Hiding a public review from this page is not part of this release/)).toBeVisible();
+  // No control removes, edits, answers or approves a review; hiding takes it off the Marketplace and never touches the review itself.
+  await expect(page.getByRole("button", { name: /remove|delete|approve|reject|respond|reply|edit/i })).toHaveCount(0);
+  await expect(page.getByText(/never changes or deletes the review/)).toBeVisible();
+  await expect(page.getByText("Hide from Marketplace…").first()).toBeVisible();
   // The rating filter.
   await page.goto("/platform-admin/reviews?rating=5");
   const rows = page.getByRole("row");

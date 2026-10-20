@@ -22,7 +22,7 @@ const forbiddenIn = (entries: string[], forbidden: (path: string) => boolean): s
 /** The signed-in workspace: its data, its providers, its session and its chrome. */
 const WORKSPACE = [
   /^src\/server\/(workspace|workspace-providers|session|core-data|authorize|marketing-data|reporting|preview-route)\.tsx?$/,
-  /^src\/server\/actions\/(?!public-booking)/,
+  /^src\/server\/actions\/(?!public-)/,
   /^src\/components\/providers\//,
   /Provider\.tsx$/,
   /^src\/components\/ui\/Toast\.tsx$/,
@@ -74,7 +74,7 @@ test.describe("a published Site or Marketplace listing cannot reach the workspac
     expect(forbiddenIn(publicEntries, isAny([...WORKSPACE, ...TENANT_DATA]))).toEqual([]);
   });
 
-  test("a public page reaches the database only through the twelve public functions", () => {
+  test("a public page reaches the database only through the fourteen public functions", () => {
     const seen = reachable(publicEntries);
     // The connection, the table definitions it is built from, the public functions' own queries and the plain mappers they use: no tenant
     // transaction (`tenant.ts`) and no other business's queries.
@@ -92,8 +92,10 @@ test.describe("a published Site or Marketplace listing cannot reach the workspac
       "app_public_marketplace_facets",
       "app_public_marketplace_search",
       "app_public_marketplace_sitemap",
+      "app_public_review_request",
       "app_public_site",
       "app_public_site_domain",
+      "app_public_submit_review",
       "app_tls_eligible",
     ]);
   });
@@ -117,6 +119,36 @@ test.describe("Log in, Sign up and set-up mount only what they need", () => {
       /^src\/components\/shell\/(AppShell|TopBar|Sidebar|ShellMain)\.tsx$/,
     ]);
     expect(forbiddenIn(entries, forbidden)).toEqual([]);
+  });
+});
+
+test.describe("the front door and the review page", () => {
+  test("the landing and the public header reach no provider, no workspace data, no tenant query and no shell; `/` asks the session only through the entry module", () => {
+    const forbidden = isAny([
+      /^src\/server\/(workspace|workspace-providers|core-data|authorize|preview-route|marketing-data|reporting)\.tsx?$/,
+      /^src\/server\/actions\/(?!public-)/,
+      /^src\/components\/providers\//,
+      /Provider\.tsx$/,
+      /^src\/components\/ui\/Toast\.tsx$/,
+      /^src\/components\/shell\/(AppShell|TopBar|Sidebar|ShellMain)\.tsx$/,
+      /^src\/components\/workspace\//,
+    ]);
+    const entries = walk(join(SRC, "app", "(entry)"));
+    expect(entries.map(posix).sort()).toEqual(["src/app/(entry)/layout.tsx", "src/app/(entry)/page.tsx"]);
+    expect(forbiddenIn(entries, forbidden)).toEqual([]);
+    // The only tenant-aware modules the page reaches are the entry module and what it asks: the session, the memberships and the administrator check.
+    const tenantish = [...reachable(entries).keys()].map(posix).filter((path) => /^src\/(db|server)\//.test(path) && !path.startsWith("src/db/schema/")).sort();
+    expect(tenantish).toEqual(["src/db/index.ts", "src/db/platform-queries.ts", "src/db/tenant.ts", "src/server/entry.ts", "src/server/session.ts"]);
+    // The landing itself reads nothing: it is the same for everyone.
+    const landing = reachable([join(SRC, "components", "landing", "Landing.tsx")]);
+    expect([...landing.keys()].map(posix).filter((path) => /^src\/(db|server)\//.test(path))).toEqual([]);
+  });
+
+  test("the review page and its form reach the database only through the two review functions and write no tenant record by themselves", () => {
+    const entries = [join(SRC, "app", "(public)", "review", "[token]", "page.tsx")];
+    expect(forbiddenIn(entries, isAny([...WORKSPACE, ...TENANT_DATA]))).toEqual([]);
+    const source = readFileSync(entries[0], "utf8");
+    expect(source).not.toMatch(/cookies\(|headers\(|getSessionUser|resolveWorkspace|organizationId/);
   });
 });
 

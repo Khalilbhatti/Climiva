@@ -53,7 +53,7 @@ function WorkspaceSwitcher() {
       return;
     }
     // A fresh page load, so nothing from the previous workspace (settings, drafts, cached pages) is left on screen.
-    hardNavigate("/");
+    hardNavigate("/overview");
   }
 
   return (
@@ -193,7 +193,7 @@ export function TopBar() {
   return (
     <header className="sticky top-0 z-30 flex h-(--topbar-height) items-center justify-between border-b border-line bg-surface px-4 lg:px-6">
       <div className="flex min-w-0 items-center gap-3 lg:gap-6">
-        <Link href="/" aria-label="Climvia — Workspace Overview" className="flex shrink-0 items-center gap-2.5">
+        <Link href="/overview" aria-label="Climvia — Workspace Overview" className="flex shrink-0 items-center gap-2.5">
           <span
             aria-hidden
             className="flex size-8 items-center justify-center rounded-btn bg-primary text-base font-bold tracking-tight text-white shadow-card"

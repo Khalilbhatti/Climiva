@@ -73,13 +73,37 @@ export type ListingConfig = {
   areas: readonly ServiceArea[];
 };
 
+/** Where the business's request for a second look at a suspension stands. */
+export type SuspensionReviewState = "none" | "requested" | "resolved";
+
+/**
+ * What the business is told about a suspension, and nothing more. `message` is what the platform wrote FOR the business (a different field from the
+ * internal reason, which is never sent to any page). `review` is the business's own request to have the suspension looked at again: asking changes nothing
+ * about whether the listing is public, and only the platform lifts a suspension. Times are the business's local wall clock, "2024-10-25T10:45".
+ */
+export type ListingSuspension = {
+  message: string | null;
+  suspendedAt: string | null;
+  review: {
+    state: SuspensionReviewState;
+    requestedAt: string | null;
+    /** What the business wrote when it asked. */
+    note: string | null;
+    resolvedAt: string | null;
+    /** `kept`: the platform looked and the suspension stays. */
+    outcome: "kept" | "lifted" | null;
+  };
+};
+
 export type MarketplaceState = {
   status: ListingStatus;
   /**
    * True when the platform has suspended the listing. It then cannot be found by the public, whatever `status` says, until the suspension is lifted.
-   * The reason is never part of this: the business is told THAT, not why.
+   * The reason is never part of this: the business is told THAT, and what the platform chose to say to it (`suspension.message`), not why internally.
    */
   suspended: boolean;
+  /** Present exactly when `suspended` is true. */
+  suspension: ListingSuspension | null;
   config: ListingConfig;
   /** The listing's public identity (`/listings/<slug>`), once it has been set up. */
   slug?: string;
@@ -104,7 +128,7 @@ export function defaultListingConfig(services: readonly Service[]): ListingConfi
 
 /** A business with no listing: not set up, and the defaults the setup form starts from. */
 export function emptyMarketplaceState(services: readonly Service[]): MarketplaceState {
-  return { status: "not-set-up", suspended: false, config: defaultListingConfig(services) };
+  return { status: "not-set-up", suspended: false, suspension: null, config: defaultListingConfig(services) };
 }
 
 /** The Services the listing shows, in listing order. Catalog data is read, never copied. */

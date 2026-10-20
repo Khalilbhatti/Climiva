@@ -277,6 +277,11 @@ test.describe("Request review", () => {
     await dialog.getByRole("button", { name: "Send review request" }).click();
     await expect(toast(page)).toContainText("Review request recorded for Sarah Mitchell by SMS. Nothing is sent.");
     await expect(totals(page)).toContainText("6");
+    // The request's link is shown once, in a step of its own; closing it leaves no dialog open.
+    const ready = page.getByRole("dialog", { name: "Review link ready" });
+    await expect(ready.getByLabel("Review link")).toHaveValue(/\/review\/[A-Za-z0-9_-]{43}$/);
+    await expect(ready).toContainText("Climvia does not send it for you");
+    await ready.getByRole("button", { name: "Done" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 
@@ -330,6 +335,7 @@ test.describe("Request review", () => {
     await page.goto("/reviews");
     await page.getByRole("button", { name: "Request review" }).click();
     await page.getByRole("dialog", { name: "Request a review" }).getByRole("button", { name: "Send review request" }).click();
+    await page.getByRole("dialog", { name: "Review link ready" }).getByRole("button", { name: "Done" }).click();
     await primaryNav(page).getByRole("link", { name: /^Marketing/ }).click();
     await expect(page.getByRole("tablist", { name: "Campaign views" }).getByRole("tab")).toHaveText([/^All campaigns\s*11$/, /^Drafts\s*2$/, /^Scheduled\s*1$/, /^Sent\s*8$/]);
     await expect(page.getByRole("table", { name: "Campaigns" })).not.toContainText(/review/i);

@@ -7,7 +7,7 @@
  * business asked for a review: nothing is sent.
  */
 import type { Job, OperationsData } from "@/data/operations";
-import { REQUEST_MESSAGE_MAX, RESPONSE_MAX, type ReviewRequest, type ReviewRequestChannel } from "@/data/reviews";
+import { REQUEST_MESSAGE_MAX, RESPONSE_MAX, REVIEW_TEXT_MAX, type ReviewRequest, type ReviewRequestChannel } from "@/data/reviews";
 import { numberOf, slugOf } from "./operations-rules";
 import { isRecord, text, type Parsed } from "./validation";
 
@@ -23,6 +23,12 @@ export function parseReplyBody(value: unknown): Parsed<string> {
   if (body === "") return fail("Write a response before posting.", { body: "Write a response before posting." });
   if (body.length > RESPONSE_MAX) return fail(`Keep the response to ${RESPONSE_MAX} characters or fewer.`, { body: `Keep the response to ${RESPONSE_MAX} characters or fewer.` });
   return { ok: true, value: body };
+}
+
+/** "req-3": a review request is named by its place in the business's list; anything else names nothing. */
+export function requestNumber(value: unknown): number | undefined {
+  const match = typeof value === "string" ? /^req-([1-9]\d{0,5})$/.exec(value) : null;
+  return match ? Number(match[1]) : undefined;
 }
 
 export type NewReviewRequest = { customerSlug: string; jobNumber?: number; channel: ReviewRequestChannel; message: string };
@@ -46,6 +52,22 @@ export function parseReviewRequest(input: unknown): Parsed<NewReviewRequest> {
   if (message.length > REQUEST_MESSAGE_MAX) return fail(`Keep the message to ${REQUEST_MESSAGE_MAX} characters or fewer.`, { message: `Keep the message to ${REQUEST_MESSAGE_MAX} characters or fewer.` });
 
   return { ok: true, value: { customerSlug, jobNumber, channel, message } };
+}
+
+export type ReviewSubmission = { rating: 1 | 2 | 3 | 4 | 5; text: string; /** The customer said yes to showing it publicly. Anything but an explicit yes is no. */ showPublicly: boolean };
+
+/**
+ * What the customer's review form sends, read as the server must: a whole-number rating from 1 to 5, words of 1 to 2000 characters, and a consent that is
+ * true ONLY for the value "yes" (a missing, empty or any other value is no, so a forged or half-sent form can never make a review public).
+ */
+export function parseReviewSubmission(input: { rating: unknown; text: unknown; showPublicly: unknown }): Parsed<ReviewSubmission> {
+  const rating = typeof input.rating === "string" && /^[1-5]$/.test(input.rating) ? (Number(input.rating) as ReviewSubmission["rating"]) : undefined;
+  if (rating === undefined) return fail("Choose a rating from 1 to 5 stars.", { rating: "Choose a rating from 1 to 5 stars." });
+  const text = typeof input.text === "string" ? input.text.trim() : undefined;
+  if (text === undefined) return fail("Your review was not understood.");
+  if (text === "") return fail("Write a few words about your experience.", { text: "Write a few words about your experience." });
+  if (text.length > REVIEW_TEXT_MAX) return fail(`Keep your review to ${REVIEW_TEXT_MAX} characters or fewer.`, { text: `Keep your review to ${REVIEW_TEXT_MAX} characters or fewer.` });
+  return { ok: true, value: { rating, text, showPublicly: input.showPublicly === "yes" } };
 }
 
 /**

@@ -245,7 +245,7 @@ test.describe("a published Site or listing is the same page for a visitor and fo
       }
     }
     // The control: the same signed-in person's workspace page does.
-    const workspace = (await fetchAll(ORIGIN, "alex", ["/"])).get("/")!;
+    const workspace = (await fetchAll(ORIGIN, "alex", ["/overview"])).get("/overview")!;
     expect(workspace.status).toBe(200);
     expect(PROVIDER.test(await scriptsOf(workspace.body))).toBe(true);
     // And its page carries the workspace the providers were given.

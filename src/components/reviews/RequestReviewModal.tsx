@@ -13,18 +13,20 @@ import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/components/ui/Toast";
 import { getCustomerById } from "@/data/customers";
 import { getServiceNameFor } from "@/data/operations";
-import { REQUEST_MESSAGE_MAX, defaultRequestMessage, type ReviewRequestChannel } from "@/data/reviews";
+import { REQUEST_MESSAGE_MAX, defaultRequestMessage, type IssuedReviewLink, type ReviewRequestChannel } from "@/data/reviews";
 import { formatDate } from "@/lib/format";
 import { eligibleReviewJobs } from "@/lib/review-rules";
+import { IssuedLinkView } from "./ReviewLink";
 import { useReviews } from "./ReviewsProvider";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
 
 const NO_JOB = "";
 
 /**
- * Ask a customer for a review. This records the request in the database and nothing else: nothing is sent, nothing is offered in
- * return, and no Marketing campaign is created. A request can be tied to one of the customer's completed jobs that has no request
- * yet (the server holds that too, so asking twice about the same work is refused).
+ * Ask a customer for a review. This records the request in the database and makes a link the customer opens to write it: nothing is sent (the business
+ * gives the customer the link), nothing is offered in return, and no Marketing campaign is created. The link is shown once, in the step after the request
+ * is recorded. A request can be tied to one of the customer's completed jobs that has no request yet (the server holds that too, so asking twice about
+ * the same work is refused).
  */
 export function RequestReviewModal({ onClose }: { onClose: () => void }) {
   const dir = useDirectory();
@@ -44,6 +46,8 @@ export function RequestReviewModal({ onClose }: { onClose: () => void }) {
   const [showError, setShowError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string>();
+  // Set once the request is recorded: the modal then shows its link, the one time it can be seen.
+  const [issued, setIssued] = useState<{ link: IssuedReviewLink; customerName: string }>();
 
   const customer = customerId ? getCustomerById(customerId, dir) : undefined;
   const completed = eligibleReviewJobs(customerId, ops, reviews.requests);
@@ -59,7 +63,23 @@ export function RequestReviewModal({ onClose }: { onClose: () => void }) {
     setSaving(false);
     if (!result.ok) return setProblem(result.error);
     toast(`Review request recorded for ${customer.name} by ${channel === "email" ? "email" : "SMS"}. Nothing is sent.`);
+    if (result.data.link) return setIssued({ link: result.data.link, customerName: customer.name });
     onClose();
+  }
+
+  if (issued) {
+    return (
+      <Modal
+        open
+        onClose={onClose}
+        size="lg"
+        title="Review link ready"
+        description={`The request for ${issued.customerName} is recorded.`}
+        footer={<Button onClick={onClose}>Done</Button>}
+      >
+        <IssuedLinkView link={issued.link} />
+      </Modal>
+    );
   }
 
   return (

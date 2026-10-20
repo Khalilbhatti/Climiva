@@ -65,7 +65,8 @@ test.describe("what was seeded is what is read", () => {
   test("Northstar: its own reviews, reply and request come back exactly as seeded, in its own time zone", async () => {
     const read = await withTenant({ userId: ids.taylor, organizationId: ids.northstar }, (tx) => loadReviews(tx, ids.northstar, "America/Denver"));
     expect(byId<Review>(read.reviews)).toEqual(byId(NORTHSTAR_REVIEWS.reviews));
-    expect(read.requests).toEqual(NORTHSTAR_REVIEWS.requests);
+    // A request recorded before links existed has no link ("none"); everything else about it is as seeded.
+    expect(read.requests.map(({ link, ...rest }) => ({ ...rest, state: link?.state }))).toEqual(NORTHSTAR_REVIEWS.requests.map((request) => ({ ...request, state: "none" })));
   });
 
   test("an organization sees none of another's plans, reviews or requests through the same functions", async () => {

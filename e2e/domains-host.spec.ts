@@ -281,9 +281,11 @@ test.describe("a customer's domain is a public surface only", () => {
       expect(response.status, JSON.stringify(headers)).toBe(200);
       expect(response.body, JSON.stringify(headers)).not.toContain(mine.headline);
     }
+    // The platform's front door is Climvia's own landing: a header naming a customer's site does not turn it into that site.
     const root = await rawRequest(ORIGIN, "/", { headers: { "x-forwarded-host": mine.host } });
-    expect(root.status).toBe(307);
+    expect(root.status).toBe(200);
     expect(root.body).not.toContain(mine.headline);
+    expect(visibleText(root.body)).toContain("Find HVAC service. Run the business behind it.");
   });
 });
 

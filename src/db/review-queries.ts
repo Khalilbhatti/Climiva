@@ -7,18 +7,20 @@
  *
  * A review is the customer's: the application never writes one, and never changes its words, its rating or who or what it is
  * about. The business replies once (editing changes that same reply) and may record a request for a review. A request is only a
- * RECORD: nothing is emailed or texted. The UI types predate the database and stay as they are; a review's `id` in the UI is its
+ * RECORD: nothing is emailed or texted. It carries a LINK, though: a random secret made here, shown to the business once, and stored only as its
+ * SHA-256, which the customer opens to write the review (the public side is src/db/public-queries, migration 0027). The UI types predate the database and stay as they are; a review's `id` in the UI is its
  * reference ("rev-sarah-mitchell"), and the Job it names is its number ("JB-204"). The database uuids never leave the server.
  *
  * No `server-only` import on purpose: scripts and tests use these too. Nothing under src/ that is a Client Component may import
  * this file (a test enforces it).
  */
-import { and, asc, eq } from "drizzle-orm";
-import type { Review, ReviewRequest, ReviewRequestChannel, ReviewsData } from "@/data/reviews";
-import { instantToLocal, localToInstant } from "@/lib/business-time";
+import { and, asc, eq, sql } from "drizzle-orm";
+import type { IssuedReviewLink, Review, ReviewLinkState, ReviewRequest, ReviewRequestChannel, ReviewsData } from "@/data/reviews";
+import { instantToLocal, localToInstant, serverTimerMs } from "@/lib/business-time";
 import { jobReference, numberOf } from "@/lib/operations-rules";
 import { refuse } from "@/lib/refusal";
-import type { NewReviewRequest } from "@/lib/review-rules";
+import { hashReviewToken, newReviewToken, reviewLinkExpiry, reviewLinkUrl } from "@/lib/review-link";
+import { requestNumber, type NewReviewRequest } from "@/lib/review-rules";
 import type { Tx } from "./index";
 import { loadRefs, type IdOptions, type Refs } from "./ops-queries";
 import { jobs, reviewReplies, reviewRequests, reviews, teamMembers } from "./schema";
@@ -30,6 +32,7 @@ const idFor = (options: IdOptions, organizationId: string, kind: string, referen
 const orUndefined = <T,>(value: T | null | undefined): T | undefined => (value === null || value === undefined ? undefined : value);
 
 const GONE_REVIEW = "That review no longer exists. Reload the page and try again.";
+const GONE_REQUEST = "That review request no longer exists. Reload the page and try again.";
 
 /* ───────────────────────── reading ───────────────────────── */
 
@@ -38,7 +41,30 @@ export async function loadReviews(tx: Tx, organizationId: string, timeZone: stri
   const resolved = refs ?? (await loadRefs(tx, organizationId));
   const reviewRows = await tx.select().from(reviews).where(eq(reviews.organizationId, organizationId)).orderBy(asc(reviews.submittedOn), asc(reviews.slug));
   const replyRows = await tx.select().from(reviewReplies).where(eq(reviewReplies.organizationId, organizationId));
-  const requestRows = await tx.select().from(reviewRequests).where(eq(reviewRequests.organizationId, organizationId)).orderBy(asc(reviewRequests.position));
+  // The link's secret is never read: only whether a link exists, when it stops and whether the customer used it.
+  const requestRows = await tx
+    .select({
+      customerId: reviewRequests.customerId,
+      jobId: reviewRequests.jobId,
+      channel: reviewRequests.channel,
+      message: reviewRequests.message,
+      requestedAt: reviewRequests.requestedAt,
+      status: reviewRequests.status,
+      hasLink: sql<boolean>`${reviewRequests.tokenHash} is not null`,
+      expiresAt: reviewRequests.expiresAt,
+    })
+    .from(reviewRequests)
+    .where(eq(reviewRequests.organizationId, organizationId))
+    .orderBy(asc(reviewRequests.position));
+  // The reviews the platform has hidden from the Marketplace (ids only; the reason stays with the platform).
+  const hiddenRows = await tx.execute<{ id: string }>(sql`select app_hidden_review_ids() as id`);
+  const hidden = new Set(hiddenRows.rows.map((row) => row.id));
+  const now = serverTimerMs();
+  const linkOf = (row: (typeof requestRows)[number]): { state: ReviewLinkState; expires?: string } => {
+    if (row.status === "completed") return { state: "used" };
+    if (!row.hasLink || !row.expiresAt) return { state: "none" };
+    return { state: row.expiresAt.getTime() > now ? "active" : "expired", expires: instantToLocal(row.expiresAt, timeZone) };
+  };
   const jobRows = await tx.select({ id: jobs.id, number: jobs.number }).from(jobs).where(eq(jobs.organizationId, organizationId));
   const jobNumberById = new Map(jobRows.map((row) => [row.id, row.number]));
   const replyByReview = new Map(replyRows.map((row) => [row.reviewId, row]));
@@ -62,6 +88,7 @@ export async function loadReviews(tx: Tx, organizationId: string, timeZone: stri
         replyDraft: orUndefined(row.replyDraft),
         imported: row.imported ? true : undefined,
         public: row.visibility === "public" ? true : undefined,
+        platformHidden: row.visibility === "public" && hidden.has(row.id) ? true : undefined,
       };
     }),
     requests: requestRows.map(
@@ -72,6 +99,7 @@ export async function loadReviews(tx: Tx, organizationId: string, timeZone: stri
         channel: row.channel as ReviewRequestChannel,
         message: row.message,
         at: instantToLocal(row.requestedAt, timeZone),
+        link: linkOf(row),
       }),
     ),
   };
@@ -89,6 +117,8 @@ export type ReviewContext = {
   actorUserId: string;
   /** What a reply is signed with: the signed-in person's profile name. */
   authorName: string;
+  /** The business's time zone, for the local time a new review link stops working (UTC when absent). */
+  timeZone?: string;
 };
 
 /** The Team member (if any) that the signed-in person is. */
@@ -138,11 +168,17 @@ export async function editReplyTx(ctx: ReviewContext, slug: string, body: string
 
 /* ───────────────────────── requesting ───────────────────────── */
 
+/** A link the customer can use, as the business is shown it (once). */
+function issued(token: string, expires: Date, timeZone: string): IssuedReviewLink {
+  return { url: reviewLinkUrl(token), expires: instantToLocal(expires, timeZone) };
+}
+
 /**
- * Record a request for a review. The customer is this business's own; a job it names is the customer's own COMPLETED job, with no
- * active request already (a double click or a second person cannot ask twice for the same work). Nothing is sent.
+ * Record a request for a review and make its link. The customer is this business's own; a job it names is the customer's own COMPLETED job, with no
+ * active request already (a double click or a second person cannot ask twice for the same work). Nothing is sent: the link is returned for the business
+ * to give the customer, and only its hash is stored.
  */
-export async function createRequestTx(ctx: ReviewContext, input: NewReviewRequest): Promise<void> {
+export async function createRequestTx(ctx: ReviewContext, input: NewReviewRequest): Promise<IssuedReviewLink> {
   const { tx, organizationId, refs } = ctx;
   const customerId = refs.idBySlug.customers.get(input.customerSlug);
   if (!customerId) return refuse("That customer is not in your customers any more. Choose another or reload the page.");
@@ -158,6 +194,8 @@ export async function createRequestTx(ctx: ReviewContext, input: NewReviewReques
     jobId = job.id;
   }
 
+  const token = newReviewToken();
+  const expires = reviewLinkExpiry();
   await tx.insert(reviewRequests).values({
     organizationId,
     customerId,
@@ -166,8 +204,38 @@ export async function createRequestTx(ctx: ReviewContext, input: NewReviewReques
     message: input.message,
     status: "recorded",
     requestedAt: ctx.stamp,
+    tokenHash: hashReviewToken(token),
+    expiresAt: expires,
     createdBy: await actorMember(ctx),
   });
+  return issued(token, expires, ctx.timeZone ?? "UTC");
+}
+
+/**
+ * Replace the link of one request with a new one (the old secret stops working at once), for a link that was lost or ran out. The request is named by its
+ * place in the business's list ("req-3"), resolved inside the verified organization; a request the customer already answered has nothing left to ask for.
+ */
+export async function reissueLinkTx(ctx: ReviewContext, reference: unknown): Promise<IssuedReviewLink> {
+  const number = requestNumber(reference);
+  if (number === undefined) return refuse(GONE_REQUEST);
+  const rows = await ctx.tx
+    .select({ id: reviewRequests.id })
+    .from(reviewRequests)
+    .where(eq(reviewRequests.organizationId, ctx.organizationId))
+    .orderBy(asc(reviewRequests.position))
+    .limit(1)
+    .offset(number - 1);
+  const target = rows[0];
+  if (!target) return refuse(GONE_REQUEST);
+
+  const token = newReviewToken();
+  const expires = reviewLinkExpiry();
+  const result = (await ctx.tx.execute<{ data: { found?: boolean; changed?: boolean; reason?: string } }>(
+    sql`select app_reissue_review_link(${target.id}::uuid, ${hashReviewToken(token)}, ${expires.toISOString()}::timestamptz) as data`,
+  )).rows[0]?.data;
+  if (!result?.found) return refuse(GONE_REQUEST);
+  if (!result.changed) return refuse("The customer has already answered this request, so it has no link to give.");
+  return issued(token, expires, ctx.timeZone ?? "UTC");
 }
 
 /* ───────────────────────── seed and tests ───────────────────────── */

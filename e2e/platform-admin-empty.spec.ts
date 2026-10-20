@@ -96,9 +96,9 @@ test("every page is a valid zero state: no business, no listing, no review, and 
   };
   const overview = await text("/platform-admin");
   expect(overview).toContain("No business has signed up yet");
-  // Ten counts: one user (the administrator), nothing else.
+  // Eleven counts: one user (the administrator), nothing else.
   const figures = [...(await (await api.get("/platform-admin")).text()).matchAll(/text-3xl[^>]*>(\d[\d,]*)</g)].map((match) => Number(match[1].replace(/,/g, "")));
-  expect(figures).toEqual([0, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
+  expect(figures).toEqual([0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   expect(overview).not.toMatch(/NaN|undefined|null|Infinity|\+\d+%/);
 
   expect(await text("/platform-admin/organizations")).toContain("No organizations yet");
@@ -132,8 +132,8 @@ test("the figures are exactly the data: three businesses, one membership, two li
 
   const html = await (await api.get("/platform-admin")).text();
   const figures = [...html.matchAll(/text-3xl[^>]*>(\d[\d,]*)</g)].map((match) => Number(match[1].replace(/,/g, "")));
-  // Organizations, Users, Active memberships, Sites, Published sites, Marketplace listings, Published listings, Suspended listings, Bookings, Reviews.
-  expect(figures).toEqual([3, 1, 1, 0, 0, 2, 1, 0, 0, 0]);
+  // Organizations, Users, Active memberships, Sites, Published sites, Marketplace listings, Published listings, Suspended listings, Review requests waiting, Bookings, Reviews.
+  expect(figures).toEqual([3, 1, 1, 0, 0, 2, 1, 0, 0, 0, 0]);
   expect(html).not.toContain("No business has signed up yet");
 
   const organizations = visibleText(await (await api.get("/platform-admin/organizations")).text());

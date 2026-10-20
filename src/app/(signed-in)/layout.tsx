@@ -1,5 +1,9 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { WorkspaceProviders } from "@/server/workspace-providers";
+
+// A business's workspace and the previews of its Drafts are private, and nothing under here is ever indexed.
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 // Everything under here belongs to one signed-in person's active workspace. Never cache it between requests or people.
 export const dynamic = "force-dynamic";

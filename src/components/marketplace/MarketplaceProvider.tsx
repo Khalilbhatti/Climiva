@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import type { ListingConfig, MarketplaceState } from "@/data/marketplace";
 import type { ActionResult } from "@/lib/action-result";
 import { send } from "@/lib/send-action";
-import { hideListingAction, publishListingAction, saveListingAction, setUpListingAction } from "@/server/actions/marketplace";
+import { hideListingAction, publishListingAction, requestListingReviewAction, saveListingAction, setUpListingAction } from "@/server/actions/marketplace";
 
 type Done = Promise<ActionResult<{ marketplace: MarketplaceState }>>;
 
@@ -15,6 +15,8 @@ type MarketplaceContextValue = {
   publishListing: () => Done;
   hideListing: () => Done;
   setUpListing: (config: ListingConfig) => Done;
+  /** Asks Climvia to look at the suspension again. Changes nothing about whether the listing is public. */
+  requestReview: (note: string) => Done;
 };
 
 const MarketplaceContext = createContext<MarketplaceContextValue | null>(null);
@@ -40,6 +42,7 @@ export function MarketplaceProvider({ initial, children }: { initial: Marketplac
       publishListing: async () => adopt(await send(() => publishListingAction())),
       hideListing: async () => adopt(await send(() => hideListingAction())),
       setUpListing: async (config) => adopt(await send(() => setUpListingAction({ config }))),
+      requestReview: async (note) => adopt(await send(() => requestListingReviewAction({ note }))),
     }),
     [listing, adopt],
   );

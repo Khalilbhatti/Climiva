@@ -265,7 +265,7 @@ test.describe("the workspace carries nothing of the console", () => {
     for (const email of [business.owner.email, admin.email]) {
       const api = await signedIn(email, address());
       try {
-        for (const path of ["/", "/customers", "/bookings", "/settings", "/marketplace-listing", "/website", "/team", "/analytics"]) {
+        for (const path of ["/overview", "/customers", "/bookings", "/settings", "/marketplace-listing", "/website", "/team", "/analytics"]) {
           const response = await api.get(path, { maxRedirects: 0 });
           expect(response.status(), `${email} ${path}`).toBe(200);
           const html = await response.text();

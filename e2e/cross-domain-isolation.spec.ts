@@ -49,7 +49,7 @@ test.describe("switching business", () => {
     // Switching reloads the app on the new business's Overview.
     await switchWorkspace(page, new RegExp(NORTHSTAR));
     await expect(switcher(page)).toContainText(NORTHSTAR);
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/overview$/);
     await expect(page.getByText("Your workspace is ready")).toBeVisible();
     expect(problems).toEqual([]);
   });

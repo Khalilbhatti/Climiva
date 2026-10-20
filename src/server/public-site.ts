@@ -10,7 +10,9 @@ import {
   loadPublicListing,
   loadPublicSite,
   loadPublicSiteDomain,
+  loadReviewLink,
   type MarketplaceBookingContext,
+  type ReviewLinkView,
 } from "@/db/public-queries";
 import type { DiscoveryQuery } from "@/lib/marketplace-discovery";
 import type { SiteView } from "@/components/website/site-view";
@@ -31,6 +33,9 @@ export const getPublicSite = cache(async (platformSlug: string, pageSlug: string
  * both wait for the same answer, so what is in the page's head never depends on which of them happened to finish first.
  */
 export const getPublicSiteDomain = cache(async (platformSlug: string): Promise<string | null> => loadPublicSiteDomain(platformSlug));
+
+/** Whether a review link can still be used and whose it is, or null (not a link). Asked by the page and its metadata alike, so it is read once per request. */
+export const getReviewLink = cache(async (token: string): Promise<ReviewLinkView | null> => loadReviewLink(token));
 
 /** A published Marketplace listing by its public identity, or null. */
 export const getPublicListing = cache(async (publicSlug: string): Promise<PublicListingData | null> => loadPublicListing(publicSlug));

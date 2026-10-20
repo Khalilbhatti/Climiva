@@ -24,9 +24,66 @@ export const REVIEW_SOURCE_VALUES = ["Climvia"] as const;
 /** private: only the business sees it. public: it may be shown on the business's Marketplace profile and counts toward its public rating. */
 export const REVIEW_VISIBILITY_VALUES = ["private", "public"] as const;
 export const REVIEW_CHANNEL_VALUES = ["email", "sms"] as const;
-export const REVIEW_REQUEST_STATUS_VALUES = ["recorded"] as const;
+export const REVIEW_REQUEST_STATUS_VALUES = ["recorded", "completed"] as const;
 
 const list = (values: readonly string[]) => sql.raw(values.map((value) => `'${value}'`).join(", "));
+
+/* ───────────────────────── requests ───────────────────────── */
+
+/**
+ * A record that the business asked a customer for a review. NOTHING IS SENT: there is no email or SMS delivery yet, so a request
+ * is only recorded (`status` is `recorded`; further states arrive with delivery). It may be about one of the customer's Jobs; a
+ * Job has at most one active request, so a double click or a second person cannot ask twice for the same work.
+ */
+export const reviewRequests = pgTable(
+  "review_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id").notNull(),
+    jobId: uuid("job_id"),
+    channel: text("channel").notNull(),
+    message: text("message").notNull(),
+    status: text("status").notNull(),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull(),
+    /**
+     * The link the customer is given, as a SHA-256 of its secret (64 hex characters). The secret itself is never stored, logged or shown again: the
+     * business is shown the link once, when it is made, and asks for a new one (which replaces this) if it is lost. A request recorded before links
+     * existed has none. The link stops working at `expires_at` and once the review it asked for is `completed`.
+     */
+    tokenHash: text("token_hash"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    /** When the customer submitted the review this request asked for. */
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    /** The Team member who recorded it, when the person has a Team record. */
+    createdBy: uuid("created_by"),
+    position: integer("position").generatedAlwaysAsIdentity(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({ name: "review_requests_customer_fk", columns: [table.organizationId, table.customerId], foreignColumns: [customers.organizationId, customers.id] }),
+    foreignKey({ name: "review_requests_job_fk", columns: [table.organizationId, table.jobId], foreignColumns: [jobs.organizationId, jobs.id] }),
+    foreignKey({ name: "review_requests_job_customer_fk", columns: [table.organizationId, table.jobId, table.customerId], foreignColumns: [jobs.organizationId, jobs.id, jobs.customerId] }),
+    foreignKey({ name: "review_requests_by_fk", columns: [table.organizationId, table.createdBy], foreignColumns: [teamMembers.organizationId, teamMembers.id] }),
+    unique("review_requests_org_id_unique").on(table.organizationId, table.id),
+    // One active request per job (requests with no job are not constrained).
+    uniqueIndex("review_requests_job_active_unique").on(table.organizationId, table.jobId).where(sql`${table.jobId} is not null and ${table.status} = 'recorded'`),
+    index("review_requests_org_customer_idx").on(table.organizationId, table.customerId),
+    index("review_requests_org_job_idx").on(table.organizationId, table.jobId, table.status),
+    check("review_requests_channel", sql`${table.channel} in (${list(REVIEW_CHANNEL_VALUES)})`),
+    check("review_requests_message", sql`char_length(btrim(${table.message})) between 1 and 500`),
+    check("review_requests_status", sql`${table.status} in (${list(REVIEW_REQUEST_STATUS_VALUES)})`),
+    unique("review_requests_token_hash_unique").on(table.tokenHash),
+    check("review_requests_token_shape", sql`${table.tokenHash} is null or (${table.tokenHash} ~ '^[0-9a-f]{64}$' and ${table.expiresAt} is not null)`),
+    // A request is completed exactly when it has a completion time.
+    check("review_requests_completion", sql`(${table.status} = 'completed') = (${table.completedAt} is not null)`),
+  ],
+).enableRLS();
+
+export type ReviewRequestRow = typeof reviewRequests.$inferSelect;
 
 /* ───────────────────────── reviews ───────────────────────── */
 
@@ -66,6 +123,8 @@ export const reviews = pgTable(
      */
     visibility: text("visibility").notNull().default("private"),
     madePublicAt: timestamp("made_public_at", { withTimezone: true }),
+    /** The review request this review answers (a customer submitting through the link a business gave them), or null (a review that came another way). */
+    requestId: uuid("request_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -74,6 +133,9 @@ export const reviews = pgTable(
     foreignKey({ name: "reviews_job_fk", columns: [table.organizationId, table.jobId], foreignColumns: [jobs.organizationId, jobs.id] }),
     // When both are named the job is the customer's own (a NULL customer is not constrained: that review is by a name).
     foreignKey({ name: "reviews_job_customer_fk", columns: [table.organizationId, table.jobId, table.customerId], foreignColumns: [jobs.organizationId, jobs.id, jobs.customerId] }),
+    foreignKey({ name: "reviews_request_fk", columns: [table.organizationId, table.requestId], foreignColumns: [reviewRequests.organizationId, reviewRequests.id] }),
+    // A request is answered by at most one review.
+    unique("reviews_org_request_unique").on(table.organizationId, table.requestId),
     unique("reviews_org_id_unique").on(table.organizationId, table.id),
     unique("reviews_org_slug_unique").on(table.organizationId, table.slug),
     index("reviews_org_submitted_idx").on(table.organizationId, table.submittedOn),
@@ -130,47 +192,3 @@ export const reviewReplies = pgTable(
 ).enableRLS();
 
 export type ReviewReplyRow = typeof reviewReplies.$inferSelect;
-
-/* ───────────────────────── requests ───────────────────────── */
-
-/**
- * A record that the business asked a customer for a review. NOTHING IS SENT: there is no email or SMS delivery yet, so a request
- * is only recorded (`status` is `recorded`; further states arrive with delivery). It may be about one of the customer's Jobs; a
- * Job has at most one active request, so a double click or a second person cannot ask twice for the same work.
- */
-export const reviewRequests = pgTable(
-  "review_requests",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    organizationId: uuid("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    customerId: uuid("customer_id").notNull(),
-    jobId: uuid("job_id"),
-    channel: text("channel").notNull(),
-    message: text("message").notNull(),
-    status: text("status").notNull(),
-    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull(),
-    /** The Team member who recorded it, when the person has a Team record. */
-    createdBy: uuid("created_by"),
-    position: integer("position").generatedAlwaysAsIdentity(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    foreignKey({ name: "review_requests_customer_fk", columns: [table.organizationId, table.customerId], foreignColumns: [customers.organizationId, customers.id] }),
-    foreignKey({ name: "review_requests_job_fk", columns: [table.organizationId, table.jobId], foreignColumns: [jobs.organizationId, jobs.id] }),
-    foreignKey({ name: "review_requests_job_customer_fk", columns: [table.organizationId, table.jobId, table.customerId], foreignColumns: [jobs.organizationId, jobs.id, jobs.customerId] }),
-    foreignKey({ name: "review_requests_by_fk", columns: [table.organizationId, table.createdBy], foreignColumns: [teamMembers.organizationId, teamMembers.id] }),
-    unique("review_requests_org_id_unique").on(table.organizationId, table.id),
-    // One active request per job (requests with no job are not constrained).
-    uniqueIndex("review_requests_job_active_unique").on(table.organizationId, table.jobId).where(sql`${table.jobId} is not null and ${table.status} = 'recorded'`),
-    index("review_requests_org_customer_idx").on(table.organizationId, table.customerId),
-    index("review_requests_org_job_idx").on(table.organizationId, table.jobId, table.status),
-    check("review_requests_channel", sql`${table.channel} in (${list(REVIEW_CHANNEL_VALUES)})`),
-    check("review_requests_message", sql`char_length(btrim(${table.message})) between 1 and 500`),
-    check("review_requests_status", sql`${table.status} in (${list(REVIEW_REQUEST_STATUS_VALUES)})`),
-  ],
-).enableRLS();
-
-export type ReviewRequestRow = typeof reviewRequests.$inferSelect;

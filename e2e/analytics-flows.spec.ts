@@ -204,7 +204,7 @@ test.describe("tenant switching recalculates everything", () => {
 
     // Back to Apex: the approved figures return, and the URL's tab and range are replaced by the Overview (a business switch is a page load).
     await toApex();
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/overview$/);
     await expect(kpis(page)).toContainText(/Bookings\s*24/);
     await page.goto("/analytics?tab=financial");
     await expect(section(page, "Invoices")).toContainText(/Total invoiced\s*\$6,240/);

@@ -10,7 +10,7 @@ export default function WorkspaceNotFound() {
       icon={SearchX}
       title="We couldn't find that page"
       description="The record may have been removed, or the link may be incorrect."
-      action={<ButtonLink href="/">Back to Overview</ButtonLink>}
+      action={<ButtonLink href="/overview">Back to Overview</ButtonLink>}
     />
   );
 }

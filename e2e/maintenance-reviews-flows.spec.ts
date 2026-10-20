@@ -89,6 +89,8 @@ async function requestSarahReview(page: Page, channel: "Email" | "SMS" = "Email"
   await dialog.getByRole("radio", { name: new RegExp(`^${channel}`) }).check();
   await dialog.getByRole("button", { name: "Send review request" }).click();
   await expect(dialog).toBeHidden();
+  // The request is recorded and its link is shown once, in a step of its own: it is dismissed here.
+  await page.getByRole("dialog", { name: "Review link ready" }).getByRole("button", { name: "Done" }).click();
 }
 
 type Db = import("pg").Pool;
@@ -514,6 +516,7 @@ test.describe("a review request is recorded, and nothing is sent", () => {
     await expect(dialog.getByLabel("Related job (optional)").locator("option", { hasText: "#JB-204" })).toHaveCount(1);
     const captured = await captureAction(page, () => dialog.getByRole("button", { name: "Send review request" }).click());
     await expect(dialog).toBeHidden();
+    await page.getByRole("dialog", { name: "Review link ready" }).getByRole("button", { name: "Done" }).click();
 
     await page.getByRole("button", { name: "Request review" }).click();
     const again = page.getByRole("dialog", { name: "Request a review" });
@@ -534,6 +537,7 @@ test.describe("a review request is recorded, and nothing is sent", () => {
     for (const option of options.slice(1)) expect(option).toMatch(/Completed/);
     const captured = await captureAction(page, () => dialog.getByRole("button", { name: "Send review request" }).click());
     await expect(dialog).toBeHidden();
+    await page.getByRole("dialog", { name: "Review link ready" }).getByRole("button", { name: "Done" }).click();
 
     const jobs = (await db.query("select number from jobs where organization_id = $1 and status <> 'completed' order by number limit 1", [workerTenant.organizationId])).rows;
     const open = `JB-${jobs[0].number}`;
@@ -609,6 +613,7 @@ test.describe("the server decides who may change plans and reviews, and what", (
     await page.getByRole("button", { name: "Request review" }).click();
     const request = await captureAction(page, () => page.getByRole("dialog", { name: "Request a review" }).getByRole("button", { name: "Send review request" }).click());
     await expect(page.getByRole("dialog", { name: "Request a review" })).toBeHidden();
+    await page.getByRole("dialog", { name: "Review link ready" }).getByRole("button", { name: "Done" }).click();
 
     const before = { plans: await count(db, "maintenance_plans", org), replies: await count(db, "review_replies", org), requests: await count(db, "review_requests", org) };
     const jamie = await apiAs("jamie");

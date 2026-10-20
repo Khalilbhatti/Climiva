@@ -62,7 +62,8 @@
 }
 
 (access_log) {
-	# Who asked for what and what was answered: no body, and no cookie or credential.
+	# Who asked for what and what was answered: no body, and no cookie or credential. A review link's address IS its secret (/review/<secret>), so that
+	# part of the address is not written down, in the request or in a Referer that carries it.
 	log {
 		output stdout
 		format filter {
@@ -71,6 +72,8 @@
 				request>headers>Cookie delete
 				request>headers>Authorization delete
 				resp_headers>Set-Cookie delete
+				request>uri regexp "/review/[A-Za-z0-9_-]+" "/review/REDACTED"
+				request>headers>Referer regexp "/review/[A-Za-z0-9_-]+" "/review/REDACTED"
 			}
 		}
 	}

@@ -183,6 +183,20 @@
       "when": 1792442149297,
       "tag": "0025_marketplace_discovery_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792502742961,
+      "tag": "0026_public_entry",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1792502803795,
+      "tag": "0027_public_entry_rls",
+      "breakpoints": true
     }
   ]
 }

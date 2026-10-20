@@ -248,7 +248,7 @@ test.describe("switching between two workspaces", () => {
     await expect(page.getByLabel(/^Business name/)).toHaveValue(business.name);
 
     await switchWorkspace(page, new RegExp(NORTHSTAR.name));
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/overview$/);
     await expect(activeBusiness(page)).toContainText(NORTHSTAR.name);
     await page.goto("/settings");
     await expect(page.getByLabel(/^Business name/)).toHaveValue(NORTHSTAR.name);

@@ -10,8 +10,9 @@
  * queue up. No `server-only` import (shared with the seed and the specs); no Client Component may import this file.
  */
 import { and, asc, eq, sql } from "drizzle-orm";
-import { defaultListingConfig, getEligibleServices, type ListingConfig, type ListingStatus, type MarketplaceState, type CoverId, type ServiceArea } from "@/data/marketplace";
+import { defaultListingConfig, getEligibleServices, type ListingConfig, type ListingStatus, type ListingSuspension, type MarketplaceState, type CoverId, type ServiceArea } from "@/data/marketplace";
 import type { Service } from "@/data/services";
+import { instantToLocal } from "@/lib/business-time";
 import { refuse } from "@/lib/refusal";
 import type { Tx } from "./index";
 import { marketplaceListingServices, marketplaceListings, marketplaceServiceAreas, services, type MarketplaceListingRow } from "./schema";
@@ -32,9 +33,9 @@ function statusOf(row: MarketplaceListingRow): ListingStatus {
  * The business's listing as the Marketplace screens hold it. With no listing: not set up, with the defaults the setup form starts from.
  * `order` lists every eligible Service once: the selected ones in the listing's order, then the others in the catalog's.
  */
-export async function loadMarketplace(tx: Tx, organizationId: string, catalog: readonly Service[]): Promise<MarketplaceState> {
+export async function loadMarketplace(tx: Tx, organizationId: string, catalog: readonly Service[], timeZone = "UTC"): Promise<MarketplaceState> {
   const row = await findListing(tx, organizationId);
-  if (!row) return { status: "not-set-up", suspended: false, config: defaultListingConfig(catalog) };
+  if (!row) return { status: "not-set-up", suspended: false, suspension: null, config: defaultListingConfig(catalog) };
   const selectedRows = await tx
     .select({ slug: services.slug, sortOrder: marketplaceListingServices.sortOrder })
     .from(marketplaceListingServices)
@@ -60,9 +61,45 @@ export async function loadMarketplace(tx: Tx, organizationId: string, catalog: r
     actions: { book: row.actionBook, website: row.actionWebsite, contact: row.actionContact },
     areas,
   };
-  // Whether the PLATFORM has suspended the listing: a yes or a no from the database (the reason stays where the platform keeps it).
-  const suspended = (await tx.execute<{ suspended: boolean }>(sql`select app_listing_suspended() as suspended`)).rows[0]?.suspended === true;
-  return { status: statusOf(row), suspended, config, slug: row.publicSlug };
+  // Whether the PLATFORM has suspended the listing, and what it chose to tell the business about it. The internal reason, who decided and the audit trail
+  // stay where the platform keeps them: the function answers with the business-facing part only.
+  const suspension = await readSuspension(tx, timeZone);
+  return { status: statusOf(row), suspended: suspension !== null, suspension, config, slug: row.publicSlug };
+}
+
+const textOrNull = (value: unknown): string | null => (typeof value === "string" && value !== "" ? value : null);
+
+/** The suspension of the ACTIVE organization's listing as the business may read it, or null (not suspended). */
+async function readSuspension(tx: Tx, timeZone: string): Promise<ListingSuspension | null> {
+  const raw = (await tx.execute<{ suspension: unknown }>(sql`select app_listing_suspension() as suspension`)).rows[0]?.suspension;
+  if (raw === null || raw === undefined || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const data = raw as Record<string, unknown>;
+  const local = (value: unknown): string | null => (typeof value === "string" && value !== "" ? instantToLocal(new Date(value), timeZone) : null);
+  const state = data.reviewState === "requested" ? "requested" : data.reviewState === "resolved" ? "resolved" : "none";
+  return {
+    message: textOrNull(data.message),
+    suspendedAt: local(data.suspendedAt),
+    review: {
+      state,
+      requestedAt: local(data.reviewRequestedAt),
+      note: textOrNull(data.reviewNote),
+      resolvedAt: local(data.reviewResolvedAt),
+      outcome: data.reviewOutcome === "kept" ? "kept" : data.reviewOutcome === "lifted" ? "lifted" : null,
+    },
+  };
+}
+
+export type ReviewRequestResult = "requested" | "already_requested" | "not_suspended" | "too_soon";
+
+/**
+ * Ask the platform to look at the suspension again. Owners and admins only (the database function checks the same thing again). It records the request and
+ * the member's note and changes nothing about visibility; one request at a time, and a day's wait after the platform keeps a suspension.
+ */
+export async function requestListingReview(tx: Tx, note: string | null): Promise<{ result: ReviewRequestResult; retryAfter: Date | null }> {
+  const raw = (await tx.execute<{ data: unknown }>(sql`select app_request_listing_review(${note}) as data`)).rows[0]?.data;
+  const data = raw !== null && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const result: ReviewRequestResult = data.result === "requested" || data.result === "already_requested" || data.result === "too_soon" ? data.result : "not_suspended";
+  return { result, retryAfter: typeof data.retryAfter === "string" ? new Date(data.retryAfter) : null };
 }
 
 async function lockListing(tx: Tx, organizationId: string): Promise<MarketplaceListingRow | undefined> {

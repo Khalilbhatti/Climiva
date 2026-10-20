@@ -10,7 +10,7 @@ import { expect, test } from "./fixtures";
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
 
 const SIDEBAR: { group: string; items: [string, string][] }[] = [
-  { group: "Overview", items: [["Overview", "/"]] },
+  { group: "Overview", items: [["Overview", "/overview"]] },
   {
     group: "Operations",
     items: [
@@ -170,7 +170,7 @@ test.describe("the sidebar is exactly the approved navigation", () => {
     const everything = [...SIDEBAR.flatMap((entry) => entry.items), ...UTILITY];
     for (const [label, href] of everything) {
       await primaryNav(page).getByRole("link", { name: new RegExp(`^${label.replace(/[&]/g, "\\$&")}`) }).click();
-      await expect(page).toHaveURL(new RegExp(`${href === "/" ? "/$" : href}`));
+      await expect(page).toHaveURL(new RegExp(`${href}$`));
       await expect(primaryNav(page).locator("a[aria-current='page']")).toHaveCount(1);
       await expect(primaryNav(page).locator("a[aria-current='page']")).toHaveAttribute("href", href);
     }
@@ -249,7 +249,7 @@ test.describe("the Overview quick actions are the real flows", () => {
       await expect(page).toHaveURL(new RegExp(flow.href.replace(/[?]/g, "\\?")));
       await flow.open(page);
       await page.goBack();
-      await expect(page).toHaveURL(/\/$/);
+      await expect(page).toHaveURL(/\/overview$/);
       await expect(page.getByRole("heading", { level: 1, name: "Workspace Overview" })).toBeVisible();
     });
   }

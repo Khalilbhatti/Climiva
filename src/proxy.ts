@@ -14,7 +14,9 @@ import { hostConfig } from "@/lib/domain-config";
  * Left alone on purpose: the auth endpoints, the Log in and Sign up pages (a cookie that no longer maps to a session must
  * still be able to reach them, or the person would be bounced between pages forever; the pages themselves send a truly
  * signed-in visitor on), and the PUBLISHED websites (/sites/<address>), the public Marketplace (/marketplace, its Service and place pages) and its listings
- * (/listings/<address>, and the booking page under one), which must stay reachable without a Climvia account, and the logos they draw (/assets/<id>, which serves only a logo a business has chosen: the route asks
+ * (/listings/<address>, and the booking page under one), which must stay reachable without a Climvia account, the page a customer opens to write a review
+ * (/review/<secret>, whose address is a secret the database looks up), the front door `/` (the public landing, which sends a business member on to their
+ * dashboard from the page itself) and the answer the public pages' header asks for (/api/session-state), and the logos they draw (/assets/<id>, which serves only a logo a business has chosen: the route asks
  * the database, not this file). Those pages resolve the business from the public address on the server and show published
  * content only. The signed-in previews of a Draft (/website/preview, /marketplace-listing/preview) are NOT public: they need a session cookie
  * here and a verified membership in the page.
@@ -31,7 +33,7 @@ import { hostConfig } from "@/lib/domain-config";
  * `/internal/tls-allow` (the reverse proxy asks whether a certificate may be requested for a name; it is refused without its secret, and the proxy
  * does not forward it to the public). On a customer's name neither exists: those paths take the rewrite above like any other.
  */
-const PUBLIC_PREFIXES = ["/api/auth", "/sites", "/listings", "/marketplace", "/assets", "/health", "/internal/tls-allow"];
+const PUBLIC_PREFIXES = ["/api/auth", "/api/session-state", "/sites", "/listings", "/marketplace", "/review", "/assets", "/health", "/internal/tls-allow"];
 const AUTH_PAGES = ["/login", "/signup"];
 
 /** Where a customer's domain is served from. */
@@ -81,6 +83,8 @@ export function proxy(request: NextRequest) {
     return hasSession ? NextResponse.next() : NextResponse.redirect(new URL(PLATFORM_LOGIN, request.url));
   }
 
+  // The front door is public: whether someone signed in is sent on to their workspace is decided by the page, against the database, not here.
+  if (pathname === "/") return NextResponse.next();
   if (AUTH_PAGES.includes(pathname)) return NextResponse.next();
   if (PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) return NextResponse.next();
   if (hasSession) return NextResponse.next();
@@ -90,7 +94,7 @@ export function proxy(request: NextRequest) {
 
   const login = new URL("/login", request.url);
   // Remember where they were going, but only ever a path on this site.
-  if (pathname !== "/") login.searchParams.set("next", `${pathname}${search}`);
+  login.searchParams.set("next", `${pathname}${search}`);
   return NextResponse.redirect(login);
 }
 

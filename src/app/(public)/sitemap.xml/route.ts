@@ -2,7 +2,7 @@ import { platformOrigin } from "@/lib/domain-config";
 import { getMarketplaceSitemap } from "@/server/public-site";
 
 /**
- * The Marketplace's sitemap: the pages a search engine may be told about, and only those. Every address comes from the public discovery function,
+ * Climvia's sitemap: the landing page and the Marketplace's pages a search engine may be told about, and only those. Every address comes from the public discovery function,
  * which lists a provider's profile, a Service page, a place page or a Service-in-place page only while at least one DISCOVERABLE provider is
  * behind it (published by its business, not suspended by the platform, with at least one Service it shows). A provider that is suspended or
  * hidden is in no entry, and a combination nobody offers is not made up. The business websites are not part of this list.
@@ -21,7 +21,8 @@ export async function GET(request: Request) {
   } catch {
     return new Response("Unavailable", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
   }
-  const entries: { path: string; lastModified?: string }[] = [];
+  // The landing is always a page of its own; the rest are the Marketplace's pages that have someone on them.
+  const entries: { path: string; lastModified?: string }[] = [{ path: "/" }];
   if (map.listings.length > 0) entries.push({ path: "/marketplace" });
   for (const service of map.services) entries.push({ path: `/marketplace/services/${service}` });
   for (const location of map.locations) entries.push({ path: `/marketplace/locations/${location}` });

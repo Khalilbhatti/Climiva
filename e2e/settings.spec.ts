@@ -773,7 +773,7 @@ test.describe("Unsaved changes", () => {
       // Discard changes then leaves.
       await primaryNav(page).getByRole("link", { name: "Overview" }).click();
       await confirm(page).getByRole("button", { name: "Discard changes" }).click();
-      await expect(page).toHaveURL(/\/$/);
+      await expect(page).toHaveURL(/\/overview$/);
       // The edit was dropped, not saved.
       await primaryNav(page).getByRole("link", { name: "Settings" }).click();
       await go(page, section.path);
@@ -787,7 +787,7 @@ test.describe("Unsaved changes", () => {
     await saveAndWait(page, "Save changes");
     await primaryNav(page).getByRole("link", { name: "Overview" }).click();
     await expect(confirm(page)).toBeHidden();
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/overview$/);
   });
 
   test("the dialog is labelled, traps focus and Escape means Keep editing", async ({ page }) => {

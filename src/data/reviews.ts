@@ -7,6 +7,10 @@
  * for the ACTIVE organization only (src/db/review-queries, components/reviews/ReviewsProvider); the canonical Apex Climate
  * reviews are seed data (scripts/db/seed-data/reviews.ts) and ship to no browser.
  *
+ * A review request carries a LINK the business gives the customer (nothing is sent: the business copies it and shares it however it likes). The customer
+ * opens it, rates the work, writes a few words and chooses whether the review may be shown publicly. A review stays private unless the customer says yes.
+ * The link is a secret shown once, so the stored request only says whether a link is active, expired or used.
+ *
  * The sample business's workspace totals (12 reviews, 4.7 average, 3 awaiting a reply, 5 review requests) are approved product
  * aggregates: its stored reviews are a representative sample (marked `imported`), not twelve invented records, and the totals are
  * the stored reviews plus an imported adjustment (analytics_imported_baselines) that holds the review count, the sum of the
@@ -55,13 +59,21 @@ export type Review = {
   /** Carried in with the sample business's history (informational: its totals are reconciled by an imported adjustment). */
   imported?: boolean;
   /**
-   * The customer made it public: it may be shown on the business's Marketplace profile and counts toward its public rating. Written by the seed (and,
-   * later, by the customer's own consent step); no workspace screen sets it, and the business cannot choose which reviews are shown.
+   * The customer made it public: it may be shown on the business's Marketplace profile and counts toward its public rating. Written by the seed and by the
+   * customer's own consent step on the review page; no workspace screen sets it, and the business cannot choose which reviews are shown.
    */
   public?: boolean;
+  /** The platform has hidden this public review from the Marketplace (the business still has it, unchanged). The reason is never sent here. */
+  platformHidden?: boolean;
 };
 
 export type ReviewRequestChannel = "email" | "sms";
+
+/**
+ * Where a request's link stands. `none`: a request recorded before links existed. `active`: the customer can still use it. `expired`: it ran out and the
+ * business can make a new one. `used`: the customer answered; there is nothing more to ask for.
+ */
+export type ReviewLinkState = "none" | "active" | "expired" | "used";
 
 /** A review request is a record that one was made. Nothing is sent. */
 export type ReviewRequest = {
@@ -72,7 +84,12 @@ export type ReviewRequest = {
   message: string;
   /** "2024-10-25T10:45" */
   at: string;
+  /** The link the customer was given. Absent only in seed data. */
+  link?: { state: ReviewLinkState; /** Business-local wall-clock time the link stops working, "2024-10-25T10:45". */ expires?: string };
 };
+
+/** A link the business has just been given. The only moment its secret is shown. */
+export type IssuedReviewLink = { url: string; /** Business-local wall-clock time it stops working. */ expires: string };
 
 export type ReviewsData = { reviews: readonly Review[]; requests: readonly ReviewRequest[] };
 
@@ -81,6 +98,10 @@ export const defaultRequestMessage = (businessName: string) => `Thanks for choos
 
 export const RESPONSE_MAX = 500;
 export const REQUEST_MESSAGE_MAX = 500;
+/** What a customer may write. */
+export const REVIEW_TEXT_MAX = 2000;
+/** How long a review link works. */
+export const REVIEW_LINK_DAYS = 30;
 
 /**
  * What the imported reporting history adds to the totals a business's reviews give, signed: the number of reviews, the SUM of their

@@ -1,9 +1,9 @@
 "use server";
 
 import { PROTOTYPE_NOW } from "@/lib/prototype-clock";
-import type { ReviewsData } from "@/data/reviews";
+import type { IssuedReviewLink, ReviewsData } from "@/data/reviews";
 import { loadRefs } from "@/db/ops-queries";
-import { createRequestTx, editReplyTx, loadReviews, postReplyTx, type ReviewContext } from "@/db/review-queries";
+import { createRequestTx, editReplyTx, loadReviews, postReplyTx, reissueLinkTx, type ReviewContext } from "@/db/review-queries";
 import { withTenant } from "@/db/tenant";
 import { NOT_ALLOWED_REVIEWS, failure, ok, type ActionResult } from "@/lib/action-result";
 import { stampInstant } from "@/lib/business-time";
@@ -23,10 +23,11 @@ import { constraintOf, isIntegrityViolation, uniqueViolationOf } from "../db-err
  *      names (the review, the customer, the job) INSIDE the verified organization,
  *   5. writes, reads the business's reviews back and answers with them, so the screen shows exactly what is stored.
  * No argument names an organization. The customer's words are never changed: a reply is the business's own, one per review. A
- * review request only RECORDS that one was made; nothing is emailed or texted.
+ * review request RECORDS that one was made and makes a link for the business to give the customer; nothing is emailed or texted. The link's secret is in
+ * the answer of the one call that made it (it is never stored, only its hash), and in no later answer.
  */
 
-type Answer = { reviews: ReviewsData };
+type Answer = { reviews: ReviewsData; link?: IssuedReviewLink };
 
 function valid<T>(parsed: Parsed<T>): T {
   return parsed.ok ? parsed.value : refuse(parsed.error, parsed.fields);
@@ -44,23 +45,24 @@ function translate(error: unknown): ReturnType<typeof failure> {
   return failure("The change could not be saved. Try again.");
 }
 
-/** Authorize, open the tenant transaction, run the change, and answer with the reviews as stored. */
-async function mutate(change: (ctx: ReviewContext) => Promise<void>): Promise<ActionResult<Answer>> {
+/** Authorize, open the tenant transaction, run the change, and answer with the reviews as stored (and the link the change made, if any). */
+async function mutate(change: (ctx: ReviewContext) => Promise<IssuedReviewLink | void>): Promise<ActionResult<Answer>> {
   const auth = await authorize("reviews:manage", NOT_ALLOWED_REVIEWS);
   if (!auth.ok) return auth.result;
   const { userId, organizationId, organization, snapshot } = auth.context;
   try {
     return await withTenant({ userId, organizationId }, async (tx) => {
       const refs = await loadRefs(tx, organizationId);
-      await change({
+      const link = await change({
         tx,
         organizationId,
         refs,
         stamp: stampInstant(snapshot.hasSampleData, organization.timezone, PROTOTYPE_NOW),
         actorUserId: userId,
         authorName: snapshot.settings.profile.name,
+        timeZone: organization.timezone,
       });
-      return ok({ reviews: await loadReviews(tx, organizationId, organization.timezone, refs) });
+      return ok({ reviews: await loadReviews(tx, organizationId, organization.timezone, refs), ...(link ? { link } : {}) });
     });
   } catch (error) {
     return translate(error);
@@ -87,9 +89,12 @@ export async function editReplyAction(reviewReference: unknown, body: unknown): 
 
 /* ───────────────────────── requests ───────────────────────── */
 
-/** Record a request for a review. Nothing is sent. */
+/** Record a request for a review and answer with its link, shown once. Nothing is sent. */
 export async function createReviewRequestAction(input: unknown): Promise<ActionResult<Answer>> {
-  return mutate(async (ctx) => {
-    await createRequestTx(ctx, valid(parseReviewRequest(input)));
-  });
+  return mutate(async (ctx) => createRequestTx(ctx, valid(parseReviewRequest(input))));
+}
+
+/** Make a new link for a request whose link was lost or ran out, and answer with it, shown once. The old link stops working. */
+export async function reissueReviewLinkAction(requestReference: unknown): Promise<ActionResult<Answer>> {
+  return mutate(async (ctx) => reissueLinkTx(ctx, requestReference));
 }

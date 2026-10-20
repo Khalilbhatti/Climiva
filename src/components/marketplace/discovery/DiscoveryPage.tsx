@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import type { DiscoveryFacets, DiscoveryResults } from "@/data/marketplace-discovery";
 import { discoveryHref, locationLabel, type DiscoveryQuery } from "@/lib/marketplace-discovery";
 import { getMarketplaceFacets, getMarketplaceResults } from "@/server/public-site";
+import { PublicSessionNav } from "@/components/public/PublicSessionNav";
 import { ActiveFilters } from "./ActiveFilters";
 import { FilterDisclosure } from "./FilterDisclosure";
 import { appliedFilters, baseOf, FilterPanel } from "./FilterPanel";
@@ -154,8 +155,9 @@ export async function DiscoveryPage({ query, mode }: { query: DiscoveryQuery; mo
   return (
     <div className="min-h-dvh bg-canvas">
       <header className="bg-primary px-4 pt-5">
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-3">
           <MarketplaceWordmark />
+          <PublicSessionNav tone="on-dark" />
         </div>
       </header>
       <main>

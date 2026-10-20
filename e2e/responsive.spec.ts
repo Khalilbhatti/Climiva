@@ -61,7 +61,7 @@ test.describe("the top bar at each audited size", () => {
 
       // Left to right, as the eye reads them.
       const parts: [string, Locator][] = [
-        ["logo", header.locator("a[href='/']").first()],
+        ["logo", header.locator("a[href='/overview']").first()],
         ["workspace", header.getByRole("button", { name: /Apex Climate Heating & Air/ })],
         ["search", header.getByPlaceholder("Search customers, jobs, bookings, schedule...")],
         ["notifications", header.getByRole("button", { name: /Notifications/ })],
@@ -100,7 +100,7 @@ test.describe("the top bar at each audited size", () => {
       await page.setViewportSize(size);
       await page.goto("/");
       const header = page.getByRole("banner");
-      const logo = await rectOf(header.locator("a[href='/']").first());
+      const logo = await rectOf(header.locator("a[href='/overview']").first());
       const workspace = await rectOf(header.getByRole("button", { name: /Apex Climate Heating & Air/ }));
       const user = await rectOf(header.getByRole("button", { name: "Alex Morgan, Operations Lead" }));
       expect(logo.left).toBeCloseTo(24, 0);

@@ -141,6 +141,7 @@ test.describe("the platform functions", () => {
       "app_is_platform_admin",
       "app_platform_audit_recent",
       "app_platform_guard",
+      "app_platform_keep_listing_suspended",
       "app_platform_like",
       "app_platform_listings",
       "app_platform_organization",
@@ -148,7 +149,9 @@ test.describe("the platform functions", () => {
       "app_platform_overview",
       "app_platform_reviews",
       "app_platform_set_listing_moderation",
+      "app_platform_set_review_moderation",
       "app_platform_system",
+      "app_platform_update_listing_message",
       "app_platform_users",
     ]);
     const internal = new Set(["app_platform_guard", "app_platform_like"]);
@@ -159,8 +162,8 @@ test.describe("the platform functions", () => {
       if (row.proname !== "app_platform_like") expect(row.prosecdef, row.proname).toBe(true);
       if (internal.has(row.proname)) expect(grants, row.proname).not.toMatch(/climvia_app=X\//);
       else expect(grants, row.proname).toMatch(/climvia_app=X\//);
-      // The readers can not write; the one writer is not marked STABLE.
-      if (row.proname === "app_platform_set_listing_moderation") expect(row.provolatile).toBe("v");
+      // The readers can not write; the writers (a listing's decision and message, the answer to a request, a review's decision) are not marked STABLE.
+      if (["app_platform_set_listing_moderation", "app_platform_update_listing_message", "app_platform_keep_listing_suspended", "app_platform_set_review_moderation"].includes(row.proname)) expect(row.provolatile, row.proname).toBe("v");
       else if (row.proname.startsWith("app_platform_") && !internal.has(row.proname)) expect(row.provolatile, row.proname).toBe("s");
     }
     // No function with a free-form "run this" argument, and none that writes the assignments.
@@ -188,7 +191,7 @@ test.describe("the platform functions", () => {
     const admin = await makePlatformAdmin("p19admin", owner.db, owner.pool);
     expect(await asUser(admin.userId, (client) => one(client, "select app_is_platform_admin() as data"))).toBe(true);
     const overview = await asUser(admin.userId, (client) => one<Record<string, number>>(client, "select app_platform_overview() as data"));
-    expect(Object.keys(overview).sort()).toEqual(["activeMemberships", "bookings", "listings", "organizations", "publishedListings", "publishedSites", "reviews", "sites", "suspendedListings", "users"]);
+    expect(Object.keys(overview).sort()).toEqual(["activeMemberships", "bookings", "hiddenReviews", "listings", "organizations", "pendingListingReviews", "publicReviews", "publishedListings", "publishedSites", "reviews", "sites", "suspendedListings", "users"]);
     expect((await owner.pool.query("select count(*)::int as n from organization_memberships where user_id = $1", [admin.userId])).rows[0].n).toBe(0);
     await revokePlatformAdmin(owner.pool, admin.userId);
     expect(await asUser(admin.userId, (client) => one(client, "select app_is_platform_admin() as data"))).toBe(false);
@@ -329,7 +332,7 @@ test.describe("what the platform reads return", () => {
     const reviews = await asUser(admin.userId, (client) => one<{ total: number; rows: { rating: number; text: string; organizationName: string }[] }>(client, "select app_platform_reviews(null, 5, 25, 0) as data"));
     expect(reviews.total).toBeGreaterThan(0);
     expect(reviews.rows.every((row) => row.rating === 5 && row.text.length > 0 && row.organizationName.length > 0)).toBe(true);
-    expect(Object.keys(reviews.rows[0]).sort()).toEqual(["id", "organizationId", "organizationName", "rating", "replied", "reviewer", "source", "submittedOn", "text", "visibility"]);
+    expect(Object.keys(reviews.rows[0]).sort()).toEqual(["eligible", "id", "madePublicAt", "moderation", "organizationId", "organizationName", "rating", "replied", "reviewer", "source", "submittedOn", "text", "visibility"]);
     expect((await asUser(admin.userId, (client) => one<{ total: number }>(client, "select app_platform_reviews(null, 9, 25, 0) as data"))).total).toBe(0);
 
     const system = await asUser(admin.userId, (client) => one<{ databaseVersion: string; migrationsApplied: number; counts: Record<string, number> }>(client, "select app_platform_system() as data"));

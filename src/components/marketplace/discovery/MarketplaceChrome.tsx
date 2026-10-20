@@ -26,6 +26,14 @@ export function MarketplaceFooter(): ReactNode {
           Climvia Marketplace lists HVAC businesses that use Climvia. Each business writes its own profile, chooses the services it shows and says where it works.
           Ratings come from reviews the business&apos;s customers have made public.
         </p>
+        <nav aria-label="Climvia" className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
+          <Link prefetch={false} href="/" className="rounded-btn font-semibold text-ink-muted hover:text-primary hover:underline">
+            About Climvia
+          </Link>
+          <Link prefetch={false} href="/signup" className="rounded-btn font-semibold text-ink-muted hover:text-primary hover:underline">
+            List your business
+          </Link>
+        </nav>
       </div>
     </footer>
   );

@@ -5,10 +5,13 @@
  *   app_platform_overview() / _system()             aggregate counts and diagnostics
  *   app_platform_organizations() / _organization()  businesses across the platform, and one in detail
  *   app_platform_users()                            accounts (identity facts and memberships; never a credential)
- *   app_platform_listings()                         Marketplace listings with the platform's moderation decision
- *   app_platform_reviews()                          reviews across businesses (read-only)
+ *   app_platform_listings()                         Marketplace listings with the platform's moderation decision and the business's request for a second look
+ *   app_platform_reviews()                          reviews across businesses, with the platform's decision about each public one
  *   app_platform_audit_recent()                     the latest entries of the audit trail
- *   app_platform_set_listing_moderation()           suspend or allow a listing (the one write; audited in the same transaction)
+ *   app_platform_set_listing_moderation()           suspend or allow a listing (audited in the same transaction)
+ *   app_platform_update_listing_message()           change what the business is told about a suspension
+ *   app_platform_keep_listing_suspended()           answer the business's request by keeping the suspension
+ *   app_platform_set_review_moderation()            hide a public review from the Marketplace, or restore it
  *
  * Every call runs as the verified user (`withUser` sets the transaction-local `app.user_id`), and every function refuses unless the database says that
  * user is an administrator: this module does not decide who may call, it only calls, and the server layer (src/server/platform-admin.ts) asks first.
@@ -29,7 +32,24 @@ const flag = (value: unknown): boolean => value === true;
 export const PAGE_SIZE = 25;
 
 export type Page<T> = { total: number; rows: T[] };
-export type ModerationDecision = { state: "allowed" | "suspended"; reason: string | null; decidedAt: string | null };
+export type SuspensionReview = {
+  state: "none" | "requested" | "resolved";
+  requestedAt: string | null;
+  /** What the business wrote when it asked. */
+  note: string | null;
+  resolvedAt: string | null;
+  outcome: "kept" | "lifted" | null;
+};
+export type ModerationDecision = {
+  state: "allowed" | "suspended";
+  /** Internal: never sent to the business. */
+  reason: string | null;
+  decidedAt: string | null;
+  /** What the business is told (a different field from the reason). */
+  tenantMessage: string | null;
+  suspendedAt: string | null;
+  review: SuspensionReview;
+};
 
 async function ask(administratorId: string, query: ReturnType<typeof sql>): Promise<unknown> {
   return withUser(administratorId, async (tx) => (await tx.execute<{ data: unknown }>(query)).rows[0]?.data);
@@ -43,7 +63,20 @@ async function lastPageWhenPast<T>(read: (page: number) => Promise<Page<T>>, pag
 
 const decision = (value: unknown): ModerationDecision => {
   const raw = record(value);
-  return { state: raw.state === "suspended" ? "suspended" : "allowed", reason: maybeText(raw.reason), decidedAt: maybeText(raw.decidedAt) };
+  return {
+    state: raw.state === "suspended" ? "suspended" : "allowed",
+    reason: maybeText(raw.reason),
+    decidedAt: maybeText(raw.decidedAt),
+    tenantMessage: maybeText(raw.tenantMessage),
+    suspendedAt: maybeText(raw.suspendedAt),
+    review: {
+      state: raw.reviewState === "requested" ? "requested" : raw.reviewState === "resolved" ? "resolved" : "none",
+      requestedAt: maybeText(raw.reviewRequestedAt),
+      note: maybeText(raw.reviewNote),
+      resolvedAt: maybeText(raw.reviewResolvedAt),
+      outcome: raw.reviewOutcome === "kept" ? "kept" : raw.reviewOutcome === "lifted" ? "lifted" : null,
+    },
+  };
 };
 
 /** Whether this verified user is a platform administrator right now. False for everyone who is not, and for an id that is not a user. */
@@ -52,7 +85,10 @@ export async function isPlatformAdmin(userId: string): Promise<boolean> {
   return (await ask(userId, sql`select app_is_platform_admin() as data`)) === true;
 }
 
-export type PlatformOverview = Record<"organizations" | "users" | "activeMemberships" | "sites" | "publishedSites" | "listings" | "publishedListings" | "suspendedListings" | "bookings" | "reviews", number>;
+export type PlatformOverview = Record<
+  "organizations" | "users" | "activeMemberships" | "sites" | "publishedSites" | "listings" | "publishedListings" | "suspendedListings" | "pendingListingReviews" | "bookings" | "reviews" | "publicReviews" | "hiddenReviews",
+  number
+>;
 
 export async function platformOverview(administratorId: string): Promise<PlatformOverview> {
   const raw = record(await ask(administratorId, sql`select app_platform_overview() as data`));
@@ -65,8 +101,11 @@ export async function platformOverview(administratorId: string): Promise<Platfor
     listings: count(raw.listings),
     publishedListings: count(raw.publishedListings),
     suspendedListings: count(raw.suspendedListings),
+    pendingListingReviews: count(raw.pendingListingReviews),
     bookings: count(raw.bookings),
     reviews: count(raw.reviews),
+    publicReviews: count(raw.publicReviews),
+    hiddenReviews: count(raw.hiddenReviews),
   };
 }
 
@@ -236,10 +275,28 @@ async function readListings(administratorId: string, search: string, page: numbe
 
 export const platformListings = (administratorId: string, search: string, page: number) => lastPageWhenPast((current) => readListings(administratorId, search, current), page);
 
-export type PlatformReviewRow = { id: string; organizationId: string; organizationName: string; reviewer: string; rating: number; text: string; submittedOn: string; source: string; replied: boolean; /** Shown on the business's public Marketplace profile, or kept private. */ public: boolean };
+export type ReviewVisibilityFilter = "public" | "private" | "hidden";
 
-async function readReviews(administratorId: string, search: string, rating: number | null, page: number): Promise<Page<PlatformReviewRow>> {
-  const raw = record(await ask(administratorId, sql`select app_platform_reviews(${search}, ${rating}::integer, ${PAGE_SIZE}, ${(Math.max(page, 1) - 1) * PAGE_SIZE}) as data`));
+export type PlatformReviewRow = {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  reviewer: string;
+  rating: number;
+  text: string;
+  submittedOn: string;
+  source: string;
+  replied: boolean;
+  /** The customer chose to let it appear on the business's public Marketplace profile (otherwise it is private). */
+  public: boolean;
+  /** The platform's decision about a public review; every review is `visible` until it is hidden. */
+  moderation: { state: "visible" | "hidden"; reason: string | null; decidedAt: string | null };
+  /** Counted and shown by the Marketplace right now: public, from Climvia, and not hidden. */
+  eligible: boolean;
+};
+
+async function readReviews(administratorId: string, search: string, rating: number | null, visibility: ReviewVisibilityFilter | null, page: number): Promise<Page<PlatformReviewRow>> {
+  const raw = record(await ask(administratorId, sql`select app_platform_reviews(${search}, ${rating}::integer, ${PAGE_SIZE}, ${(Math.max(page, 1) - 1) * PAGE_SIZE}, ${visibility}) as data`));
   return {
     total: count(raw.total),
     rows: list(raw.rows).map((row) => ({
@@ -253,11 +310,18 @@ async function readReviews(administratorId: string, search: string, rating: numb
       source: text(row.source),
       replied: flag(row.replied),
       public: row.visibility === "public",
+      moderation: {
+        state: record(row.moderation).state === "hidden" ? "hidden" : "visible",
+        reason: maybeText(record(row.moderation).reason),
+        decidedAt: maybeText(record(row.moderation).decidedAt),
+      },
+      eligible: flag(row.eligible),
     })),
   };
 }
 
-export const platformReviews = (administratorId: string, search: string, rating: number | null, page: number) => lastPageWhenPast((current) => readReviews(administratorId, search, rating, current), page);
+export const platformReviews = (administratorId: string, search: string, rating: number | null, visibility: ReviewVisibilityFilter | null, page: number) =>
+  lastPageWhenPast((current) => readReviews(administratorId, search, rating, visibility, current), page);
 
 export type PlatformSystem = { databaseVersion: string; migrationsApplied: number | null; counts: Record<string, number> };
 
@@ -290,9 +354,37 @@ export async function platformAuditRecent(administratorId: string, limit = 20): 
 
 export type ModerationOutcome = { found: boolean; changed: boolean; state: "allowed" | "suspended" | null };
 
-/** Suspend or allow a listing. The database refuses unless the user is an administrator and writes the decision and its audit event together. */
-export async function setListingModeration(administratorId: string, listingId: string, state: "allowed" | "suspended", reason: string | null): Promise<ModerationOutcome> {
-  if (!isUuid(listingId)) return { found: false, changed: false, state: null };
-  const raw = record(await ask(administratorId, sql`select app_platform_set_listing_moderation(${listingId}::uuid, ${state}, ${reason}) as data`));
+const moderationOutcome = (value: unknown): ModerationOutcome => {
+  const raw = record(value);
   return { found: flag(raw.found), changed: flag(raw.changed), state: raw.state === "suspended" ? "suspended" : raw.state === "allowed" ? "allowed" : null };
+};
+
+/**
+ * Suspend or allow a listing. `tenantMessage` is what the business is told (a different field from the internal reason). The database refuses unless the
+ * user is an administrator and writes the decision and its audit event together.
+ */
+export async function setListingModeration(administratorId: string, listingId: string, state: "allowed" | "suspended", reason: string | null, tenantMessage: string | null = null): Promise<ModerationOutcome> {
+  if (!isUuid(listingId)) return { found: false, changed: false, state: null };
+  return moderationOutcome(await ask(administratorId, sql`select app_platform_set_listing_moderation(${listingId}::uuid, ${state}, ${reason}, ${tenantMessage}) as data`));
+}
+
+/** Change (or clear) what the business is told about a suspension that stands. */
+export async function updateListingMessage(administratorId: string, listingId: string, tenantMessage: string | null): Promise<ModerationOutcome> {
+  if (!isUuid(listingId)) return { found: false, changed: false, state: null };
+  return moderationOutcome(await ask(administratorId, sql`select app_platform_update_listing_message(${listingId}::uuid, ${tenantMessage}) as data`));
+}
+
+/** Answer the business's request for a second look by keeping the suspension (lifting it is `setListingModeration(... "allowed")`). */
+export async function keepListingSuspended(administratorId: string, listingId: string, tenantMessage: string | null): Promise<ModerationOutcome> {
+  if (!isUuid(listingId)) return { found: false, changed: false, state: null };
+  return moderationOutcome(await ask(administratorId, sql`select app_platform_keep_listing_suspended(${listingId}::uuid, ${tenantMessage}) as data`));
+}
+
+export type ReviewModerationOutcome = { found: boolean; changed: boolean; state: "visible" | "hidden" | null; /** `not_public` when asked to hide a review that is private. */ reason: string | null };
+
+/** Hide a public review from every public Marketplace surface, or restore it. The review itself is never changed. */
+export async function setReviewModeration(administratorId: string, reviewId: string, state: "visible" | "hidden", reason: string | null): Promise<ReviewModerationOutcome> {
+  if (!isUuid(reviewId)) return { found: false, changed: false, state: null, reason: null };
+  const raw = record(await ask(administratorId, sql`select app_platform_set_review_moderation(${reviewId}::uuid, ${state}, ${reason}) as data`));
+  return { found: flag(raw.found), changed: flag(raw.changed), state: raw.state === "hidden" ? "hidden" : raw.state === "visible" ? "visible" : null, reason: maybeText(raw.reason) };
 }

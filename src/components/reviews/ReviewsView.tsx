@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type MouseEvent } from "react";
 import type { Route } from "next";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -19,7 +19,8 @@ import { formatDate } from "@/lib/format";
 import { ReplyModal } from "./ReplyModal";
 import { RequestReviewModal } from "./RequestReviewModal";
 import { useReviews } from "./ReviewsProvider";
-import { RelatedJobChip, ReviewStatusBadge, Stars, reviewerName } from "./review-ui";
+import { RelatedJobChip, ReviewStatusBadge, ReviewVisibilityBadge, Stars, reviewerName } from "./review-ui";
+import { ReviewRequestsPanel } from "./ReviewRequestsPanel";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
 import { useCan } from "@/components/workspace/WorkspaceProvider";
 
@@ -43,6 +44,16 @@ export function ReviewsView() {
   const [source, setSource] = useState<"all" | ReviewSource>("all");
   const [replying, setReplying] = useState<Review | null>(null);
   const [requesting, setRequesting] = useState(false);
+  // The button that opened the request dialog: the dialog changes step (the request, then its link), so the keyboard is put back here when it closes.
+  const requestOpener = useRef<HTMLElement | null>(null);
+  const openRequest = (event: MouseEvent<HTMLElement>) => {
+    requestOpener.current = event.currentTarget;
+    setRequesting(true);
+  };
+  const closeRequest = () => {
+    setRequesting(false);
+    requestAnimationFrame(() => requestOpener.current?.focus());
+  };
 
   const reviews = useMemo(() => (previewEmpty ? [] : data.reviews), [previewEmpty, data.reviews]);
   // The sample business reports the approved workspace totals its stored reviews are a sample of; any other business counts its own.
@@ -78,7 +89,7 @@ export function ReviewsView() {
         description="View customer reviews and respond from one place."
         actions={
           canManage && (
-            <Button size="lg" onClick={() => setRequesting(true)}>
+            <Button size="lg" onClick={openRequest}>
               <Plus aria-hidden className="size-[18px]" />
               Request review
             </Button>
@@ -119,7 +130,7 @@ export function ReviewsView() {
               description="Customer reviews will appear here when they are submitted."
               action={
                 canManage && (
-                  <Button size="lg" onClick={() => setRequesting(true)}>
+                  <Button size="lg" onClick={openRequest}>
                     <Send aria-hidden className="size-4" />
                     Request review
                   </Button>
@@ -180,6 +191,7 @@ export function ReviewsView() {
                                 <span className="rounded-full bg-primary-subtle px-2 py-0.5 text-xs font-semibold text-primary">{review.source}</span>
                                 <span className="text-xs text-ink-muted">· {formatDate(review.date)}</span>
                                 <ReviewStatusBadge review={review} />
+                                <ReviewVisibilityBadge review={review} />
                               </div>
                               <Stars rating={review.rating} />
                               <p className="text-sm text-ink">“{review.text}”</p>
@@ -228,8 +240,10 @@ export function ReviewsView() {
         )}
       </Card>
 
+      {canManage && !previewEmpty && <ReviewRequestsPanel />}
+
       {replying && canManage && <ReplyModal review={replying} mode="reply" onClose={() => setReplying(null)} />}
-      {requesting && canManage && <RequestReviewModal onClose={() => setRequesting(false)} />}
+      {requesting && canManage && <RequestReviewModal onClose={closeRequest} />}
     </>
   );
 }

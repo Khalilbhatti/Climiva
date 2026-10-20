@@ -163,8 +163,10 @@ test("the name the browser sent decides the business; no header a client can sen
   expect(platform.status).toBe(200);
   expect(platform.body).toMatch(/Log in/i);
   const platformRoot = await get(stack.publicHost, "/", { headers: claimingCustomer });
-  expect([307, 308]).toContain(platformRoot.status);
-  expect(String(platformRoot.headers.location)).toContain("/login");
+  // Since Phase 19C the platform's root is Climvia's own landing (it was a redirect to the sign-in): never the customer's site, whatever the headers claim.
+  expect(platformRoot.status).toBe(200);
+  expect(platformRoot.body).toContain("Find HVAC services");
+  expect(platformRoot.body).not.toContain(state.business.replace("&", "&amp;"));
   // A name that merely CONTAINS the application's own is a customer's name, not the platform.
   const lookalike = `${stack.publicHost}.example.test`;
   expect((await get(stack.publicHost, "/login", { headers: { host: lookalike } })).status).toBe(404);

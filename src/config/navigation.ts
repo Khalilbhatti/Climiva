@@ -44,7 +44,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         label: "Overview",
-        href: "/",
+        href: "/overview",
         icon: LayoutGrid,
       },
     ],
@@ -172,8 +172,7 @@ export function getNavItem(href: Route): NavItem {
   return item;
 }
 
-/** "/" only matches itself; every other module also owns its sub-routes (e.g. /jobs/JB-204). */
+/** A module owns its own address and every address beneath it (e.g. /jobs/JB-204). */
 export function isRouteActive(href: string, pathname: string): boolean {
-  if (href === "/") return pathname === "/";
   return pathname === href || pathname.startsWith(`${href}/`);
 }

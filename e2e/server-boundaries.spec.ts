@@ -181,7 +181,8 @@ test.describe("every Server Action authorizes its caller", () => {
   test("each exported action resolves the caller from the session before it does anything else", () => {
     // signOutAction only ends the caller's own session: it needs no workspace and is safe when already signed out. submitPublicBookingAction and
     // submitMarketplaceBookingAction are the visitor's: they have no session by design and are held to their own rules in "a visitor's booking" below.
-    const exempt = new Set(["signOutAction", "submitPublicBookingAction", "submitMarketplaceBookingAction"]);
+    // submitReviewAction is the customer's, through a link they hold: it has no session either, and is held to its own order below.
+    const exempt = new Set(["signOutAction", "submitPublicBookingAction", "submitMarketplaceBookingAction", "submitReviewAction"]);
     const CHECKS = /resolveWorkspace\(|getSessionUser\(|manager\(|authorize\(|requireMember\(|requirePlatformAdmin\(/;
     for (const path of actionFiles) {
       const source = read(path);
@@ -250,7 +251,7 @@ test.describe("every Server Action authorizes its caller", () => {
     expect(reviews.match(/authorize\("reviews:manage"/g)?.length).toBe(1);
     expect(reviews).not.toMatch(/requireMember\(/);
     const reviewActions = [...reviews.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)];
-    expect(reviewActions.map(([, name]) => name).sort()).toEqual(["createReviewRequestAction", "editReplyAction", "postReplyAction"]);
+    expect(reviewActions.map(([, name]) => name).sort()).toEqual(["createReviewRequestAction", "editReplyAction", "postReplyAction", "reissueReviewLinkAction"]);
     for (const [, name, body] of reviewActions) expect(/>\s\{\s+return mutate\(/.test(body), `${name} must start by handing everything to mutate()`).toBe(true);
     // Neither names an organization from the request: the tenant is the verified one.
     expect(maintenance).not.toMatch(/organizationId:\s*(input|payload|body)/);
@@ -302,7 +303,7 @@ test.describe("every Server Action authorizes its caller", () => {
     expect(marketplace.match(/authorize\("marketplace:manage"/g)?.length).toBe(1);
     expect(marketplace).not.toMatch(/requireMember\(/);
     const marketplaceActions = [...marketplace.matchAll(/export async function (\w+)\(([\s\S]*?)\n}\n/g)];
-    expect(marketplaceActions.map(([, name]) => name).sort()).toEqual(["hideListingAction", "publishListingAction", "saveListingAction", "setUpListingAction"]);
+    expect(marketplaceActions.map(([, name]) => name).sort()).toEqual(["hideListingAction", "publishListingAction", "requestListingReviewAction", "saveListingAction", "setUpListingAction"]);
     for (const [, name, body] of marketplaceActions) expect(/>\s\{\s+return mutate\(/.test(body), `${name} must start by handing everything to mutate()`).toBe(true);
     expect(marketplace).not.toMatch(/organizationId:\s*(input|payload|body)/);
     // The capabilities are decided in one place.
@@ -317,12 +318,26 @@ test.describe("every Server Action authorizes its caller", () => {
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"reviews:manage": \["owner", "admin"\]/);
   });
 
+  test("a customer's review is the other anonymous action: it holds a link's secret and what the customer typed, never names a business, a customer or a Job, and reads the form again before it asks the database", () => {
+    const path = join(SRC, "server", "actions", "public-review.ts");
+    const source = read(path).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(source.trimStart().startsWith('"use server"')).toBe(true);
+    expect([...source.matchAll(/export async function (\w+)\(/g)].map(([, name]) => name)).toEqual(["submitReviewAction"]);
+    // The order: the secret's shape, then the form, then the platform's own name (never a customer's domain), then the rate limits, then the database.
+    const order = ["REVIEW_TOKEN_PATTERN.test(token)", "parseReviewSubmission(", 'origin.kind !== "platform"', "withinLimit(", "submitReview("].map((needle) => source.indexOf(needle));
+    expect(order.every((position) => position > 0), "every step is present").toBe(true);
+    expect([...order].sort((a, b) => a - b), "and they run in this order").toEqual(order);
+    // Nothing the request says names who the review is about, and the secret is never logged.
+    expect(source).not.toMatch(/organizationId|customerId|jobId|requestId|withTenant|withUser|@\/db\/schema|session/);
+    expect(source).not.toMatch(/console\.\w+\([^)]*token/);
+  });
+
   test("a visitor's booking is the one kind of anonymous action (from a website, or from the Marketplace): it names a Site or a listing and a Service, never a business, and reaches the database only through the public functions", () => {
     const path = join(SRC, "server", "actions", "public-booking.ts");
     const source = read(path).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    // The only action file that does not authorize is this one (the workspace actions resolve the session in their own ways).
+    // The only action files that do not authorize are the visitor's two (the workspace actions resolve the session in their own ways).
     const anonymous = actionFiles.filter((file) => !/authorize\(|resolveWorkspace\(|getSessionUser\(|requireMember\(|requirePlatformAdmin\(/.test(read(file))).map(posix);
-    expect(anonymous).toEqual(["src/server/actions/public-booking.ts"]);
+    expect(anonymous).toEqual(["src/server/actions/public-booking.ts", "src/server/actions/public-review.ts"]);
     expect([...source.matchAll(/export async function (\w+)\(/g)].map(([, name]) => name)).toEqual(["submitPublicBookingAction", "submitMarketplaceBookingAction"]);
     // The Marketplace's action is held to the same order: read the request, then the rate limit, then the listing as a visitor sees it, then the slot, then the write.
     expect(source.indexOf("parseMarketplaceBooking(")).toBeGreaterThan(-1);
@@ -368,12 +383,12 @@ test.describe("tenant data is never cached or prerendered", () => {
   });
 
   test("the workspace, public, preview and auth route groups are force-dynamic", () => {
-    for (const file of ["(signed-in)/layout.tsx", "(public)/layout.tsx", "(unmatched)/layout.tsx", "(auth)/login/page.tsx", "(auth)/signup/page.tsx", "(auth)/onboarding/page.tsx"]) {
+    for (const file of ["(signed-in)/layout.tsx", "(public)/layout.tsx", "(entry)/layout.tsx", "(unmatched)/layout.tsx", "(auth)/login/page.tsx", "(auth)/signup/page.tsx", "(auth)/onboarding/page.tsx"]) {
       expect(read(join(SRC, "app", file)), file).toMatch(/export const dynamic = "force-dynamic"/);
     }
   });
 
-  test("the app has exactly eight route handlers: Better Auth's, the Branding upload, the public logo, the Marketplace's sitemap and robots file, the two health checks and the certificate permission, and each keeps to its own line", () => {
+  test("the app has exactly nine route handlers: Better Auth's, the Branding upload, the public header's session answer, the public logo, the sitemap and robots file, the two health checks and the certificate permission, and each keeps to its own line", () => {
     const routes = walk(join(SRC, "app"), (path) => /route\.(ts|tsx)$/.test(path)).map(posix);
     expect(routes).toEqual([
       "src/app/(public)/assets/[assetId]/route.ts",
@@ -381,6 +396,7 @@ test.describe("tenant data is never cached or prerendered", () => {
       "src/app/(public)/sitemap.xml/route.ts",
       "src/app/api/auth/[...all]/route.ts",
       "src/app/api/branding/route.ts",
+      "src/app/api/session-state/route.ts",
       "src/app/health/live/route.ts",
       "src/app/health/ready/route.ts",
       "src/app/internal/tls-allow/route.ts",
@@ -412,6 +428,11 @@ test.describe("tenant data is never cached or prerendered", () => {
     expect(logo).not.toMatch(/cookies\(|headers\(|getSessionUser|resolveWorkspace|withTenant|withUser|session/i);
     expect(logo).toMatch(/loadPublicAsset\(/);
 
+    // The session answer takes no parameter and no body, asks only the entry module, and is never cached.
+    const sessionState = read(join(SRC, "app", "api", "session-state", "route.ts")).replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(sessionState).toContain("sessionState()");
+    expect(sessionState).not.toMatch(/searchParams|formData|request\.|withTenant|organizationId/);
+    expect(sessionState).toContain('"private, no-store"');
     // The sitemap and the robots file are the Marketplace's and are public: no session, cookie, workspace or tenant context. The sitemap asks the public
     // reader for the pages of providers a visitor may reach, and the robots file asks nothing.
     for (const file of ["sitemap.xml", "robots.txt"]) {
@@ -432,7 +453,7 @@ test.describe("tenant data is never cached or prerendered", () => {
 
 test.describe("every module reads the database for the verified workspace", () => {
   /** Every module is on PostgreSQL: it works for every workspace, with that workspace's own rows. Nothing runs on the sample dataset any more. */
-  const DATABASE_MODULES = ["analytics", "bookings", "customers", "jobs", "maintenance-plans", "marketing", "marketplace-listing", "payments", "quotes-invoices", "reviews", "schedule", "services", "team", "website"];
+  const DATABASE_MODULES = ["analytics", "bookings", "customers", "jobs", "maintenance-plans", "marketing", "marketplace-listing", "overview", "payments", "quotes-invoices", "reviews", "schedule", "services", "team", "website"];
   const workspaceDir = join(SRC, "app", "(signed-in)", "(workspace)");
 
   test("the module list matches the sidebar: every module folder is a database module", () => {
@@ -469,7 +490,7 @@ test.describe("every module reads the database for the verified workspace", () =
   test("the published pages and the Draft previews are separate: a published page asks for no session and no business, a preview requires a verified one", () => {
     const pages = [join(SRC, "app", "(public)"), join(SRC, "app", "(signed-in)", "(preview)")].flatMap((dir) => walk(dir, (path) => /(page|layout)\.tsx$/.test(path))).filter((path) => !path.endsWith(join("(public)", "layout.tsx")));
     expect(pages.length).toBeGreaterThan(6);
-    const published = pages.filter((path) => /(\\|\/)(sites|listings|marketplace|custom-site)(\\|\/)/.test(path));
+    const published = pages.filter((path) => /(\\|\/)(sites|listings|marketplace|custom-site|review)(\\|\/)/.test(path));
     const answersNotFound = (path: string) => /^\s*import \{ notFound \} from "next\/navigation";\s*[\s\S]*notFound\(\);\s*\}\s*$/.test(read(path)) && !/requireWorkspaceContext|@\/server|@\/db/.test(read(path));
     const previews = pages.filter((path) => !published.includes(path));
     expect(published.map(posix).sort()).toEqual([
@@ -485,6 +506,8 @@ test.describe("every module reads the database for the verified workspace", () =
       "src/app/(public)/marketplace/page.tsx",
       "src/app/(public)/marketplace/services/[serviceSlug]/[locationSlug]/page.tsx",
       "src/app/(public)/marketplace/services/[serviceSlug]/page.tsx",
+      // The page a customer opens from a review link: the secret in its address is looked up by the database.
+      "src/app/(public)/review/[token]/page.tsx",
       "src/app/(public)/sites/[siteSlug]/[...slug]/page.tsx",
       "src/app/(public)/sites/[siteSlug]/page.tsx",
       "src/app/(public)/sites/page.tsx",
@@ -518,7 +541,7 @@ test.describe("every module reads the database for the verified workspace", () =
   });
 
   test("Overview, Settings and Help are real for every workspace and still require a verified one", () => {
-    expect(read(join(workspaceDir, "page.tsx"))).toContain("requireWorkspaceContext()");
+    expect(read(join(workspaceDir, "overview", "page.tsx"))).toContain("requireWorkspaceContext()");
     expect(read(join(SRC, "app", "(signed-in)", "layout.tsx"))).toContain("<WorkspaceProviders>");
     expect(read(join(SRC, "server", "workspace-providers.tsx"))).toContain("await requireWorkspaceContext()");
   });
@@ -531,7 +554,7 @@ test.describe("database access", () => {
     expect(users).toEqual(["src/db/index.ts", "src/db/public-queries.ts", "src/db/tenant.ts", "src/lib/auth.ts"]);
   });
 
-  test("the visitor's door runs only the twelve public database functions: no table, no tenant context, no organization", () => {
+  test("the visitor's door runs only the fourteen public database functions: no table, no tenant context, no organization", () => {
     const source = read(join(SRC, "db", "public-queries.ts")).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     const calls = [...source.matchAll(/select (app_\w+)\(/g)].map(([, name]) => name).sort();
     expect(calls).toEqual([
@@ -544,15 +567,17 @@ test.describe("database access", () => {
       "app_public_marketplace_facets",
       "app_public_marketplace_search",
       "app_public_marketplace_sitemap",
+      "app_public_review_request",
       "app_public_site",
       "app_public_site_domain",
+      "app_public_submit_review",
       "app_tls_eligible",
     ]);
     expect(source).not.toMatch(/@\/db\/schema|\.(select|insert|update|delete)\(|\.from\(|set_config|withTenant|runAsTenant|organization_?id/i);
     // Only the server's public routes, the public logo route, the host resolver, the visitor's booking action, the certificate-authorization
     // endpoint (the proxy's one question) and the readiness check (which asks that same question about a name that can not exist) import it.
     const importers = sourceFiles.filter((path) => importsOf(read(path)).some((specifier) => /public-queries$/.test(specifier))).map(posix).sort();
-    expect(importers).toEqual(["src/app/(public)/assets/[assetId]/route.ts", "src/app/internal/tls-allow/route.ts", "src/server/actions/public-booking.ts", "src/server/public-site.ts", "src/server/readiness.ts", "src/server/request-host.ts"]);
+    expect(importers).toEqual(["src/app/(public)/assets/[assetId]/route.ts", "src/app/internal/tls-allow/route.ts", "src/server/actions/public-booking.ts", "src/server/actions/public-review.ts", "src/server/public-site.ts", "src/server/readiness.ts", "src/server/request-host.ts"]);
     // The owner credential is never reachable from a request handler (this file included).
     expect(source).not.toContain("DATABASE_ADMIN_URL");
   });

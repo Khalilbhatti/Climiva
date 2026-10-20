@@ -3,9 +3,10 @@
 import type { MarketplaceState } from "@/data/marketplace";
 import { loadServices } from "@/db/core-queries";
 import type { Tx } from "@/db/index";
-import { loadMarketplace, saveListing, setListingStatus } from "@/db/marketplace-queries";
+import { loadMarketplace, requestListingReview, saveListing, setListingStatus } from "@/db/marketplace-queries";
 import { withTenant } from "@/db/tenant";
 import { NOT_ALLOWED_MARKETPLACE, failure, ok, type ActionResult } from "@/lib/action-result";
+import { serverTimerMs } from "@/lib/business-time";
 import { parseListingConfig } from "@/lib/marketplace-rules";
 import { Refusal, refuse } from "@/lib/refusal";
 import { isRecord } from "@/lib/validation";
@@ -45,7 +46,7 @@ async function mutate(change: (work: Work) => Promise<void>): Promise<ActionResu
   try {
     return await withTenant({ userId, organizationId }, async (tx) => {
       await change({ tx, organizationId, organizationSlug: organization.slug });
-      return ok({ marketplace: await loadMarketplace(tx, organizationId, await loadServices(tx, organizationId)) });
+      return ok({ marketplace: await loadMarketplace(tx, organizationId, await loadServices(tx, organizationId), organization.timezone) });
     });
   } catch (error) {
     return translate(error);
@@ -76,4 +77,25 @@ export async function publishListingAction(): Promise<ActionResult<Answer>> {
 /** Hide the listing from the directory. Its configuration stays exactly as it was. */
 export async function hideListingAction(): Promise<ActionResult<Answer>> {
   return mutate(async (work) => setListingStatus(work, "hidden"));
+}
+
+const NOTE_MAX = 500;
+
+/**
+ * Ask Climvia to look at a suspension again. Owners and admins only (the same capability and the same helper as every other write here). The note is the
+ * member's own words (optional, up to 500 characters); the request records who asked and when, changes nothing about whether the listing is public, and
+ * cannot be repeated while one waits. A business cannot lift a suspension itself: only the platform does that.
+ */
+export async function requestListingReviewAction(input: unknown): Promise<ActionResult<Answer>> {
+  return mutate(async ({ tx }) => {
+    const note = isRecord(input) && typeof input.note === "string" ? input.note.trim() : isRecord(input) && input.note === undefined ? "" : refuse("Your note was not understood.");
+    if (note.length > NOTE_MAX) refuse(`Keep your note to ${NOTE_MAX} characters or fewer.`, { note: `Keep your note to ${NOTE_MAX} characters or fewer.` });
+    const asked = await requestListingReview(tx, note === "" ? null : note);
+    if (asked.result === "not_suspended") refuse("Your listing isn't suspended any more. Reload the page.");
+    if (asked.result === "too_soon") {
+      const hours = asked.retryAfter ? Math.max(Math.ceil((asked.retryAfter.getTime() - serverTimerMs()) / 3_600_000), 1) : 24;
+      refuse(`Climvia answered your last request recently. You can ask again in about ${hours} ${hours === 1 ? "hour" : "hours"}.`);
+    }
+    // "already_requested" is the state the business wanted: a request is waiting.
+  });
 }

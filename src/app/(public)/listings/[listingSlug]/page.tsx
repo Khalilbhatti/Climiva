@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { ListingFrame } from "@/components/marketplace/ListingFrame";
 import { ListingView, type ListingViewData } from "@/components/marketplace/ListingView";
+import { PublicHeader } from "@/components/public/PublicHeader";
 import { platformHost } from "@/data/website";
 import { platformOrigin } from "@/lib/domain-config";
 import { discoveryHref, readDiscoveryContext } from "@/lib/marketplace-discovery";
 import { summarizeHours } from "@/lib/settings-state";
+import { jsonLd, providerStructuredData } from "@/lib/structured-data";
 import { getPublicListing } from "@/server/public-site";
 
 /**
@@ -15,6 +18,10 @@ import { getPublicListing } from "@/server/public-site";
  *
  * The profile is the Marketplace's page about the business (its Services, the places it works, its public reviews and a way to book). The business's
  * own website is a different page at a different address, and the profile only links to it when the business chose to.
+ *
+ * Three different things are offered on it and kept apart: booking THIS provider (the Service buttons inside the profile), the provider's own website
+ * (only when it chose to link it), and Climvia's own invitation to a business to list itself (the header's "List your business" and the note under the
+ * profile, which says in words that it is not about booking this provider).
  */
 export async function generateMetadata({ params }: PageProps<"/listings/[listingSlug]">): Promise<Metadata> {
   const { listingSlug } = await params;
@@ -56,13 +63,40 @@ export default async function PublicListingPage({ params, searchParams }: PagePr
     book: { listing: listing.slug, context },
   };
   const searched = Boolean(context.service || context.location);
+  const origin = platformOrigin();
+  const address = listing.contact.address ? listing.business.address : null;
+  // Structured data says only what the profile shows: the details the business switched on, and a rating only from reviews that are public right now.
+  const structured = providerStructuredData(origin, {
+    slug: listing.slug,
+    name: listing.business.name,
+    description: listing.description,
+    phone: listing.contact.phone && listing.business.phone ? listing.business.phone : null,
+    address: address ? { street: address.street || null, city: address.city || null, state: address.state || null, postalCode: address.postalCode || null } : null,
+    rating: listing.rating,
+  });
   return (
-    <div className="min-h-dvh bg-surface-low px-4 py-6">
-      <ListingFrame businessName={listing.business.name} back={{ href: discoveryHref({ service: context.service, location: context.location }), label: searched ? "Back to results" : "All providers" }}>
-        <main className="p-4 @2xl:p-6">
-          <ListingView data={data} variant="page" />
-        </main>
-      </ListingFrame>
+    <div className="min-h-dvh bg-surface-low">
+      {structured && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(structured) }} />}
+      <PublicHeader tone="on-light" className="border-b border-line bg-surface" />
+      <div className="px-4 py-6">
+        <ListingFrame businessName={listing.business.name} back={{ href: discoveryHref({ service: context.service, location: context.location }), label: searched ? "Back to results" : "All providers" }}>
+          <main className="p-4 @2xl:p-6">
+            <ListingView data={data} variant="page" />
+          </main>
+        </ListingFrame>
+        <aside aria-labelledby="own-business-heading" className="mx-auto mt-6 max-w-5xl rounded-card border border-line bg-surface p-5">
+          <h2 id="own-business-heading" className="text-base font-bold text-ink">
+            Do you run an HVAC business?
+          </h2>
+          <p className="mt-1 text-sm text-ink-muted">
+            Climvia is also business software, and this Marketplace lists the businesses that use it. This is an invitation to businesses: to book {listing.business.name}, use the
+            service buttons above.
+          </p>
+          <Link prefetch={false} href="/signup" className="mt-3 inline-block rounded-btn text-sm font-semibold text-primary underline-offset-4 hover:underline">
+            List your business on Climvia
+          </Link>
+        </aside>
+      </div>
     </div>
   );
 }

@@ -36,13 +36,16 @@ const ORIGIN = process.env.BETTER_AUTH_URL ?? "http://localhost:3460";
  * is a `template#B:n` and the finished content waits in a hidden `div#S:n`, outside `main`. Its elements can already be found by id, but a hidden
  * element cannot take focus (`locator.focus()` waits only for it to exist, and does nothing), so a key pressed then goes to the page body. The
  * page is not ready while any boundary is unrevealed.
+ *
+ * A hidden input is not a control anyone can click or type into, and React writes one into every form whose action is a Server Action (`$ACTION_ID_…`) as
+ * plain HTML that never gets a fiber; waiting for it would make every page with such a form run out the whole timeout.
  */
 export async function waitForHydration(page: Page, timeout = 10_000) {
   await page.waitForFunction(
     () => {
       const router = (window as unknown as { next?: { router?: unknown } }).next?.router;
       const unrevealed = document.querySelector('template[id^="B:"], div[hidden][id^="S:"]');
-      const controls = [...document.querySelectorAll("header button, main button, main input, main select, main textarea")];
+      const controls = [...document.querySelectorAll("header button, main button, main input:not([type=hidden]), main select, main textarea")];
       return Boolean(router) && !unrevealed && controls.every((control) => Object.keys(control).some((key) => key.startsWith("__reactFiber$")));
     },
     undefined,

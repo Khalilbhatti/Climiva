@@ -80,6 +80,13 @@ export const AUTH_PAGES = ["/login", "/signup", "/onboarding"];
 // (/custom-site is where a customer's own domain is rewritten to; reached on a platform name it is "not found". domains-host.spec.ts crawls it by Host.)
 export const NOT_FOUND_ONLY_PATTERNS = ["/[...unknown]", "/sites", "/listings", "/listings/[listingSlug]/[...rest]", "/marketplace/[...rest]", "/custom-site/[[...slug]]"] as const;
 
+/**
+ * The front door (`/`) and the page a customer opens from a review link (`/review/<secret>`). Neither is a page to crawl for a 2xx as someone signed in: `/` sends
+ * a business member on to /overview and shows everyone else the landing, and a review link is a secret nothing in the data modules can name. They have specs of
+ * their own (entry.spec.ts, review-collection.spec.ts) that hold them to the same standards.
+ */
+export const OWN_SPEC_PATTERNS = ["/", "/review/[token]"] as const;
+
 export function pagePatterns(): { pattern: string; shell: boolean }[] {
   return pageFiles(APP_DIR)
     // (auth): covered by auth.spec.ts and onboarding.spec.ts. (platform-admin): Climvia's own console, 404 for every workspace user; it has its own
@@ -91,7 +98,7 @@ export function pagePatterns(): { pattern: string; shell: boolean }[] {
       const segments = parts.filter((part) => !/^\(.*\)$/.test(part));
       return { pattern: "/" + segments.join("/"), shell };
     })
-    .filter(({ pattern }) => !(NOT_FOUND_ONLY_PATTERNS as readonly string[]).includes(pattern))
+    .filter(({ pattern }) => !(NOT_FOUND_ONLY_PATTERNS as readonly string[]).includes(pattern) && !(OWN_SPEC_PATTERNS as readonly string[]).includes(pattern))
     .sort((a, b) => a.pattern.localeCompare(b.pattern));
 }
 

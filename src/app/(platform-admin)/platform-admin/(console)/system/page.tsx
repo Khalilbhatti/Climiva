@@ -37,7 +37,14 @@ const ACTION_LABELS: Record<string, string> = {
   "platform_admin.revoked": "Platform administrator revoked",
   "marketplace_listing.suspended": "Listing suspended",
   "marketplace_listing.unsuspended": "Listing allowed again",
+  "marketplace_listing.message_updated": "Message to the business changed",
+  "marketplace_listing.review_requested": "Business asked for a suspension to be reviewed",
+  "marketplace_listing.review_resolved": "Suspension review answered",
+  "review.hidden": "Review hidden from the Marketplace",
+  "review.restored": "Review restored to the Marketplace",
 };
+
+const TARGET_KINDS: Record<string, string> = { user: "Person", marketplace_listing: "Listing", review: "Review" };
 
 function storageDriver(): string {
   try {
@@ -89,7 +96,7 @@ export default async function PlatformSystemPage() {
         <KeyValueList layout="tiles" className="sm:grid-cols-3 lg:grid-cols-4" items={Object.entries(system.counts).map(([name, value]) => ({ label: COUNT_LABELS[name] ?? name, value: groupDigits(value) }))} />
       </SectionCard>
 
-      <SectionCard title="Recent platform activity" description="Granting and revoking platform access, and suspending or allowing listings. The trail is append-only." icon={ScrollText}>
+      <SectionCard title="Recent platform activity" description="Granting and revoking platform access, suspending or allowing listings, answering a business's request to review a suspension, and hiding or restoring reviews. The trail is append-only." icon={ScrollText}>
         {audit.length === 0 ? (
           <p className="text-sm text-ink-muted">Nothing has been recorded yet.</p>
         ) : (
@@ -109,7 +116,14 @@ export default async function PlatformSystemPage() {
                   <TableCell>
                     {ACTION_LABELS[entry.action] ?? entry.action}
                     <p className="text-xs text-ink-muted">
-                      {entry.targetKind === "user" ? "Person" : "Listing"} {typeof entry.metadata.email === "string" ? entry.metadata.email : typeof entry.metadata.publicSlug === "string" ? entry.metadata.publicSlug : entry.targetId}
+                      {TARGET_KINDS[entry.targetKind] ?? "Item"}{" "}
+                      {typeof entry.metadata.email === "string"
+                        ? entry.metadata.email
+                        : typeof entry.metadata.publicSlug === "string"
+                          ? entry.metadata.publicSlug
+                          : typeof entry.metadata.reviewSlug === "string"
+                            ? entry.metadata.reviewSlug
+                            : entry.targetId}
                     </p>
                   </TableCell>
                   <TableCell>{entry.actorLabel}</TableCell>

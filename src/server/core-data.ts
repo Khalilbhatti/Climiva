@@ -53,7 +53,7 @@ export const getCoreSnapshot = cache(async (): Promise<CoreSnapshot | null> => {
     const marketing = await loadMarketing(tx, organizationId, organization.timezone);
     // A domain's verification record goes only to the people who may manage the website.
     const website = await loadPrimaryWebsite(tx, organizationId, { reveal: can(role, "website:manage"), routingTarget: hostConfig().customDomainTarget });
-    const marketplace = await loadMarketplace(tx, organizationId, services);
+    const marketplace = await loadMarketplace(tx, organizationId, services, organization.timezone);
     const adjustments = await loadReportingAdjustments(tx, organizationId);
     const month = monthTotalsOf(await getPeriodReport(tx, organizationId, presetRange("this-month", snapshot.clock.today)));
     return { services, team, book, operations, financials, maintenance, reviews, marketing, website, marketplace, reporting: { adjustments, month } };

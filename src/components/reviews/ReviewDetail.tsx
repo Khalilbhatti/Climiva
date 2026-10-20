@@ -17,7 +17,7 @@ import { formatTime } from "@/lib/dates";
 import { formatDate } from "@/lib/format";
 import { ReplyModal } from "./ReplyModal";
 import { useReviews } from "./ReviewsProvider";
-import { ReviewStatusBadge, Stars, reviewerName } from "./review-ui";
+import { ReviewStatusBadge, ReviewVisibilityBadge, Stars, reviewerName } from "./review-ui";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
 import { useCan } from "@/components/workspace/WorkspaceProvider";
 
@@ -66,6 +66,7 @@ export function ReviewDetail({ reviewId }: { reviewId: string }) {
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight text-ink">{name}</h1>
             <ReviewStatusBadge review={review} />
+            <ReviewVisibilityBadge review={review} />
           </div>
           <p className="flex flex-wrap items-center gap-2 text-sm text-ink-muted">
             <Stars rating={review.rating} />

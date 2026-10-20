@@ -43,6 +43,8 @@ $C run --rm migrate npm run db:status   # are the database's migrations current?
 $C down                                 # stop and remove containers; volumes stay
 ```
 
+The proxy's access log never records a review link's secret: `/review/<secret>` is written as `/review/REDACTED`, in the request address and in a `Referer` that carries it (`deploy/caddy/Caddyfile`, `(access_log)`). After changing that file, run `$C exec proxy caddy validate --config /etc/caddy/Caddyfile` before restarting the proxy.
+
 **Never** `down -v`, `docker volume rm` or `docker system prune --volumes` on a host that holds real data: they delete the database, the uploaded logos and the certificates. No script here does.
 
 Health: `/health/live` says the process runs; `/health/ready` also needs the configuration, the database (through a public function, so an unmigrated database is not ready) and the file storage. Not ready returns 503 with three words saying which part (`config`, `database`, `storage`) and nothing else; the reason is in `$C logs app` (`[health] not ready: database`). A stopped database makes the app *not ready* but not dead, and it recovers by itself when the database returns.

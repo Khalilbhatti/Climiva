@@ -121,6 +121,32 @@ test("every table and every protecting object of the restored database compares 
   expect(healed.code, healed.out).toBe(0);
 });
 
+test("the restored database keeps the customers and the bookings made for them, and everything Phase 19E added: the keys, the unique identity, the narrowed bookings check, the insert policy and the resolver", async () => {
+  const owner = stack.env.POSTGRES_OWNER_USER ?? "climvia_owner";
+  const ask = (database: string, statement: string) => compose("exec", "-T", "db", "psql", "-U", owner, "-d", database, "-At", "-c", statement).trim();
+  const source = stack.env.POSTGRES_DB ?? "climvia";
+  // The same customers, the same bookings pointing at them, and no guest booking left without one, in the source and in the copy.
+  for (const statement of [
+    "select count(*) from customers",
+    "select count(*) from bookings b join customers c on c.organization_id = b.organization_id and c.id = b.customer_id",
+    "select count(*) from bookings where source in ('Marketplace', 'Website') and customer_id is null",
+    "select md5(string_agg(slug || '|' || name || '|' || coalesce(phone, '') || '|' || coalesce(email, ''), ',' order by slug)) from customers",
+  ]) expect(ask(DRILL, statement), statement).toBe(ask(source, statement));
+  expect(Number(ask(DRILL, "select count(*) from customers"))).toBeGreaterThanOrEqual(5);
+  expect(Number(ask(DRILL, "select count(*) from bookings b join customers c on c.organization_id = b.organization_id and c.id = b.customer_id"))).toBeGreaterThanOrEqual(4);
+  expect(ask(DRILL, "select count(*) from bookings where source in ('Marketplace', 'Website') and customer_id is null")).toBe("0");
+  // The generated keys were recomputed by the copy's own functions and agree with them for every customer.
+  expect(ask(DRILL, "select count(*) from customers where email_key is distinct from app_email_key(email) or phone_key is distinct from app_phone_key(phone)")).toBe("0");
+  // What the migrations added is there: the functions, the unique identity, the narrowed check, the insert policy, and no policy for UPDATE or DELETE.
+  expect(ask(DRILL, "select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('app_email_key', 'app_phone_key', 'app_resolve_public_customer')")).toBe("3");
+  expect(ask(DRILL, "select indexdef from pg_indexes where indexname = 'customers_org_identity_unique'")).toMatch(/UNIQUE INDEX .*\(organization_id, email_key, phone_key\) WHERE/);
+  expect(ask(DRILL, "select count(*) from pg_constraint where conname = 'bookings_customer_holds_contact'")).toBe("1");
+  expect(ask(DRILL, "select count(*) from pg_constraint where conname = 'bookings_contact_without_customer'")).toBe("0");
+  expect(ask(DRILL, "select string_agg(cmd, ',' order by cmd) from pg_policies where tablename = 'customers'")).toBe("INSERT,SELECT");
+  expect(ask(DRILL, "select string_agg(privilege_type, ',' order by privilege_type) from information_schema.role_table_grants where table_name = 'customers' and grantee = 'climvia_app'")).toBe("INSERT,SELECT");
+  expect(ask(DRILL, "select has_function_privilege('climvia_app', 'app_resolve_public_customer(uuid, text, text, text)', 'execute')")).toBe("f");
+});
+
 /** What the application's own restricted role sees in a database, from inside the real application container. */
 function probe(database: string, input: Record<string, unknown>): Record<string, unknown> {
   const code = `

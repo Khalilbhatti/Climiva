@@ -216,6 +216,12 @@ test.describe("every Server Action authorizes its caller", () => {
     const services = read(join(SRC, "server", "actions", "services.ts"));
     expect(services.match(/authorize\("services:manage"/g)?.length).toBe(2);
     expect(services).not.toMatch(/requireMember\(/);
+    // Adding a customer by hand: the one action, authorized before anything is parsed or written, and it names no organization, id or public reference.
+    const customerActions = read(join(SRC, "server", "actions", "customers.ts"));
+    expect(customerActions.match(/authorize\("customers:manage"/g)?.length).toBe(1);
+    expect(customerActions).not.toMatch(/requireMember\(|organizationId:\s*(input|payload|body)/);
+    expect([...customerActions.matchAll(/export async function (\w+)\(/g)].map(([, name]) => name)).toEqual(["addCustomerAction"]);
+    expect(customerActions.indexOf('authorize("customers:manage"')).toBeLessThan(customerActions.indexOf("parseNewCustomer("));
     const team = read(join(SRC, "server", "actions", "team.ts"));
     expect(team).toMatch(/authorize\("team:manage"/);
     // Every booking and job write goes through the one helper that authorizes "operations:manage" first.
@@ -312,6 +318,7 @@ test.describe("every Server Action authorizes its caller", () => {
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"marketing:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"financials:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"services:manage": \["owner", "admin"\]/);
+    expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"customers:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"team:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"operations:manage": \["owner", "admin"\]/);
     expect(read(join(SRC, "lib", "policy.ts"))).toMatch(/"maintenance:manage": \["owner", "admin"\]/);

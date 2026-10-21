@@ -420,8 +420,15 @@ test.describe("a booking from the Marketplace", () => {
     const provider = await makeProvider("book", handles);
     const answer = await book(provider.slug, SAMPLE_SERVICES.tuneUp, { discoveryService: SAMPLE_SERVICES.tuneUp, discoveryLocation: "austin-tx" });
     expect(answer).toMatchObject({ ok: true, duplicate: false });
-    const row = (await admin.query("select organization_id, source, marketplace_listing_id, discovery_service, discovery_location, status, contact_name, customer_id from bookings where organization_id = $1 and number = $2", [provider.business.organizationId, answer.number])).rows[0];
-    expect(row).toMatchObject({ organization_id: provider.business.organizationId, source: "Marketplace", marketplace_listing_id: provider.listingId, discovery_service: SAMPLE_SERVICES.tuneUp, discovery_location: "austin-tx", contact_name: "Pat Visitor", customer_id: null });
+    const row = (
+      await admin.query(
+        `select b.organization_id, b.source, b.marketplace_listing_id, b.discovery_service, b.discovery_location, b.status, b.contact_name, c.name as customer_name, c.organization_id as customer_organization
+           from bookings b left join customers c on c.id = b.customer_id where b.organization_id = $1 and b.number = $2`,
+        [provider.business.organizationId, answer.number],
+      )
+    ).rows[0];
+    // The visitor is the business's customer now (drizzle/0030): the booking is theirs and keeps the attribution; customer-acquisition-database.spec.ts holds the rule.
+    expect(row).toMatchObject({ organization_id: provider.business.organizationId, source: "Marketplace", marketplace_listing_id: provider.listingId, discovery_service: SAMPLE_SERVICES.tuneUp, discovery_location: "austin-tx", contact_name: null, customer_name: "Pat Visitor", customer_organization: provider.business.organizationId });
     expect(["pending", "confirmed"]).toContain(row.status);
     // (A Website booking is still a Website booking: website-database.spec.ts holds its source, and marketplace-discovery.spec.ts counts the two apart.)
   });

@@ -178,9 +178,9 @@ test.describe("reading", () => {
   });
 });
 
-test.describe("writing: customers, properties and equipment are read only for the runtime role", () => {
+test.describe("writing: customers may be added and nothing else about customers, properties or equipment is writable by the runtime role", () => {
   for (const table of READ_ONLY_TABLES) {
-    test(`${table}: even an owner is refused INSERT, UPDATE and DELETE`, async () => {
+    test(`${table}: ${table === "customers" ? "an owner may ADD one (drizzle/0030), and is still refused UPDATE and DELETE" : "even an owner is refused INSERT, UPDATE and DELETE"}`, async () => {
       const insert =
         table === "customers"
           ? "insert into customers (organization_id, slug, name, phone, email) values ($1, 'zz-new', 'Zed', '1', 'z@example.test')"
@@ -190,7 +190,9 @@ test.describe("writing: customers, properties and equipment are read only for th
               ? "insert into customer_properties (organization_id, customer_id, slug, label, address_line1, city, state_region, postal_code) select organization_id, id, 'zz', 'Home', '1 A St', 'X', 'TX', '78701' from customers where organization_id = $1 limit 1"
               : "insert into equipment (organization_id, property_id, slug, name, kind, manufacturer, model, model_code, serial_number, location, in_service_since) select organization_id, id, 'zz', 'x', 'x', 'x', 'x', 'x', 'x', 'x', '2020-01' from customer_properties where organization_id = $1 limit 1";
       const inserted = await as(ids.alex, apex, (client) => client.query(insert, [apex]));
-      expect(inserted.error, `insert into ${table}`).toMatch(/permission denied/);
+      // Adding a customer is the one write the Customers module has (the owner/admin policy of 0030; customer-acquisition-database.spec.ts holds who may). It is rolled back here.
+      if (table === "customers") expect(inserted.error, "insert into customers").toBeUndefined();
+      else expect(inserted.error, `insert into ${table}`).toMatch(/permission denied/);
       const touch = table === "customer_notes" ? "body = body" : "updated_at = now()";
       const updated = await as(ids.alex, apex, (client) => client.query(`update ${table} set ${touch} where organization_id = $1`, [apex]));
       expect(updated.error, `update ${table}`).toMatch(/permission denied/);

@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, History, Wrench } from "lucide-react";
-import { JobStatusBadge } from "@/components/operations/StatusBadges";
+import { ArrowRight, CalendarClock, History, Wrench } from "lucide-react";
+import { BookingStatusBadge, JobStatusBadge } from "@/components/operations/StatusBadges";
 import { useOperations } from "@/components/operations/OperationsProvider";
 import { KeyValueList } from "@/components/ui/KeyValueList";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { jobHref } from "@/config/routes";
-import { getAssigneeName, getJobsForCustomer, getServiceNameFor } from "@/data/operations";
+import { BOOKING_TABS, getAssigneeName, getBookingsForCustomer, getJobsForCustomer, getServiceNameFor } from "@/data/operations";
 import { formatDate } from "@/lib/format";
 import { formatTimeRange } from "@/lib/dates";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
@@ -49,6 +49,46 @@ export function CurrentServiceCard({ customerId }: { customerId: string }) {
           <ArrowRight aria-hidden className="size-3.5" />
         </Link>
       </div>
+    </SectionCard>
+  );
+}
+
+/**
+ * The customer's bookings, read from the same operations records the Bookings module shows (not copied onto the customer). A customer made from a guest's
+ * booking has this and nothing else yet: no Property, no Job. It is left out for a customer with no booking.
+ */
+export function CustomerBookingsCard({ customerId }: { customerId: string }) {
+  const dir = useDirectory();
+  const { data } = useOperations();
+  const bookings = getBookingsForCustomer(customerId, data).sort((a, b) => b.date.localeCompare(a.date) || b.start.localeCompare(a.start));
+  if (bookings.length === 0) return null;
+
+  return (
+    <SectionCard title={`Bookings (${bookings.length})`} icon={CalendarClock}>
+      <ul className="space-y-2">
+        {bookings.map((booking) => {
+          const tab = BOOKING_TABS.find((candidate) => candidate.status === booking.status)?.id ?? "requests";
+          return (
+            <li key={booking.id} className="flex flex-wrap items-center justify-between gap-2 rounded-card bg-surface-low p-4">
+              <div>
+                <p className="flex items-center gap-2 text-sm font-semibold text-ink">
+                  <Link href={`/bookings?tab=${tab}&booking=${booking.id}`} className="hover:underline">
+                    Booking #{booking.id}
+                  </Link>
+                  <BookingStatusBadge status={booking.status} />
+                </p>
+                <p className="mt-0.5 text-sm text-ink-muted">
+                  {getServiceNameFor(booking, dir)}
+                  {booking.source ? ` · ${booking.source}` : ""}
+                </p>
+              </div>
+              <p className="text-xs text-ink-muted">
+                {formatDate(booking.date)}, {formatTimeRange(booking.start, booking.end)}
+              </p>
+            </li>
+          );
+        })}
+      </ul>
     </SectionCard>
   );
 }

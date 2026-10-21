@@ -197,6 +197,27 @@
       "when": 1792502803795,
       "tag": "0027_public_entry_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1792584772500,
+      "tag": "0028_customer_identity_functions",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792584828198,
+      "tag": "0029_customer_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792584905835,
+      "tag": "0030_customer_acquisition_rls",
+      "breakpoints": true
     }
   ]
 }

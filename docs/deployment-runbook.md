@@ -109,6 +109,7 @@ The local mode requests nothing from a public certificate authority. Its certifi
 | --- | --- | --- |
 | `deploy.sh` stops at "checking" | its output | the env file; every line names a setting and the rule, never the value |
 | `deploy.sh` stops at "migrating" | `$C logs migrate` | a failing migration or a wrong owner password; the old app is still running |
+| `deploy.sh` stops at "migrating" and the log names `customers_org_identity_unique` | `$C logs migrate` | a business already holds two customers with the same email AND phone (Phase 19E's migration 0029 makes that pair unique per business); remove or change one with the owner role, then deploy again. The old app is still running |
 | app container exits at once | `$C logs app` | "The production configuration is not fit to start with": the same list as `config:check` |
 | `/health/ready` is 503 | `curl .../health/ready`, then `$C logs app` | `database` (is `db` healthy? migrations current?), `storage` (the assets volume mounted?), `config` |
 | the site loads on the platform address but a customer's name does not | the Domain Manager; `$C logs proxy` | the domain is not *active*, the Site is not published, DNS does not reach this host, or the permission answered no |

@@ -905,7 +905,7 @@ test.describe("a public booking, at the database", () => {
       )
       .then((result) => result.rows[0].booking);
 
-  test("the business is the Site's: an instant Service is confirmed and a request is pending, as a Website booking with no customer, in the Site's own business", async () => {
+  test("the business is the Site's: an instant Service is confirmed and a request is pending, as a Website booking of a customer made from it, in the Site's own business", async () => {
     const result = await as(null, null, async (client) => {
       const instant = await book(client, "apexclimate", "annual-cooling-tune-up", "key-instant-0001");
       const request = await book(client, "apexclimate", "ac-repair-diagnostics", "key-request-0001", { start: "08:00", end: "10:00", email: "other@example.test" });
@@ -918,11 +918,18 @@ test.describe("a public booking, at the database", () => {
     const stored = await asOwner(async (client) => {
       const first = await book(client, "apexclimate", "annual-cooling-tune-up", "key-instant-0002");
       const row = (
-        await client.query("select organization_id, customer_id, property_id, source, status, contact_name, service_id, submission_key from bookings where number = $1 and organization_id = $2", [first.number, apex])
+        await client.query(
+          `select b.organization_id, b.customer_id, c.organization_id as customer_organization, c.name as customer_name, b.property_id, b.source, b.status, b.contact_name, b.service_id, b.submission_key
+             from bookings b left join customers c on c.id = b.customer_id where b.number = $1 and b.organization_id = $2`,
+          [first.number, apex],
+        )
       ).rows[0];
       return row;
     });
-    expect(stored.value).toMatchObject({ organization_id: apex, customer_id: null, property_id: null, source: "Website", status: "confirmed", contact_name: "Dana Visitor", submission_key: "key-instant-0002" });
+    // The visitor became (or was found as) the business's customer: the booking is theirs, in the same business, and carries no contact name of its own (drizzle/0030;
+    // customer-acquisition-database.spec.ts holds the rule).
+    expect(stored.value).toMatchObject({ organization_id: apex, customer_organization: apex, customer_name: "Dana Visitor", property_id: null, source: "Website", status: "confirmed", contact_name: null, submission_key: "key-instant-0002" });
+    expect(stored.value?.customer_id).not.toBeNull();
     expect(stored.value?.service_id).not.toBeNull();
   });
 

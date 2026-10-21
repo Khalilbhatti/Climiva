@@ -62,14 +62,22 @@ export function CustomerHeader({ customer }: { customer: Customer }) {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <InfoTile icon={Phone} label="Phone">
-          <a href={toTelHref(customer.phone)} className="hover:underline">
-            {customer.phone}
-          </a>
+          {customer.phone ? (
+            <a href={toTelHref(customer.phone)} className="hover:underline">
+              {customer.phone}
+            </a>
+          ) : (
+            "No phone on file"
+          )}
         </InfoTile>
         <InfoTile icon={Mail} label="Email address">
-          <a href={`mailto:${customer.email}`} className="hover:underline">
-            {customer.email}
-          </a>
+          {customer.email ? (
+            <a href={`mailto:${customer.email}`} className="hover:underline">
+              {customer.email}
+            </a>
+          ) : (
+            "No email on file"
+          )}
         </InfoTile>
         <InfoTile icon={MapPin} label="Primary property">
           {property ? (

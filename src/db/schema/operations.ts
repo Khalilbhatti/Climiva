@@ -144,7 +144,9 @@ export const bookings = pgTable(
     check("bookings_time_order", sql`${table.endTime} > ${table.startTime}`),
     // Exactly one of: a Customers record, or a name.
     check("bookings_party", sql`(${table.customerId} is null) = (${table.contactName} is not null)`),
-    check("bookings_contact_without_customer", sql`${table.customerId} is null or (${table.contactPhone} is null and ${table.contactEmail} is null and ${table.contactAddress} is null)`),
+    // A Customer's phone and email are the Customer's own, so a booking for one carries neither. The address a visit was requested at stays on the
+    // booking: a customer made from a guest's booking has no Property there yet.
+    check("bookings_customer_holds_contact", sql`${table.customerId} is null or (${table.contactPhone} is null and ${table.contactEmail} is null)`),
     check("bookings_property_needs_customer", sql`${table.propertyId} is null or ${table.customerId} is not null`),
     check("bookings_cancellation", sql`(${table.status} = 'cancelled') = (${table.cancellationReason} is not null)`),
   ],

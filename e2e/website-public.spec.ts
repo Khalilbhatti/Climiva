@@ -11,6 +11,7 @@
  *   - the client bundle: none of any business's website or listing copy is compiled into the browser's JavaScript.
  */
 import { randomBytes } from "node:crypto";
+import { freshPhone } from "./booking-people";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { APIRequestContext, Page } from "playwright/test";
@@ -361,7 +362,7 @@ test.describe("a visitor's booking", () => {
   };
 
   const bookingsOf = async (db: import("pg").Pool, organizationId: string, email: string) =>
-    (await db.query("select b.number, b.status, b.source, b.customer_id, b.contact_name, b.submission_key, b.organization_id, s.slug as service from bookings b join services s on s.id = b.service_id and s.organization_id = b.organization_id where b.organization_id = $1 and b.contact_email = $2 order by b.number", [organizationId, email])).rows;
+    (await db.query("select b.number, b.status, b.source, b.customer_id, b.contact_name, cu.name as customer_name, b.submission_key, b.organization_id, s.slug as service from bookings b join services s on s.id = b.service_id and s.organization_id = b.organization_id left join customers cu on cu.organization_id = b.organization_id and cu.id = b.customer_id where b.organization_id = $1 and (b.contact_email = $2 or cu.email_key = lower($2)) order by b.number", [organizationId, email])).rows;
 
   /** Make a real booking through the page and capture the call the page sent. */
   async function bookThroughThePage(page: Page, workerTenant: { platformSlug: string }, email: string): Promise<Captured> {
@@ -395,9 +396,9 @@ test.describe("a visitor's booking", () => {
 
     const rows = await bookingsOf(db, workerTenant.organizationId, email);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ status: "confirmed", source: "Website", customer_id: null, contact_name: "Jordan Visitor", service: "annual-cooling-tune-up", organization_id: workerTenant.organizationId });
+    expect(rows[0]).toMatchObject({ status: "confirmed", source: "Website", customer_id: expect.any(String), contact_name: null, customer_name: "Jordan Visitor", service: "annual-cooling-tune-up", organization_id: workerTenant.organizationId });
     // The booking took the next number of this business's own counter, and no job, quote, invoice or payment came with it.
-    expect(await db.query("select 1 from jobs where organization_id = $1 and booking_id = (select id from bookings where organization_id = $1 and contact_email = $2)", [workerTenant.organizationId, email]).then((result) => result.rowCount)).toBe(0);
+    expect(await db.query("select 1 from jobs where organization_id = $1 and booking_id = (select b.id from bookings b left join customers cu on cu.organization_id = b.organization_id and cu.id = b.customer_id where b.organization_id = $1 and (b.contact_email = $2 or cu.email_key = lower($2)))", [workerTenant.organizationId, email]).then((result) => result.rowCount)).toBe(0);
     // And the visitor sees nothing of the business's other bookings: the page held only a reference.
     expect(await page.locator("body").innerText()).not.toMatch(/Sarah Mitchell|David Chen/);
   });
@@ -415,7 +416,7 @@ test.describe("a visitor's booking", () => {
     await page.getByLabel(/primary cooling issue/).selectOption("Blowing warm air");
     await page.getByRole("button", { name: "Submit appointment request" }).click();
     await expect(page.getByRole("region", { name: "Appointment request submitted" })).toContainText(/BK-\d{4}/);
-    expect(await bookingsOf(db, workerTenant.organizationId, email)).toMatchObject([{ status: "pending", source: "Website", customer_id: null }]);
+    expect(await bookingsOf(db, workerTenant.organizationId, email)).toMatchObject([{ status: "pending", source: "Website", customer_id: expect.any(String) }]);
 
     const staff = await browser.newContext({ baseURL: ORIGIN, storageState: workerTenant.storageState, extraHTTPHeaders: { "x-forwarded-for": `fd00:${process.pid.toString(16)}:${randomBytes(2).toString("hex")}::7` } });
     try {
@@ -442,7 +443,7 @@ test.describe("a visitor's booking", () => {
       api,
       captured,
       edited(captured, (argument) => {
-        Object.assign(argument, { organizationId: northstar, organization_id: northstar, orgId: northstar, submissionKey: `forged-key-${randomBytes(4).toString("hex")}`, email: forgedEmail, start: "14:00", end: "15:00" });
+        Object.assign(argument, { organizationId: northstar, organization_id: northstar, orgId: northstar, submissionKey: `forged-key-${randomBytes(4).toString("hex")}`, email: forgedEmail, phone: freshPhone(), start: "14:00", end: "15:00" });
       }),
     );
     expect(response.status()).toBe(200);
@@ -459,7 +460,7 @@ test.describe("a visitor's booking", () => {
     const api = await apiAs(null);
     const attempt = async (serviceSlug: string) => {
       const forgedEmail = `forged-${randomBytes(3).toString("hex")}@example.test`;
-      const response = await post(api, captured, edited(captured, (argument) => Object.assign(argument, { serviceSlug, submissionKey: `forged-key-${randomBytes(4).toString("hex")}`, email: forgedEmail })));
+      const response = await post(api, captured, edited(captured, (argument) => Object.assign(argument, { serviceSlug, submissionKey: `forged-key-${randomBytes(4).toString("hex")}`, email: forgedEmail, phone: freshPhone() })));
       return { text: await response.text(), rows: await bookingsOf(db, workerTenant.organizationId, forgedEmail) };
     };
     for (const slug of ["furnace-tune-up", "radiant-heat-estimate", "does-not-exist", "../etc/passwd", "UPPER"]) {
@@ -484,7 +485,7 @@ test.describe("a visitor's booking", () => {
     const api = await apiAs(null);
     const attempt = async (siteSlug: string) => {
       const forgedEmail = `forged-${randomBytes(3).toString("hex")}@example.test`;
-      const response = await post(api, captured, edited(captured, (argument) => Object.assign(argument, { siteSlug, submissionKey: `forged-key-${randomBytes(4).toString("hex")}`, email: forgedEmail })));
+      const response = await post(api, captured, edited(captured, (argument) => Object.assign(argument, { siteSlug, submissionKey: `forged-key-${randomBytes(4).toString("hex")}`, email: forgedEmail, phone: freshPhone() })));
       return { text: await response.text(), forgedEmail };
     };
     for (const slug of ["nobody-at-all", "apexclimate-commercial"]) {
@@ -518,7 +519,7 @@ test.describe("a visitor's booking", () => {
     ];
     for (const [label, change, message] of attempts) {
       const forgedEmail = `forged-${randomBytes(3).toString("hex")}@example.test`;
-      const response = await post(api, captured, edited(captured, (argument) => Object.assign(argument, { submissionKey: `forged-key-${randomBytes(4).toString("hex")}`, email: forgedEmail }, change)));
+      const response = await post(api, captured, edited(captured, (argument) => Object.assign(argument, { submissionKey: `forged-key-${randomBytes(4).toString("hex")}`, email: forgedEmail, phone: freshPhone() }, change)));
       const text = await response.text();
       expect(text, label).toMatch(message);
       expect(text, label).not.toMatch(/violates|constraint|postgres|stack trace|ECONN|select\s+\w+\s+from|insert\s+into/i);
@@ -544,7 +545,7 @@ test.describe("a visitor's booking", () => {
     expect(await bookingsOf(db, workerTenant.organizationId, email)).toHaveLength(1);
     // A different person at the same time is a different booking.
     const other = `other-${randomBytes(3).toString("hex")}@example.test`;
-    const different = await post(api, captured, edited(captured, (argument) => Object.assign(argument, { submissionKey: `third-key-${randomBytes(4).toString("hex")}`, email: other })));
+    const different = await post(api, captured, edited(captured, (argument) => Object.assign(argument, { submissionKey: `third-key-${randomBytes(4).toString("hex")}`, email: other, phone: freshPhone() })));
     expect(await different.text()).not.toContain(`BK-${first.number}`);
     expect(await bookingsOf(db, workerTenant.organizationId, other)).toHaveLength(1);
   });
@@ -560,6 +561,8 @@ test.describe("a visitor's booking", () => {
     const responses = await Promise.all(Array.from({ length: 6 }, () => post(api, captured, captured.body)));
     for (const response of responses) expect(response.status()).toBe(200);
     expect(await bookingsOf(db, workerTenant.organizationId, email)).toHaveLength(1);
+    // ... and one customer: a repeat of a request makes neither a second booking nor a second customer.
+    expect((await db.query("select count(*)::int as n from customers where organization_id = $1 and email_key = lower($2)", [workerTenant.organizationId, email])).rows[0].n).toBe(1);
   });
 
   test("a script that posts the form in a loop is slowed: the right-most forwarded address is the visitor's, and a forged left-hand address evades nothing", async ({ page, workerTenant, apiAs }) => {

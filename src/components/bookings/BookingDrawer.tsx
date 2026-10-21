@@ -132,14 +132,25 @@ export function BookingDrawer({
             {customer ? (
               <>
                 <p className="mt-1">
-                  <a href={toTelHref(customer.phone)} className="text-ink-muted hover:underline">
-                    {customer.phone}
-                  </a>
-                  <span className="text-ink-muted"> · </span>
-                  <a href={`mailto:${customer.email}`} className="text-ink-muted hover:underline">
-                    {customer.email}
-                  </a>
+                  {customer.phone && (
+                    <a href={toTelHref(customer.phone)} className="text-ink-muted hover:underline">
+                      {customer.phone}
+                    </a>
+                  )}
+                  {customer.phone && customer.email && <span className="text-ink-muted"> · </span>}
+                  {customer.email && (
+                    <a href={`mailto:${customer.email}`} className="text-ink-muted hover:underline">
+                      {customer.email}
+                    </a>
+                  )}
                 </p>
+                {/* A guest's booking is for a customer made from it, who has no Property yet: the address it was requested at is the booking's own. */}
+                {!property && booking.contact?.address && (
+                  <p className="mt-2 flex items-start gap-2 text-ink">
+                    <MapPin aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-muted" />
+                    {booking.contact.address}
+                  </p>
+                )}
                 {property && (
                   <p className="mt-2 flex items-start gap-2 text-ink">
                     <MapPin aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-muted" />

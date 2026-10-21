@@ -4,7 +4,8 @@
  *   - an anonymous visitor finds Climvia's landing and an empty Marketplace, and looking creates nothing;
  *   - the first person signs up from the landing's "List Your Business" and sets a business up (the onboarding writes the organization, owner, hours and
  *     first Site in one transaction), and lands on a workspace with nothing in it but things to do;
- *   - a Service is added, the workspace's modules read the database as the restricted role, the Builder opens;
+ *   - a Service is added, and the first customer is added by hand on a database that has none (no import, no fixture), and the workspace's modules read
+ *     the database as the restricted role, the Builder opens;
  *   - a logo is uploaded as PNG, JPEG and WebP: `sharp`, inside the read-only production container, re-encodes each, the files land on the persistent
  *     volume, and the public route serves them with the asset's own Content-Security-Policy;
  *   - the Site is published and is served on the platform's address.
@@ -114,6 +115,23 @@ test("a Service is added through the wizard and the Website shows it", async () 
   await page.goto("/website");
   await expect(page.getByText("Services shown", { exact: false }).first()).toBeVisible();
   await expect(page.locator("main")).toContainText(/1 Service/);
+});
+
+test("the owner adds the first customer by hand on the empty database: it is on the list and its page opens, with nothing imported", async () => {
+  expect(Number(one("select count(*) from customers"))).toBe(0);
+  await page.goto("/customers");
+  await expect(page.getByRole("heading", { name: "No customers yet" })).toBeVisible();
+  await page.getByRole("button", { name: "Add customer" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add customer" });
+  await dialog.getByLabel(/^Full name/).fill("Pat Walker");
+  await dialog.getByLabel("Email address").fill("pat.walker@example.test");
+  await dialog.getByLabel("Phone number").fill("303.555.0160");
+  await dialog.getByRole("button", { name: "Add customer" }).click();
+  await expect(page).toHaveURL(/\/customers\/pat-walker$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Pat Walker" })).toBeVisible();
+  expect(sql("select o.slug, c.slug, c.name, c.phone, c.email from customers c join organizations o on o.id = c.organization_id")).toEqual([[SLUG, "pat-walker", "Pat Walker", "(303) 555-0160", "pat.walker@example.test"]]);
+  await page.goto("/customers");
+  await expect(page.getByRole("table", { name: "Customers" }).locator("tbody tr", { hasText: "Pat Walker" })).toBeVisible();
 });
 
 test("every workspace module reads the database as the restricted role, and the Builder opens", async () => {

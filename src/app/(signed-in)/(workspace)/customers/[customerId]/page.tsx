@@ -6,7 +6,7 @@ import { SectionCard } from "@/components/ui/SectionCard";
 import { KeyValueList } from "@/components/ui/KeyValueList";
 import { MaintenanceAgreementCard } from "@/components/customers/CustomerPlan";
 import { CustomerFinancialsCard } from "@/components/customers/CustomerFinancials";
-import { CurrentServiceCard, RecentVisitsCard } from "@/components/customers/CustomerWork";
+import { CurrentServiceCard, CustomerBookingsCard, RecentVisitsCard } from "@/components/customers/CustomerWork";
 import { EquipmentCard } from "@/components/customers/EquipmentCard";
 import { customerPropertiesHref } from "@/config/routes";
 import { formatPropertyCityLine } from "@/data/customers";
@@ -37,6 +37,7 @@ export default async function CustomerOverviewPage({ params }: PageProps<"/custo
             </Link>
           }
         >
+          {properties.length === 0 && <p className="rounded-card bg-surface-low p-4 text-sm text-ink-muted">No service location is on record yet.</p>}
           <ul className="space-y-3">
             {properties.map((property) => (
               <li key={property.id} className="rounded-card bg-surface-low p-4">
@@ -88,6 +89,8 @@ export default async function CustomerOverviewPage({ params }: PageProps<"/custo
           )}
         </SectionCard>
 
+        <CustomerBookingsCard customerId={customer.id} />
+
         <RecentVisitsCard customerId={customer.id} />
 
         <CustomerFinancialsCard customerId={customer.id} />
@@ -97,8 +100,8 @@ export default async function CustomerOverviewPage({ params }: PageProps<"/custo
         <SectionCard title="Customer contact">
           <KeyValueList
             items={[
-              { label: "Phone", value: customer.phone },
-              { label: "Email", value: customer.email },
+              { label: "Phone", value: customer.phone || "Not on file" },
+              { label: "Email", value: customer.email || "Not on file" },
               { label: "Preferred contact", value: customer.preferredContact },
               ...(customer.language ? [{ label: "Language", value: customer.language }] : []),
             ]}

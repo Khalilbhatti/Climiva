@@ -10,8 +10,9 @@
  * No `server-only` import on purpose: scripts and tests use these too. Nothing under src/ that is a Client Component may
  * import this file (a test enforces it).
  */
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Customer, CustomerBook, Equipment, Property } from "@/data/customers";
+import { createCustomerSlug, type NewCustomer } from "@/lib/customer-rules";
 import type { Service } from "@/data/services";
 import type { Role, TeamData, TeamMember } from "@/data/team";
 import {
@@ -129,6 +130,31 @@ export async function loadCustomerDetail(tx: Tx, organizationId: string, slug: s
     .orderBy(asc(customerNotes.position));
   const book = assembleBook({ customerRows, propertyRows, equipmentRows, noteRows });
   return { customer: book.customers[0], properties: book.properties, equipment: book.equipment };
+}
+
+/**
+ * Add one customer to a business by hand. The business is the caller's (the action took it from the verified session); the public reference is chosen
+ * here, never by the browser. One customer at a time per business: the lock is the same one a guest's booking takes before it finds or makes a customer
+ * (drizzle/0030), so an owner adding someone while that person books is two steps in a line, not a race. Returns the customer who already has this email
+ * instead of adding a second one: a phone number alone is not refused (a household shares one).
+ */
+export async function createCustomer(tx: Tx, organizationId: string, input: NewCustomer): Promise<{ created: true; slug: string } | { created: false; existing: { slug: string; name: string } }> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`climvia.customer-identity:${organizationId}`}, 0))`);
+  if (input.email) {
+    const [existing] = await tx
+      .select({ slug: customers.slug, name: customers.name })
+      .from(customers)
+      .where(and(eq(customers.organizationId, organizationId), eq(customers.emailKey, sql`app_email_key(${input.email})`)))
+      .orderBy(asc(customers.position))
+      .limit(1);
+    if (existing) return { created: false, existing };
+  }
+  const taken = new Set((await tx.select({ slug: customers.slug }).from(customers).where(eq(customers.organizationId, organizationId))).map((row) => row.slug));
+  const [row] = await tx
+    .insert(customers)
+    .values({ organizationId, slug: createCustomerSlug(input.name, taken), name: input.name, phone: input.phone, email: input.email, preferredContact: input.preferredContact })
+    .returning({ slug: customers.slug });
+  return { created: true, slug: row.slug };
 }
 
 /** Seed and tests: write a customer book (customers, notes, properties, equipment). Not used by the application. */

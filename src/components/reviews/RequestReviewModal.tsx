@@ -138,7 +138,7 @@ export function RequestReviewModal({ onClose }: { onClose: () => void }) {
           description={
             <>
               <Mail aria-hidden className="mr-1 inline size-3" />
-              {customer?.email}
+              {customer?.email || "No email on file"}
             </>
           }
           checked={channel === "email"}
@@ -151,7 +151,7 @@ export function RequestReviewModal({ onClose }: { onClose: () => void }) {
           description={
             <>
               <MessageSquare aria-hidden className="mr-1 inline size-3" />
-              {customer?.phone}
+              {customer?.phone || "No phone on file"}
             </>
           }
           checked={channel === "sms"}

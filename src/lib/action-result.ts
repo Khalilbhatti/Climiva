@@ -15,5 +15,6 @@ export const NOT_ALLOWED_REVIEWS = "Only an owner or admin can reply to reviews 
 export const NOT_ALLOWED_MARKETING = "Only an owner or admin can create or change marketing campaigns.";
 export const NOT_ALLOWED_WEBSITE = "Only an owner or admin can change the website.";
 export const NOT_ALLOWED_MARKETPLACE = "Only an owner or admin can change the Marketplace listing.";
+export const NOT_ALLOWED_CUSTOMERS = "Only an owner or admin can add customers.";
 export const NOT_FOUND ="That record no longer exists. Reload the page and try again.";
 export const NO_ACCESS = "You don't have access to that workspace.";

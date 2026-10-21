@@ -192,8 +192,10 @@ test("a visitor books through the customer's own name, and the booking is the na
   await visitor.getByRole("button", { name: "Confirm booking" }).click();
   await expect(visitor.getByRole("region", { name: "Instant booking confirmed" })).toContainText(/BK-\d{4}/);
   expect(visitor.url()).toContain(hosts.active);
-  const rows = sql(`select b.status, b.source, o.slug, s.slug from bookings b join organizations o on o.id = b.organization_id join services s on s.id = b.service_id and s.organization_id = b.organization_id where b.contact_email = '${email}'`);
+  const rows = sql(`select b.status, b.source, o.slug, s.slug from bookings b join organizations o on o.id = b.organization_id join services s on s.id = b.service_id and s.organization_id = b.organization_id left join customers cu on cu.organization_id = b.organization_id and cu.id = b.customer_id where (b.contact_email = '${email}' or cu.email_key = lower('${email}'))`);
   expect(rows).toEqual([["confirmed", "Website", state.slug, "docker-tune-up"]]);
+  // The visitor is now the business's customer, made by the booking itself, and the booking is theirs.
+  expect(sql(`select c.name, o.slug, b.contact_name is null from bookings b join customers c on c.organization_id = b.organization_id and c.id = b.customer_id join organizations o on o.id = b.organization_id where c.email_key = lower('${email}')`)).toEqual([["Jordan Visitor", state.slug, "t"]]);
   // The visitor's page carried nothing of the business's other records.
   const text = await visitor.locator("body").innerText();
   expect(text).not.toContain("Dana Owner");

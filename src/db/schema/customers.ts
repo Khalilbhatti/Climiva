@@ -39,6 +39,13 @@ export const customers = pgTable(
     type: text("type").notNull().default("residential"),
     phone: text("phone"),
     email: text("email"),
+    /**
+     * What a booking is matched on, DERIVED by the database from `email` and `phone` (the two functions are in drizzle/0028), so no code path can
+     * disagree about what "the same email" or "the same phone" means: the email in lower case without surrounding space, and the phone as digits only
+     * (a US number without its country code; fewer than seven digits is no identity). Null when there is nothing to match on. Never written.
+     */
+    emailKey: text("email_key").generatedAlwaysAs(sql`app_email_key(email)`),
+    phoneKey: text("phone_key").generatedAlwaysAs(sql`app_phone_key(phone)`),
     preferredContact: text("preferred_contact").notNull().default("SMS"),
     language: text("language"),
     preferences: text("preferences").array().notNull().default(sql`'{}'::text[]`),
@@ -53,6 +60,13 @@ export const customers = pgTable(
     unique("customers_org_id_unique").on(table.organizationId, table.id),
     unique("customers_org_slug_unique").on(table.organizationId, table.slug),
     index("customers_org_name_idx").on(table.organizationId, sql`lower(${table.name})`),
+    // Finding a booker's customer by email or by phone, inside one business (never across businesses: every lookup names the organization first).
+    index("customers_org_email_key_idx").on(table.organizationId, table.emailKey).where(sql`${table.emailKey} is not null`),
+    index("customers_org_phone_key_idx").on(table.organizationId, table.phoneKey).where(sql`${table.phoneKey} is not null`),
+    // One customer per exact identity (the same email AND the same phone) within a business. Deliberately NOT unique on the email, or on the phone,
+    // alone: a household shares a phone, a family shares an email, and when a booker's email belongs to one customer and their phone to another the
+    // safe answer is a separate customer, which a unique email would forbid. Never unique across businesses.
+    uniqueIndex("customers_org_identity_unique").on(table.organizationId, table.emailKey, table.phoneKey).where(sql`${table.emailKey} is not null and ${table.phoneKey} is not null`),
     check("customers_slug_format", sql`${table.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and char_length(${table.slug}) <= 80`),
     check("customers_name_length", sql`char_length(btrim(${table.name})) between 1 and 80`),
     check("customers_type", sql`${table.type} in ('residential')`),

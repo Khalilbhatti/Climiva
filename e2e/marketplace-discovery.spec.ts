@@ -640,11 +640,11 @@ test.describe("booking from a provider's profile", () => {
     await expect(done).toContainText(/BK-\d{4}/);
     await expect(done).toContainText("Tue, Oct 29 · 11:30 AM – 12:30 PM");
 
-    const rows = (await db.query("select b.status, b.source, b.customer_id, b.contact_name, b.marketplace_listing_id, b.discovery_service, b.discovery_location, l.public_slug from bookings b join marketplace_listings l on l.id = b.marketplace_listing_id where b.organization_id = $1 and b.contact_email = $2", [workerTenant.organizationId, email])).rows;
+    const rows = (await db.query("select b.status, b.source, b.customer_id, b.contact_name, cu.name as customer_name, b.marketplace_listing_id, b.discovery_service, b.discovery_location, l.public_slug from bookings b join marketplace_listings l on l.id = b.marketplace_listing_id left join customers cu on cu.organization_id = b.organization_id and cu.id = b.customer_id where b.organization_id = $1 and (b.contact_email = $2 or cu.email_key = lower($2))", [workerTenant.organizationId, email])).rows;
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ status: "confirmed", source: "Marketplace", customer_id: null, contact_name: "Jordan Visitor", discovery_service: "annual-cooling-tune-up", discovery_location: "austin-tx", public_slug: workerTenant.listingSlug });
+    expect(rows[0]).toMatchObject({ status: "confirmed", source: "Marketplace", customer_id: expect.any(String), contact_name: null, customer_name: "Jordan Visitor", discovery_service: "annual-cooling-tune-up", discovery_location: "austin-tx", public_slug: workerTenant.listingSlug });
     // No job, quote, invoice or payment, and the visitor sees nothing of the business's other bookings.
-    expect((await db.query("select count(*)::int as n from jobs where organization_id = $1 and booking_id = (select id from bookings where organization_id = $1 and contact_email = $2)", [workerTenant.organizationId, email])).rows[0].n).toBe(0);
+    expect((await db.query("select count(*)::int as n from jobs where organization_id = $1 and booking_id = (select b.id from bookings b left join customers cu on cu.organization_id = b.organization_id and cu.id = b.customer_id where b.organization_id = $1 and (b.contact_email = $2 or cu.email_key = lower($2)))", [workerTenant.organizationId, email])).rows[0].n).toBe(0);
     expect(await page.locator("body").innerText()).not.toMatch(/Sarah Mitchell|David Chen/);
     // The way back from the confirmation is the provider's profile, never the business's website.
     await expect(page.getByRole("link", { name: /Back to|Back/ }).first()).toHaveAttribute("href", /\/listings\//);
@@ -663,7 +663,7 @@ test.describe("booking from a provider's profile", () => {
     await page.getByLabel(/primary cooling issue/).selectOption("Blowing warm air");
     await page.getByRole("button", { name: "Submit appointment request" }).click();
     await expect(page.getByRole("region", { name: "Appointment request submitted" })).toContainText(/BK-\d{4}/);
-    expect((await db.query("select status, source, discovery_service from bookings where organization_id = $1 and contact_email = $2", [workerTenant.organizationId, email])).rows).toEqual([{ status: "pending", source: "Marketplace", discovery_service: null }]);
+    expect((await db.query("select b.status, b.source, b.discovery_service from bookings b left join customers cu on cu.organization_id = b.organization_id and cu.id = b.customer_id where b.organization_id = $1 and (b.contact_email = $2 or cu.email_key = lower($2))", [workerTenant.organizationId, email])).rows).toEqual([{ status: "pending", source: "Marketplace", discovery_service: null }]);
 
     const staff = await browser.newContext({ baseURL: ORIGIN, storageState: workerTenant.storageState, extraHTTPHeaders: { "x-forwarded-for": address() } });
     try {
@@ -687,7 +687,9 @@ test.describe("booking from a provider's profile", () => {
     try {
       await page.getByRole("button", { name: "Confirm booking" }).click();
       await expect(page.getByRole("alert").filter({ hasText: "This provider isn't taking online bookings right now." })).toBeVisible();
-      expect((await db.query("select count(*)::int as n from bookings where organization_id = $1 and contact_email = $2", [workerTenant.organizationId, email])).rows[0].n).toBe(0);
+      // Refused: no booking, and no customer made from the refused request.
+      expect((await db.query("select count(*)::int as n from bookings b left join customers cu on cu.organization_id = b.organization_id and cu.id = b.customer_id where b.organization_id = $1 and (b.contact_email = $2 or cu.email_key = lower($2))", [workerTenant.organizationId, email])).rows[0].n).toBe(0);
+      expect((await db.query("select count(*)::int as n from customers where organization_id = $1 and email_key = lower($2)", [workerTenant.organizationId, email])).rows[0].n).toBe(0);
       await expect(page.locator("body")).not.toContainText(/suspend|moderat/i);
     } finally {
       // The worker's listing is shared by the tests that follow: it is allowed again whatever happened.
@@ -733,7 +735,7 @@ test.describe("booking from a provider's profile", () => {
       });
       expect(await count(northstar)).toBe(before.north);
       expect(await count(other.business.organizationId)).toBe(before.other);
-      const created = (await db.query("select source, marketplace_listing_id, discovery_service, discovery_location, organization_id from bookings where organization_id = $1 and contact_email = $2 order by received_at desc", [workerTenant.organizationId, email])).rows;
+      const created = (await db.query("select b.source, b.marketplace_listing_id, b.discovery_service, b.discovery_location, b.organization_id from bookings b left join customers cu on cu.organization_id = b.organization_id and cu.id = b.customer_id where b.organization_id = $1 and (b.contact_email = $2 or cu.email_key = lower($2)) order by b.received_at desc", [workerTenant.organizationId, email])).rows;
       for (const row of created) expect(row).toMatchObject({ source: "Marketplace", organization_id: workerTenant.organizationId });
       expect(created.some((row) => row.discovery_service === "'; drop table bookings; --")).toBe(false);
     } finally {

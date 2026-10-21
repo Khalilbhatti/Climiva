@@ -8,6 +8,7 @@
  * logo behave as they do on the platform; and a booking made through a customer's domain is the domain's business's, whatever it says.
  */
 import { randomBytes } from "node:crypto";
+import { freshPhone } from "./booking-people";
 import type { Page } from "playwright/test";
 import { adminDb } from "../scripts/db/lib";
 import { DEFAULT_TEMPLATE_KEY } from "../src/db/default-template";
@@ -440,7 +441,7 @@ test.describe("a booking made through a customer's name", () => {
   };
 
   const bookingsOf = async (organizationId: string, email: string) =>
-    (await pool.query("select b.number, b.status, b.source, b.customer_id, b.organization_id, s.slug as service from bookings b join services s on s.id = b.service_id and s.organization_id = b.organization_id where b.organization_id = $1 and b.contact_email = $2", [organizationId, email])).rows;
+    (await pool.query("select b.number, b.status, b.source, b.customer_id, b.organization_id, s.slug as service from bookings b join services s on s.id = b.service_id and s.organization_id = b.organization_id left join customers cu on cu.organization_id = b.organization_id and cu.id = b.customer_id where b.organization_id = $1 and (b.contact_email = $2 or cu.email_key = lower($2))", [organizationId, email])).rows;
 
   /** Book through the page on the customer's name, and keep the call the page sent. */
   async function book(page: Page, host: string, email: string) {
@@ -473,7 +474,7 @@ test.describe("a booking made through a customer's name", () => {
     await expect(page.getByRole("region", { name: "Instant booking confirmed" })).toContainText(/BK-\d{4}/);
     const rows = await bookingsOf(workerTenant.organizationId, email);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ status: "confirmed", source: "Website", customer_id: null, service: "annual-cooling-tune-up", organization_id: workerTenant.organizationId });
+    expect(rows[0]).toMatchObject({ status: "confirmed", source: "Website", customer_id: expect.any(String), service: "annual-cooling-tune-up", organization_id: workerTenant.organizationId });
     // The page stayed on the customer's name the whole time, and held nothing of the business's other bookings.
     expect(page.url()).toContain(host);
     expect(await page.locator("body").innerText()).not.toMatch(/Sarah Mitchell|David Chen/);
@@ -489,25 +490,28 @@ test.describe("a booking made through a customer's name", () => {
 
     // Northstar's Service, sent to Apex's name: not one of Apex's Services, so nothing is booked anywhere.
     const foreignEmail = `foreign-${randomBytes(3).toString("hex")}@example.test`;
-    const foreign = await resend(captured, mine.host, (argument) => Object.assign(argument, { serviceSlug: "furnace-tune-up", submissionKey: `k-${randomBytes(4).toString("hex")}`, email: foreignEmail }));
+    const foreign = await resend(captured, mine.host, (argument) => Object.assign(argument, { serviceSlug: "furnace-tune-up", submissionKey: `k-${randomBytes(4).toString("hex")}`, email: foreignEmail, phone: freshPhone() }));
     expect(foreign.body).toMatch(/isn't available to book online/);
     expect(await bookingsOf(workerTenant.organizationId, foreignEmail)).toEqual([]);
 
     // Another business's organization and its site's address named in the request make no difference: the name is Apex's, so the booking is Apex's.
     const forgedEmail = `forged-${randomBytes(3).toString("hex")}@example.test`;
     const forged = await resend(captured, mine.host, (argument) =>
-      Object.assign(argument, { organizationId: other.organizationId, organization_id: other.organizationId, siteSlug: (/* a platform address */ "northstar"), submissionKey: `k-${randomBytes(4).toString("hex")}`, email: forgedEmail }),
+      Object.assign(argument, { organizationId: other.organizationId, organization_id: other.organizationId, siteSlug: (/* a platform address */ "northstar"), submissionKey: `k-${randomBytes(4).toString("hex")}`, email: forgedEmail, phone: freshPhone() }),
     );
     expect(forged.body).toMatch(/BK-\d{4}/);
     expect(await bookingsOf(workerTenant.organizationId, forgedEmail)).toHaveLength(1);
     expect(await bookingsOf(other.organizationId, forgedEmail)).toEqual([]);
-    expect((await pool.query("select count(*)::int as n from bookings where organization_id = (select id from organizations where slug = 'northstar-heating-cooling') and contact_email = $1", [forgedEmail])).rows[0].n).toBe(0);
+    // Nothing was made in Northstar either: no booking, and no customer carrying the forged address.
+    expect((await pool.query("select count(*)::int as n from bookings b left join customers cu on cu.organization_id = b.organization_id and cu.id = b.customer_id where b.organization_id = (select id from organizations where slug = 'northstar-heating-cooling') and (b.contact_email = $1 or cu.email_key = lower($1))", [forgedEmail])).rows[0].n).toBe(0);
+    expect((await pool.query("select count(*)::int as n from customers where organization_id = (select id from organizations where slug = 'northstar-heating-cooling') and email_key = lower($1)", [forgedEmail])).rows[0].n).toBe(0);
 
     // The same submission again is the same booking: one row, the same reference.
     const key = `k-${randomBytes(4).toString("hex")}`;
     const dupEmail = `dup-${randomBytes(3).toString("hex")}@example.test`;
-    const first = await resend(captured, mine.host, (argument) => Object.assign(argument, { submissionKey: key, email: dupEmail }));
-    const second = await resend(captured, mine.host, (argument) => Object.assign(argument, { submissionKey: key, email: dupEmail }));
+    const dupPhone = freshPhone();
+    const first = await resend(captured, mine.host, (argument) => Object.assign(argument, { submissionKey: key, email: dupEmail, phone: dupPhone }));
+    const second = await resend(captured, mine.host, (argument) => Object.assign(argument, { submissionKey: key, email: dupEmail, phone: dupPhone }));
     const reference = (text: string) => text.match(/BK-\d{4}/)?.[0];
     expect(reference(first.body)).toBeTruthy();
     expect(reference(second.body)).toBe(reference(first.body));
@@ -521,7 +525,7 @@ test.describe("a booking made through a customer's name", () => {
     await expect(page.getByRole("region", { name: "Instant booking confirmed" })).toBeVisible();
     for (const host of [uniqueHost("nobody"), "exa mple.com"]) {
       const forgedEmail = `unk-${randomBytes(3).toString("hex")}@example.test`;
-      const response = await resend(captured, host, (argument) => Object.assign(argument, { submissionKey: `k-${randomBytes(4).toString("hex")}`, email: forgedEmail }));
+      const response = await resend(captured, host, (argument) => Object.assign(argument, { submissionKey: `k-${randomBytes(4).toString("hex")}`, email: forgedEmail, phone: freshPhone() }));
       expect(response.body, host).not.toMatch(/BK-\d{4}/);
       expect(await bookingsOf(workerTenant.organizationId, forgedEmail), host).toEqual([]);
     }

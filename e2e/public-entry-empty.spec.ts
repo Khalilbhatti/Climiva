@@ -13,7 +13,6 @@ import { expect, request, test, type APIRequestContext, type Browser, type Brows
 import { adminDb, adminUrl, appUrl, migrateDatabase, recreateDatabase, requireEnv } from "../scripts/db/lib";
 import { startServer } from "./assets-helpers";
 import { CONSOLE_PATHS, runTool } from "./platform-admin-helpers";
-import { makeCustomer, makeReviewRequest } from "./review-helpers";
 import { completeOnboarding, hydrated, watchConsole } from "./saas";
 
 const PASSWORD = "Correct-horse-9-battery";
@@ -265,8 +264,10 @@ test("the owner adds one Service, sets up the Marketplace with a place, publishe
   await page.getByLabel(/^Service address/).fill("5 Aspen Way, Denver, CO 80203");
   await page.getByRole("button", { name: "Confirm booking" }).click();
   await expect(page.getByRole("region", { name: "Instant booking confirmed" })).toBeVisible();
-  const booking = (await rows("select status, source, contact_name, marketplace_listing_id from bookings"))[0];
-  expect(booking).toMatchObject({ status: "confirmed", source: "Marketplace", contact_name: "Jordan Visitor", marketplace_listing_id: listing.id });
+  const booking = (await rows("select b.status, b.source, b.contact_name, c.name as customer_name, b.marketplace_listing_id from bookings b left join customers c on c.organization_id = b.organization_id and c.id = b.customer_id"))[0];
+  // The guest became the business's first customer (drizzle/0030), with nobody having imported or added one.
+  expect(booking).toMatchObject({ status: "confirmed", source: "Marketplace", contact_name: null, customer_name: "Jordan Visitor", marketplace_listing_id: listing.id });
+  expect(await count("customers")).toBe(1);
   await visitor.close();
 
   // The business sees it, and where it came from.
@@ -282,21 +283,33 @@ test("the owner adds one Service, sets up the Marketplace with a place, publishe
 /* ───────────────────────────── reviews, and the platform's hand on them ───────────────────────────── */
 
 test("a customer reviews through a link and chooses; the rating follows; the administrator hides and restores; both choices behave", async ({ browser }) => {
-  const orgId = (await rows("select id from organizations"))[0].id as string;
-  const first = await makeCustomer(owner.pool, orgId, "Maya Singh");
-  const second = await makeCustomer(owner.pool, orgId, "Chris Young");
+  // The business has two customers and nobody imported either: the guest who booked (made a customer by the booking itself), and one it adds by hand here.
+  await visit(ownerPage, "/customers");
+  await ownerPage.getByRole("button", { name: "Add customer" }).click();
+  const adding = ownerPage.getByRole("dialog", { name: "Add customer" });
+  await adding.getByLabel(/^Full name/).fill("Maya Singh");
+  await adding.getByLabel("Email address").fill("maya.singh@example.test");
+  await adding.getByLabel("Phone number").fill("(303) 555-0177");
+  await adding.getByRole("button", { name: "Add customer" }).click();
+  await expect(ownerPage).toHaveURL(/\/customers\/maya-singh$/);
+  await expect(ownerPage.getByRole("heading", { level: 1, name: "Maya Singh" })).toBeVisible();
+  expect((await rows("select name from customers order by position")).map((row) => row.name)).toEqual(["Jordan Visitor", "Maya Singh"]);
 
-  // The business asks, through its own screen, and is given the link once.
-  await visit(ownerPage, "/reviews");
-  await ownerPage.getByRole("button", { name: "Request review" }).first().click();
-  const dialog = ownerPage.getByRole("dialog", { name: "Request a review" });
-  await dialog.getByLabel("Customer").selectOption({ label: first.name });
-  await dialog.getByRole("button", { name: "Send review request" }).click();
-  const ready = ownerPage.getByRole("dialog", { name: "Review link ready" });
-  const link = await ready.getByLabel("Review link").inputValue();
-  expect(link).toMatch(new RegExp(`^${server.origin.replace(/[.]/g, "\\.")}/review/[A-Za-z0-9_-]{43}$`));
-  await ready.getByRole("button", { name: "Done" }).click();
-  const secondRequest = await makeReviewRequest(owner.pool, orgId, second.id);
+  // The business asks each of them, through its own screen, and is given each link once.
+  const ask = async (name: string) => {
+    await visit(ownerPage, "/reviews");
+    await ownerPage.getByRole("button", { name: "Request review" }).first().click();
+    const dialog = ownerPage.getByRole("dialog", { name: "Request a review" });
+    await dialog.getByLabel("Customer").selectOption({ label: name });
+    await dialog.getByRole("button", { name: "Send review request" }).click();
+    const ready = ownerPage.getByRole("dialog", { name: "Review link ready" });
+    const given = await ready.getByLabel("Review link").inputValue();
+    expect(given).toMatch(new RegExp(`^${server.origin.replace(/[.]/g, "\\.")}/review/[A-Za-z0-9_-]{43}$`));
+    await ready.getByRole("button", { name: "Done" }).click();
+    return given;
+  };
+  const link = await ask("Maya Singh");
+  const secondLink = await ask("Jordan Visitor");
 
   // The first customer says yes; the second keeps theirs private.
   const guest = await context(browser);
@@ -309,7 +322,7 @@ test("a customer reviews through a link and chooses; the rating follows; the adm
   await page.getByRole("checkbox", { name: /may show my review/ }).check();
   await page.getByRole("button", { name: "Send review" }).click();
   await expect(page.getByText("Thank you. Your review was sent.")).toBeVisible();
-  await visit(page, `/review/${secondRequest.token}`);
+  await visit(page, new URL(secondLink).pathname);
   await rate(2);
   await page.getByLabel("Your review").fill("It took two visits.");
   await page.getByRole("button", { name: "Send review" }).click();

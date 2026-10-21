@@ -3,9 +3,8 @@
  *
  *   - the owner (the first person ever to sign up) signs in again, sets the Marketplace up with one place, publishes, and is FOUND by a visitor;
  *   - guests book from the profile and each booking carries where it came from (the Marketplace, the listing, and what the visitor had searched for);
- *   - the owner asks three customers for a review (the application has no screen that adds a customer, so the three are imported with the owner role, as an
- *     operator's import would: the one step in this journey that is not a person using a screen); each link is a secret shown once, stored only as its
- *     SHA-256, good for thirty days and for one use;
+ *   - the owner asks the three guests for a review: each became the business's customer by booking (nobody imported or added them), and each link is a
+ *     secret shown once, stored only as its SHA-256, good for thirty days and for one use;
  *   - a customer's consent is a box that starts unchecked: only a yes makes a review public, and the rating counts only public reviews;
  *   - a platform administrator (made one only by the command-line tool) hides and restores a review and the rating follows, suspends the listing, and the
  *     listing is gone from search, profile, booking page and sitemap; the business reads the message (never the internal reason) and asks again, and ASKING
@@ -159,7 +158,8 @@ test("guests book from the profile and every booking says where it came from: th
     await bookAs(page, guest, days[index]);
     await visitor.context.close();
   }
-  const rows = sql("select contact_name, source, (marketplace_listing_id is not null), coalesce(discovery_service, ''), coalesce(discovery_location, '') from bookings where source = 'Marketplace' order by created_at");
+  // Each guest became the business's customer by booking: the booking is theirs and carries no contact name of its own.
+  const rows = sql("select coalesce(c.name, b.contact_name), b.source, (b.marketplace_listing_id is not null), coalesce(b.discovery_service, ''), coalesce(b.discovery_location, '') from bookings b left join customers c on c.organization_id = b.organization_id and c.id = b.customer_id where b.source = 'Marketplace' order by b.created_at");
   expect(rows.map((row) => row[0])).toEqual(GUESTS.map((guest) => guest.name));
   for (const row of rows) expect([row[1], row[2]]).toEqual(["Marketplace", "t"]);
   expect(one(`select count(*) from bookings where marketplace_listing_id = '${listing.id}'`)).toBe("3");
@@ -172,14 +172,14 @@ test("guests book from the profile and every booking says where it came from: th
   for (const guest of GUESTS) await expect(table.locator("tbody tr", { hasText: guest.name })).toContainText("Marketplace");
 });
 
-test("the owner asks three customers for a review: each link is shown once, is a 256-bit secret stored only as its SHA-256, and lasts thirty days", async () => {
-  // The Customers screen only lists: nothing in the application adds a customer (the role the application connects as may not write the customer tables).
-  // The three guests are imported as the operator would, so there is a customer to ask.
+test("the owner asks the three guests for a review: each link is shown once, is a 256-bit secret stored only as its SHA-256, and lasts thirty days", async () => {
+  // Nobody imported anyone: each guest is the business's customer because they booked, once, with the booking pointing at them and carrying nothing of its own.
   for (const guest of GUESTS) {
-    const slug = guest.name.toLowerCase().replace(/[^a-z]+/g, "-");
-    sql(`insert into customers (organization_id, slug, name, phone, email) select id, '${slug}', '${guest.name}', '${guest.phone}', '${guest.email}' from organizations limit 1`);
+    expect(sql(`select c.name, c.phone, count(b.id) from customers c join bookings b on b.organization_id = c.organization_id and b.customer_id = c.id where c.email_key = '${guest.email}' group by c.name, c.phone`)).toEqual([[guest.name, guest.phone, "1"]]);
   }
-  expect(Number(one("select count(*) from customers"))).toBe(GUESTS.length);
+  expect(Number(one(`select count(*) from customers where email_key in (${GUESTS.map((guest) => `'${guest.email}'`).join(", ")})`))).toBe(GUESTS.length);
+  await ownerPage.goto("/customers");
+  for (const guest of GUESTS) await expect(ownerPage.getByRole("table", { name: "Customers" }).locator("tbody tr", { hasText: guest.name })).toBeVisible();
   await ownerPage.goto("/reviews");
   for (const guest of GUESTS) {
     await ownerPage.getByRole("button", { name: "Request review" }).first().click();

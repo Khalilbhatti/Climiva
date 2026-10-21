@@ -88,9 +88,12 @@ test("the state to protect: a business with three logos, a published Site on a c
   expect(Number(before.organizations)).toBeGreaterThanOrEqual(1);
   expect(Number(before.users)).toBeGreaterThanOrEqual(1);
   expect(Number(before.bookings)).toBeGreaterThanOrEqual(1);
-  for (const table of ["marketplace_listings", "marketplace_service_areas", "reviews", "review_requests", "platform_audit_events", "platform_admins", "platform_listing_moderation", "platform_review_moderation"]) {
+  for (const table of ["customers", "marketplace_listings", "marketplace_service_areas", "reviews", "review_requests", "platform_audit_events", "platform_admins", "platform_listing_moderation", "platform_review_moderation"]) {
     expect(Number(one(`select count(*) from ${table}`)), table).toBeGreaterThan(0);
   }
+  // Every guest's booking points at a customer of its own business (made by the booking), none is left without one, and the keys the matching reads are there.
+  expect(Number(one("select count(*) from bookings where source in ('Marketplace', 'Website') and customer_id is null"))).toBe(0);
+  expect(Number(one("select count(*) from bookings b join customers c on c.organization_id = b.organization_id and c.id = b.customer_id where c.email_key is not null and c.phone_key is not null"))).toBeGreaterThan(0);
   expect(before.siteShowsBusiness).toBe(true);
   expect(before.logoSha).toBe(logo.sha);
   expect(before.certificate).toBe(domain.certificate);

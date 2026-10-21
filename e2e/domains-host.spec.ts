@@ -8,7 +8,6 @@
  * logo behave as they do on the platform; and a booking made through a customer's domain is the domain's business's, whatever it says.
  */
 import { randomBytes } from "node:crypto";
-import { freshPhone } from "./booking-people";
 import type { Page } from "playwright/test";
 import { adminDb } from "../scripts/db/lib";
 import { DEFAULT_TEMPLATE_KEY } from "../src/db/default-template";
@@ -490,14 +489,14 @@ test.describe("a booking made through a customer's name", () => {
 
     // Northstar's Service, sent to Apex's name: not one of Apex's Services, so nothing is booked anywhere.
     const foreignEmail = `foreign-${randomBytes(3).toString("hex")}@example.test`;
-    const foreign = await resend(captured, mine.host, (argument) => Object.assign(argument, { serviceSlug: "furnace-tune-up", submissionKey: `k-${randomBytes(4).toString("hex")}`, email: foreignEmail, phone: freshPhone() }));
+    const foreign = await resend(captured, mine.host, (argument) => Object.assign(argument, { serviceSlug: "furnace-tune-up", submissionKey: `k-${randomBytes(4).toString("hex")}`, email: foreignEmail }));
     expect(foreign.body).toMatch(/isn't available to book online/);
     expect(await bookingsOf(workerTenant.organizationId, foreignEmail)).toEqual([]);
 
     // Another business's organization and its site's address named in the request make no difference: the name is Apex's, so the booking is Apex's.
     const forgedEmail = `forged-${randomBytes(3).toString("hex")}@example.test`;
     const forged = await resend(captured, mine.host, (argument) =>
-      Object.assign(argument, { organizationId: other.organizationId, organization_id: other.organizationId, siteSlug: (/* a platform address */ "northstar"), submissionKey: `k-${randomBytes(4).toString("hex")}`, email: forgedEmail, phone: freshPhone() }),
+      Object.assign(argument, { organizationId: other.organizationId, organization_id: other.organizationId, siteSlug: (/* a platform address */ "northstar"), submissionKey: `k-${randomBytes(4).toString("hex")}`, email: forgedEmail }),
     );
     expect(forged.body).toMatch(/BK-\d{4}/);
     expect(await bookingsOf(workerTenant.organizationId, forgedEmail)).toHaveLength(1);
@@ -509,9 +508,8 @@ test.describe("a booking made through a customer's name", () => {
     // The same submission again is the same booking: one row, the same reference.
     const key = `k-${randomBytes(4).toString("hex")}`;
     const dupEmail = `dup-${randomBytes(3).toString("hex")}@example.test`;
-    const dupPhone = freshPhone();
-    const first = await resend(captured, mine.host, (argument) => Object.assign(argument, { submissionKey: key, email: dupEmail, phone: dupPhone }));
-    const second = await resend(captured, mine.host, (argument) => Object.assign(argument, { submissionKey: key, email: dupEmail, phone: dupPhone }));
+    const first = await resend(captured, mine.host, (argument) => Object.assign(argument, { submissionKey: key, email: dupEmail }));
+    const second = await resend(captured, mine.host, (argument) => Object.assign(argument, { submissionKey: key, email: dupEmail }));
     const reference = (text: string) => text.match(/BK-\d{4}/)?.[0];
     expect(reference(first.body)).toBeTruthy();
     expect(reference(second.body)).toBe(reference(first.body));
@@ -525,7 +523,7 @@ test.describe("a booking made through a customer's name", () => {
     await expect(page.getByRole("region", { name: "Instant booking confirmed" })).toBeVisible();
     for (const host of [uniqueHost("nobody"), "exa mple.com"]) {
       const forgedEmail = `unk-${randomBytes(3).toString("hex")}@example.test`;
-      const response = await resend(captured, host, (argument) => Object.assign(argument, { submissionKey: `k-${randomBytes(4).toString("hex")}`, email: forgedEmail, phone: freshPhone() }));
+      const response = await resend(captured, host, (argument) => Object.assign(argument, { submissionKey: `k-${randomBytes(4).toString("hex")}`, email: forgedEmail }));
       expect(response.body, host).not.toMatch(/BK-\d{4}/);
       expect(await bookingsOf(workerTenant.organizationId, forgedEmail), host).toEqual([]);
     }

@@ -3,8 +3,9 @@
  *
  *   - the owner (the first person ever to sign up) signs in again, sets the Marketplace up with one place, publishes, and is FOUND by a visitor;
  *   - guests book from the profile and each booking carries where it came from (the Marketplace, the listing, and what the visitor had searched for);
- *   - the owner asks the three guests for a review: each became the business's customer by booking (nobody imported or added them), and each link is a
- *     secret shown once, stored only as its SHA-256, good for thirty days and for one use;
+ *   - the owner asks the three guests for a review: each became the business's customer by booking (nobody imported or added them), the second guest shares
+ *     the first one's phone with an email of their own and is a customer of their own, and each link is for the customer it was asked for: a secret shown
+ *     once, stored only as its SHA-256, good for thirty days and for one use;
  *   - a customer's consent is a box that starts unchecked: only a yes makes a review public, and the rating counts only public reviews;
  *   - a platform administrator (made one only by the command-line tool) hides and restores a review and the rating follows, suspends the listing, and the
  *     listing is gone from search, profile, booking page and sitemap; the business reads the message (never the internal reason) and asks again, and ASKING
@@ -12,7 +13,7 @@
  *   - revoking the administrator closes the console at the next request;
  *   - no review link's secret is in the proxy's log or the application's.
  *
- * What it leaves (a published listing, three Marketplace bookings, reviews, an audit trail, one link nobody used) is what the backup drill (08) and the
+ * What it leaves (a published listing, four Marketplace bookings, reviews, an audit trail, one link nobody used) is what the backup drill (08) and the
  * restart tests (09) protect.
  */
 import { createHash } from "node:crypto";
@@ -36,7 +37,8 @@ const links: string[] = [];
 
 const GUESTS = [
   { name: "Jordan Finder", email: "jordan.finder@example.test", phone: "(303) 555-0142" },
-  { name: "Maya Singh", email: "maya.singh@example.test", phone: "(303) 555-0143" },
+  // Maya shares Jordan's phone, with an email of her own: two people in one household, who must stay two customers.
+  { name: "Maya Singh", email: "maya.singh@example.test", phone: "(303) 555-0142" },
   { name: "Chris Young", email: "chris.young@example.test", phone: "(303) 555-0144" },
 ];
 
@@ -141,7 +143,7 @@ test("the owner sets the Marketplace up with a place, publishes, and a visitor f
 });
 
 test("guests book from the profile and every booking says where it came from: the Marketplace, the listing, and what the visitor had searched for", async ({ browser }) => {
-  const days = weekdays(GUESTS.length);
+  const days = weekdays(GUESTS.length + 1);
   for (const [index, guest] of GUESTS.entries()) {
     const visitor = await session(browser);
     const page = visitor.page;
@@ -158,24 +160,36 @@ test("guests book from the profile and every booking says where it came from: th
     await bookAs(page, guest, days[index]);
     await visitor.context.close();
   }
+  // Maya books again, typing her email and her phone differently on another day. The phone is Jordan's too: she is found by her email and her phone together, not by the phone.
+  const again = await session(browser);
+  await again.page.goto(`/listings/${listing.slug}/book/docker-tune-up`);
+  await bookAs(again.page, { ...GUESTS[1], email: GUESTS[1].email.toUpperCase(), phone: "303.555.0142" }, days[GUESTS.length]);
+  await again.context.close();
   // Each guest became the business's customer by booking: the booking is theirs and carries no contact name of its own.
   const rows = sql("select coalesce(c.name, b.contact_name), b.source, (b.marketplace_listing_id is not null), coalesce(b.discovery_service, ''), coalesce(b.discovery_location, '') from bookings b left join customers c on c.organization_id = b.organization_id and c.id = b.customer_id where b.source = 'Marketplace' order by b.created_at");
-  expect(rows.map((row) => row[0])).toEqual(GUESTS.map((guest) => guest.name));
+  expect(rows.map((row) => row[0])).toEqual([...GUESTS.map((guest) => guest.name), GUESTS[1].name]);
   for (const row of rows) expect([row[1], row[2]]).toEqual(["Marketplace", "t"]);
-  expect(one(`select count(*) from bookings where marketplace_listing_id = '${listing.id}'`)).toBe("3");
+  expect(one(`select count(*) from bookings where marketplace_listing_id = '${listing.id}'`)).toBe("4");
+  // Two people on one phone are two customers, and each booking is on the right one: Maya's two are hers, Jordan's one is his.
+  expect(sql("select c.name, count(*) from bookings b join customers c on c.organization_id = b.organization_id and c.id = b.customer_id where b.source = 'Marketplace' group by c.name order by c.name")).toEqual([
+    ["Chris Young", "1"],
+    ["Jordan Finder", "1"],
+    ["Maya Singh", "2"],
+  ]);
+  expect(sql(`select name, email from customers where phone_key = '3035550142' order by name`)).toEqual([["Jordan Finder", GUESTS[0].email], ["Maya Singh", GUESTS[1].email]]);
   // The one that came through the search remembers it; one that arrived at the profile's own address does not make anything up.
   expect([rows[0][3], rows[0][4]]).toEqual(["docker-tune-up", "denver-co"]);
   expect([rows[1][3], rows[1][4]]).toEqual(["", ""]);
 
   await ownerPage.goto("/bookings?tab=upcoming");
   const table = ownerPage.getByRole("table", { name: "Upcoming bookings" });
-  for (const guest of GUESTS) await expect(table.locator("tbody tr", { hasText: guest.name })).toContainText("Marketplace");
+  for (const guest of GUESTS) await expect(table.locator("tbody tr", { hasText: guest.name }).first()).toContainText("Marketplace");
 });
 
 test("the owner asks the three guests for a review: each link is shown once, is a 256-bit secret stored only as its SHA-256, and lasts thirty days", async () => {
-  // Nobody imported anyone: each guest is the business's customer because they booked, once, with the booking pointing at them and carrying nothing of its own.
+  // Nobody imported anyone: each guest is the business's customer because they booked, with the bookings pointing at them (Maya booked twice) and carrying nothing of their own.
   for (const guest of GUESTS) {
-    expect(sql(`select c.name, c.phone, count(b.id) from customers c join bookings b on b.organization_id = c.organization_id and b.customer_id = c.id where c.email_key = '${guest.email}' group by c.name, c.phone`)).toEqual([[guest.name, guest.phone, "1"]]);
+    expect(sql(`select c.name, c.phone, count(b.id) from customers c join bookings b on b.organization_id = c.organization_id and b.customer_id = c.id where c.email_key = '${guest.email}' group by c.name, c.phone`)).toEqual([[guest.name, guest.phone, guest === GUESTS[1] ? "2" : "1"]]);
   }
   expect(Number(one(`select count(*) from customers where email_key in (${GUESTS.map((guest) => `'${guest.email}'`).join(", ")})`))).toBe(GUESTS.length);
   await ownerPage.goto("/customers");
@@ -192,6 +206,8 @@ test("the owner asks the three guests for a review: each link is shown once, is 
     links.push(link);
     await ready.getByRole("button", { name: "Done" }).click();
     await expect(ready).toBeHidden();
+    // The request is for the customer it was asked for: Maya's is Maya's, though her phone is Jordan's as well.
+    expect(sql(`select c.email_key from review_requests r join customers c on c.organization_id = r.organization_id and c.id = r.customer_id where r.token_hash = '${sha256(secretOf(link))}'`)).toEqual([[guest.email]]);
   }
   expect(new Set(links).size).toBe(3);
   for (const link of links) {

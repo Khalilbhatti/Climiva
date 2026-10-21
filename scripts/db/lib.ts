@@ -7,7 +7,7 @@ import { rm } from "node:fs/promises";
 import { join, relative, resolve, isAbsolute } from "node:path";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { Pool } from "pg";
+import { Client, Pool } from "pg";
 import * as schema from "../../src/db/schema";
 
 /** Where the end-to-end tests keep the files their database refers to: their own directory, never the development one. */
@@ -61,12 +61,40 @@ export function adminDb(connectionString = adminUrl()) {
 }
 
 /**
+ * Whether the runtime role is already exactly what provisioning would make it: it exists, it can log in and nothing else, and THIS password opens a session
+ * on this database. A role belongs to the whole server, not to a database, so changing one is a write to the server's catalog; databases migrated at the
+ * same moment (the end-to-end tests make several at once) must not all rewrite the same role, which PostgreSQL answers with "tuple concurrently updated".
+ */
+async function runtimeRoleIsAsProvisioned(pool: Pool, password: string): Promise<boolean> {
+  const base = (pool as unknown as { options?: { connectionString?: string } }).options?.connectionString;
+  if (!base) return false;
+  const attributes = await pool.query<{ ok: boolean }>(
+    "select (rolcanlogin and not rolsuper and not rolcreatedb and not rolcreaterole and not rolreplication and not rolbypassrls) as ok from pg_roles where rolname = $1",
+    [APP_ROLE],
+  );
+  if (attributes.rows[0]?.ok !== true) return false;
+  const url = new URL(base);
+  url.username = APP_ROLE;
+  url.password = password;
+  const client = new Client({ connectionString: url.toString(), connectionTimeoutMillis: 5000 });
+  try {
+    await client.connect();
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await client.end().catch(() => undefined);
+  }
+}
+
+/**
  * Create the runtime role if it is missing, and set its password either way, so a changed POSTGRES_APP_PASSWORD takes
- * effect on the next migrate. The role can log in and nothing else: no superuser, no CREATEDB / CREATEROLE, no
- * BYPASSRLS, which is what keeps Row Level Security binding on the application.
+ * effect on the next migrate (a role that already has this password and these attributes is left alone). The role can log in and nothing else: no superuser,
+ * no CREATEDB / CREATEROLE, no BYPASSRLS, which is what keeps Row Level Security binding on the application.
  */
 export async function provisionRuntimeRole(pool: Pool, password: string): Promise<void> {
   if (password.length < 12) throw new Error("POSTGRES_APP_PASSWORD must be at least 12 characters.");
+  if (await runtimeRoleIsAsProvisioned(pool, password)) return;
   const exists = await pool.query("select 1 from pg_roles where rolname = $1", [APP_ROLE]);
   const verb = exists.rowCount ? "ALTER" : "CREATE";
   // format(%I / %L) quotes the identifier and the password literal on the server: no string building here.

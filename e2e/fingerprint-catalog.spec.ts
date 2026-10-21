@@ -49,8 +49,10 @@ test.describe("a CHECK constraint is compared by what it says", () => {
   });
 });
 
-const SOURCE = "climvia_fp_source";
-const COPY = "climvia_fp_copy";
+// The databases are this worker's own. Two repetitions of this file (or two workers) run at the same time, and a name they shared meant one dropping and re-creating
+// the database the other was in the middle of comparing; a worker's index is the one thing that is different between those that run together.
+let SOURCE = "";
+let COPY = "";
 
 let maintenance: Pool;
 const asOwner = async <T>(database: string, work: (pool: Pool) => Promise<T>): Promise<T> => {
@@ -72,7 +74,9 @@ async function freshCopy() {
   await maintenance.query(`CREATE DATABASE "${COPY}" TEMPLATE "${SOURCE}"`);
 }
 
-test.beforeAll(async () => {
+test.beforeAll(async ({}, testInfo) => {
+  SOURCE = `climvia_fp_w${testInfo.parallelIndex}_source`;
+  COPY = `climvia_fp_w${testInfo.parallelIndex}_copy`;
   maintenance = new Pool({ connectionString: adminUrl("postgres"), max: 1 });
   await recreateDatabase(SOURCE);
   await migrateDatabase(withDatabase(adminUrl(), SOURCE), requireEnv("POSTGRES_APP_PASSWORD"));

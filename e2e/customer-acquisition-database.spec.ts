@@ -4,11 +4,12 @@
  * Everything is SQL as the restricted runtime role (`climvia_app`, the one the application connects as), or as the owner where a test looks underneath
  * or writes what the application cannot. No browser. Each test makes its own business, so the counts asserted are exact.
  *
- * The rule under test (drizzle/0030), inside ONE business and nowhere else:
- *   a. the booker's email AND phone are exactly one customer's                           -> that customer
- *   b. otherwise the customers who share the email or the phone: exactly one -> that one; none -> a new customer;
- *      two or more (the email is one customer's and the phone another's) -> a new, SEPARATE customer; nothing is merged and nobody is picked
- *   c. nothing to recognise them by                                                      -> no customer, the booking keeps the visitor's details
+ * The rule under test (drizzle/0031, which hardened 0030's), inside ONE business and nowhere else, the exact identity (the same email AND phone) first:
+ *   A. an email is given and exactly one customer has it   -> that customer, unless the phone belongs to a DIFFERENT customer
+ *   B. an email is given and nobody has it                 -> a new, separate customer, even when the phone belongs to someone (a household shares a phone)
+ *   C. the email is one customer's and the phone another's -> a new, separate customer; nothing is merged
+ *   D. no usable email                                     -> the one customer with the phone (or, of several, the one with no email), else a new customer
+ *   E. nothing to recognise them by                        -> no customer, the booking keeps the visitor's details
  * A name is never used to find anyone, and a customer that is found is never changed.
  */
 import { randomBytes } from "node:crypto";
@@ -168,18 +169,6 @@ test.describe("a guest's booking finds or makes the business's customer", () => 
     expect((await bookingsOf(p.business.organizationId))[1]).toMatchObject({ customer: "dana-lee", note: `Booked as Dana Lee, (555) 010-0999, ${who.email}.` });
   });
 
-  test("the same phone with a new email is that customer when they are the only one with it: the new email is kept on the booking's note, not written to the customer", async () => {
-    const p = await provider();
-    const who = dana();
-    await book(p, who);
-    const other = `second-${token()}@example.test`;
-    await book(p, { ...who, email: other }, { note: "Please call first" });
-    const customers = await customersOf(p.business.organizationId);
-    expect(customers).toHaveLength(1);
-    expect(customers[0].email).toBe(who.email);
-    expect((await bookingsOf(p.business.organizationId))[1]).toMatchObject({ customer: "dana-lee", note: `Booked as Dana Lee, (555) 010-0100, ${other}. Please call first` });
-  });
-
   test("a name alone is no identity: the same name with another email and phone is another customer", async () => {
     const p = await provider();
     await book(p, { name: "Pat Morgan", phone: "(555) 010-1111", email: `pat-${token()}@example.test` });
@@ -212,21 +201,6 @@ test.describe("a guest's booking finds or makes the business's customer", () => 
     // And Alice, with her own phone, is still Alice.
     await book(p, { name: "Alice Adams", phone: "(555) 010-0001", email: "alice@example.test" });
     expect((await bookingsOf(org))[2].customer).toBe(a);
-  });
-
-  test("a phone several customers share, with a new email: a separate customer, and the next identical booking finds it", async () => {
-    const p = await provider();
-    const org = p.business.organizationId;
-    await insertCustomer(org, "Home One", "(555) 010-7777", "one@example.test");
-    await insertCustomer(org, "Home Two", "(555) 010-7777", "two@example.test");
-    const who = { name: "Visitor Three", phone: "(555) 010-7777", email: "three@example.test" };
-    await book(p, who);
-    expect(await customersOf(org)).toHaveLength(3);
-    const first = (await bookingsOf(org))[0].customer;
-    expect(first).toBe("visitor-three");
-    await book(p, who);
-    expect(await customersOf(org)).toHaveLength(3);
-    expect((await bookingsOf(org))[1].customer).toBe(first);
   });
 
   test("with only a phone, or only an email, the booker is still recognised; with neither, the booking keeps the visitor's details and no customer is made", async () => {
@@ -311,6 +285,200 @@ test.describe("a guest's booking finds or makes the business's customer", () => 
   });
 });
 
+/* ───────────────────────────── the identity matrix ───────────────────────────── */
+
+/**
+ * The ten cases of the launch rule (drizzle/0031), one test each. All of them are inside one business; the same identity in another business is case 8.
+ */
+test.describe("the identity matrix", () => {
+  const phoneOf = (slug: string, rows: CustomerRow[]) => rows.find((customer) => customer.slug === slug)?.phone;
+
+  test("1. the same email and the same phone is the same customer", async () => {
+    const p = await provider();
+    const who = dana();
+    await book(p, who);
+    await book(p, who);
+    const customers = await customersOf(p.business.organizationId);
+    expect(customers).toHaveLength(1);
+    expect((await bookingsOf(p.business.organizationId)).map((booking) => booking.customer)).toEqual(["dana-lee", "dana-lee"]);
+  });
+
+  test("2. the same email and the same phone typed differently is the same customer, and nothing about it changes", async () => {
+    const p = await provider();
+    const who = dana();
+    await book(p, who);
+    const before = await customersOf(p.business.organizationId);
+    for (const phone of ["555.010.0100", "+1 555 010 0100", "15550100100", "555-010-0100", " (555)010 0100 "]) await book(p, { ...who, email: who.email.toUpperCase(), phone });
+    expect(await customersOf(p.business.organizationId)).toEqual(before);
+    expect(new Set((await bookingsOf(p.business.organizationId)).map((booking) => booking.customer))).toEqual(new Set(["dana-lee"]));
+  });
+
+  test("3. the same email with a genuinely new phone is the same customer, and the stored customer is not overwritten", async () => {
+    const p = await provider();
+    const who = dana();
+    await book(p, who);
+    const before = await customersOf(p.business.organizationId);
+    await book(p, { ...who, phone: "(555) 010-0999" });
+    expect(await customersOf(p.business.organizationId)).toEqual(before);
+    expect(phoneOf("dana-lee", await customersOf(p.business.organizationId))).toBe("(555) 010-0100");
+    // What the visitor typed is kept on the booking, not on the customer.
+    expect((await bookingsOf(p.business.organizationId))[1]).toMatchObject({ customer: "dana-lee", note: `Booked as Dana Lee, (555) 010-0999, ${who.email}.` });
+  });
+
+  test("4. a different email with a phone that is already a customer's is a NEW customer: the household's phone is not the same person, and each keeps their own bookings", async () => {
+    const p = await provider();
+    const org = p.business.organizationId;
+    const mary = { name: "Mary Home", phone: "(555) 010-0100", email: `mary-${token()}@example.test` };
+    const john = { name: "John Home", phone: "555.010.0100", email: `john-${token()}@example.test` };
+    await book(p, mary);
+    const marys = await customersOf(org);
+    await book(p, john);
+    const customers = await customersOf(org);
+    expect(customers.map((customer) => customer.slug)).toEqual(["mary-home", "john-home"]);
+    // Mary is exactly as she was; John carries what he typed.
+    expect(customers[0]).toEqual(marys[0]);
+    expect(customers[1]).toMatchObject({ name: "John Home", email: john.email, phone: "(555) 010-0100" });
+    expect((await bookingsOf(org)).map((booking) => booking.customer)).toEqual(["mary-home", "john-home"]);
+    // Neither booking says anything about the other: John's is not noted as Mary's.
+    expect((await bookingsOf(org)).map((booking) => booking.note)).toEqual([null, null]);
+  });
+
+  test("5. the email is one customer's and the phone another's: a NEW customer, and neither is merged or changed", async () => {
+    const p = await provider();
+    const org = p.business.organizationId;
+    const a = await insertCustomer(org, "Alice Adams", "(555) 010-0001", "alice@example.test");
+    const b = await insertCustomer(org, "Bob Brown", "(555) 010-0002", "bob@example.test");
+    const before = await customersOf(org);
+    await book(p, { name: "Alice Adams", phone: "(555) 010-0002", email: "alice@example.test" });
+    const after = await customersOf(org);
+    expect(after).toHaveLength(3);
+    expect(after.filter((customer) => customer.slug === a || customer.slug === b)).toEqual(before);
+    expect((await bookingsOf(org))[0].customer).not.toBe(a);
+    expect((await bookingsOf(org))[0].customer).not.toBe(b);
+  });
+
+  test("6. no email and a phone that is exactly one customer's is that customer", async () => {
+    const p = await provider();
+    const org = p.business.organizationId;
+    const only = await insertCustomer(org, "Phone Holder", "(555) 010-3333", `holder-${token()}@example.test`);
+    const before = await customersOf(org);
+    await book(p, { name: "Phone Holder", phone: "555.010.3333", email: "" });
+    await book(p, { name: "Somebody Else", phone: "+1 (555) 010-3333", email: "   " });
+    expect(await customersOf(org)).toEqual(before);
+    expect((await bookingsOf(org)).map((booking) => booking.customer)).toEqual([only, only]);
+  });
+
+  test("7. no email and a phone several customers have is a NEW customer, found again by the next booking like it", async () => {
+    const p = await provider();
+    const org = p.business.organizationId;
+    await insertCustomer(org, "Home One", "(555) 010-7777", "one@example.test");
+    await insertCustomer(org, "Home Two", "(555) 010-7777", "two@example.test");
+    const before = await customersOf(org);
+    await book(p, { name: "Front Desk", phone: "(555) 010-7777", email: "" });
+    const after = await customersOf(org);
+    expect(after).toHaveLength(3);
+    expect(after.filter((customer) => customer.slug !== "front-desk")).toEqual(before);
+    expect(after.find((customer) => customer.slug === "front-desk")).toMatchObject({ name: "Front Desk", email: null, phone: "(555) 010-7777" });
+    // ... and the next such booking is the one who has no email, not a third, not either of the two with one.
+    await book(p, { name: "Front Desk", phone: "555.010.7777", email: "" });
+    expect(await customersOf(org)).toHaveLength(3);
+    expect((await bookingsOf(org)).map((booking) => booking.customer)).toEqual(["front-desk", "front-desk"]);
+  });
+
+  test("8. the same identity at another business is another customer there, and nothing is shared", async () => {
+    const first = await provider("custidxa");
+    const second = await provider("custidxb");
+    const who = dana();
+    await book(first, who);
+    await book(second, who);
+    await book(second, { ...who, email: `other-${token()}@example.test` });
+    expect(await customersOf(first.business.organizationId)).toHaveLength(1);
+    // Inside the second business the rule is the same as anywhere: the same email and phone is one, a different email on that phone is another.
+    expect(await customersOf(second.business.organizationId)).toHaveLength(2);
+    const strays = await owner.pool.query<{ n: number }>(
+      "select count(*)::int as n from bookings b join customers c on c.id = b.customer_id where c.organization_id <> b.organization_id and b.organization_id = any($1)",
+      [[first.business.organizationId, second.business.organizationId]],
+    );
+    expect(strays.rows[0].n).toBe(0);
+  });
+
+  test("9. a name alone is no identity: the same name, however it is written, with another email is another customer, and the same name with the same email is the customer by the email", async () => {
+    const p = await provider();
+    const org = p.business.organizationId;
+    const first = `dana-${token()}@example.test`;
+    await book(p, { name: "Dana Lee", phone: "(555) 010-1111", email: first });
+    await book(p, { name: "dana  LEE", phone: "(555) 010-2222", email: `dana-${token()}@example.test` });
+    await book(p, { name: "Dana Lee-Smith", phone: "(555) 010-3333", email: `dana-${token()}@example.test` });
+    await book(p, { name: "Dana Lee", phone: "(555) 010-1111", email: `dana-${token()}@example.test` });
+    expect((await customersOf(org)).map((customer) => customer.slug)).toEqual(["dana-lee", "dana-lee-2", "dana-lee-smith", "dana-lee-3"]);
+    // Not one booking went to a customer because of its name; a different name on the very same email and phone is the customer by those.
+    expect(new Set((await bookingsOf(org)).map((booking) => booking.customer)).size).toBe(4);
+    await book(p, { name: "Somebody Entirely Different", phone: "(555) 010-1111", email: first });
+    expect((await bookingsOf(org)).at(-1)!.customer).toBe("dana-lee");
+    expect(await customersOf(org)).toHaveLength(4);
+  });
+
+  test("10. after a safe separate customer is made, the next booking like it finds that customer, deterministically", async () => {
+    const p = await provider();
+    const org = p.business.organizationId;
+    // Three ways to need a separate customer: a household phone, a conflict, and a phone several customers have.
+    const home = await insertCustomer(org, "Home Phone", "(555) 010-1000", `home-${token()}@example.test`);
+    const a = await insertCustomer(org, "Alice Adams", "(555) 010-2001", "alice@example.test");
+    await insertCustomer(org, "Bob Brown", "(555) 010-2002", "bob@example.test");
+    const guests = [
+      { name: "Home Guest", phone: "(555) 010-1000", email: "guest@example.test" },
+      { name: "Alice Adams", phone: "(555) 010-2002", email: "alice@example.test" },
+      { name: "Shared Desk", phone: "(555) 010-3000", email: "" },
+    ];
+    await insertCustomer(org, "Desk One", "(555) 010-3000", "desk1@example.test");
+    await insertCustomer(org, "Desk Two", "(555) 010-3000", "desk2@example.test");
+    const made: string[] = [];
+    for (const guest of guests) {
+      const before = (await customersOf(org)).length;
+      await book(p, guest);
+      expect((await customersOf(org)).length, `${guest.name} needs a customer of its own`).toBe(before + 1);
+      made.push((await bookingsOf(org)).at(-1)!.customer!);
+    }
+    expect(new Set(made).size).toBe(3);
+    const total = (await customersOf(org)).length;
+    // The same three again, typed differently, three times over: each lands on the customer made for it, and none is made.
+    for (let round = 0; round < 3; round += 1) {
+      for (const [index, guest] of guests.entries()) {
+        await book(p, { ...guest, name: guest.name.toLowerCase(), phone: guest.phone.replace(/[^0-9]/g, ""), email: guest.email.toUpperCase() });
+        expect((await bookingsOf(org)).at(-1)!.customer, `${guest.name}, round ${round}`).toBe(made[index]);
+      }
+    }
+    expect(await customersOf(org)).toHaveLength(total);
+    // The customers they were separated from were never the target.
+    const targets = new Set((await bookingsOf(org)).map((booking) => booking.customer));
+    expect(targets.has(home)).toBe(false);
+    expect(targets.has(a)).toBe(false);
+  });
+
+  test("an email that two customers have, with a phone neither has, is a NEW customer; with no phone at all nobody can be told apart and the booking keeps the visitor's details", async () => {
+    const p = await provider();
+    const org = p.business.organizationId;
+    await insertCustomer(org, "Alice One", "(555) 010-0001", "alice@example.test");
+    await insertCustomer(org, "Alice Two", "(555) 010-0002", "alice@example.test");
+    await book(p, { name: "Alice Three", phone: "(555) 010-0003", email: "alice@example.test" });
+    expect(await customersOf(org)).toHaveLength(3);
+    await book(p, { name: "Alice Four", phone: "n/a", email: "ALICE@example.test" });
+    expect(await customersOf(org)).toHaveLength(3);
+    expect((await bookingsOf(org))[1]).toMatchObject({ customer: null, contact_name: "Alice Four", contact_email: "ALICE@example.test" });
+  });
+
+  test("nothing is exposed: a booking that found a customer, one that made a customer and one that made a separate customer all answer with the same shape", async () => {
+    const p = await provider();
+    const who = dana();
+    const shapes = [
+      await book(p, who), // made
+      await book(p, { ...who, phone: "(555) 010-0999" }), // found, by the email
+      await book(p, { ...who, email: `new-${token()}@example.test` }), // separate: a different email on a known phone
+    ];
+    for (const answer of shapes) expect(Object.keys(answer).sort()).toEqual(["duplicate", "number", "ok", "status"]);
+  });
+});
+
 /* ───────────────────────────── at the same time ───────────────────────────── */
 
 test.describe("many bookings at once never make the same customer twice", () => {
@@ -344,6 +512,26 @@ test.describe("many bookings at once never make the same customer twice", () => 
     expect(after.filter((customer) => customer.slug === a || customer.slug === b)).toEqual(before);
     expect(new Set((await bookingsOf(org)).map((booking) => booking.customer)).size).toBe(1);
   });
+
+  for (let round = 1; round <= 3; round++) {
+    test(`round ${round}: two people on one household phone, six bookings each at the same instant, are two new customers with six bookings each, and the customer who had the phone is untouched`, async () => {
+      const p = await provider();
+      const org = p.business.organizationId;
+      await insertCustomer(org, "Phone Owner", "(555) 010-5000", "owner@example.test");
+      const before = await customersOf(org);
+      const mary = { name: "Mary Home", phone: "(555) 010-5000", email: `mary-${token()}@example.test` };
+      const john = { name: "John Home", phone: "555.010.5000", email: `john-${token()}@example.test` };
+      await Promise.all(Array.from({ length: 12 }, (_, index) => book(p, index % 2 === 0 ? mary : john)));
+      const after = await customersOf(org);
+      expect(after).toHaveLength(3);
+      expect(after.slice(0, 1)).toEqual(before);
+      const grouped = await owner.pool.query<{ slug: string; n: number }>(
+        "select c.slug, count(*)::int as n from bookings b join customers c on c.organization_id = b.organization_id and c.id = b.customer_id where b.organization_id = $1 group by c.slug order by c.slug",
+        [org],
+      );
+      expect(grouped.rows).toEqual([{ slug: "john-home", n: 6 }, { slug: "mary-home", n: 6 }]);
+    });
+  }
 
   for (let round = 1; round <= 3; round++) {
     test(`round ${round}: an owner adding a customer while that person books, again and again, leaves one customer with that email`, async () => {

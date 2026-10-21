@@ -135,6 +135,12 @@ test("the restored database keeps the customers and the bookings made for them, 
   expect(Number(ask(DRILL, "select count(*) from customers"))).toBeGreaterThanOrEqual(5);
   expect(Number(ask(DRILL, "select count(*) from bookings b join customers c on c.organization_id = b.organization_id and c.id = b.customer_id"))).toBeGreaterThanOrEqual(4);
   expect(ask(DRILL, "select count(*) from bookings where source in ('Marketplace', 'Website') and customer_id is null")).toBe("0");
+  // The household stays two customers in the copy: a phone that two customers have, each with their own email, and the rule that keeps them apart is the source's.
+  const shared = "select count(*) from (select phone_key from customers where phone_key is not null group by phone_key having count(*) > 1) shared";
+  expect(Number(ask(DRILL, shared))).toBeGreaterThanOrEqual(1);
+  expect(ask(DRILL, shared)).toBe(ask(source, shared));
+  expect(ask(DRILL, "select md5(pg_get_functiondef('app_resolve_public_customer(uuid, text, text, text)'::regprocedure))")).toBe(ask(source, "select md5(pg_get_functiondef('app_resolve_public_customer(uuid, text, text, text)'::regprocedure))"));
+  expect(ask(DRILL, "select position('phone_only' in prosrc) > 0 from pg_proc where proname = 'app_resolve_public_customer'")).toBe("t");
   // The generated keys were recomputed by the copy's own functions and agree with them for every customer.
   expect(ask(DRILL, "select count(*) from customers where email_key is distinct from app_email_key(email) or phone_key is distinct from app_phone_key(phone)")).toBe("0");
   // What the migrations added is there: the functions, the unique identity, the narrowed check, the insert policy, and no policy for UPDATE or DELETE.

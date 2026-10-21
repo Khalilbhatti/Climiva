@@ -11,7 +11,6 @@
  *   - the client bundle: none of any business's website or listing copy is compiled into the browser's JavaScript.
  */
 import { randomBytes } from "node:crypto";
-import { freshPhone } from "./booking-people";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { APIRequestContext, Page } from "playwright/test";
@@ -443,7 +442,7 @@ test.describe("a visitor's booking", () => {
       api,
       captured,
       edited(captured, (argument) => {
-        Object.assign(argument, { organizationId: northstar, organization_id: northstar, orgId: northstar, submissionKey: `forged-key-${randomBytes(4).toString("hex")}`, email: forgedEmail, phone: freshPhone(), start: "14:00", end: "15:00" });
+        Object.assign(argument, { organizationId: northstar, organization_id: northstar, orgId: northstar, submissionKey: `forged-key-${randomBytes(4).toString("hex")}`, email: forgedEmail, start: "14:00", end: "15:00" });
       }),
     );
     expect(response.status()).toBe(200);
@@ -460,7 +459,7 @@ test.describe("a visitor's booking", () => {
     const api = await apiAs(null);
     const attempt = async (serviceSlug: string) => {
       const forgedEmail = `forged-${randomBytes(3).toString("hex")}@example.test`;
-      const response = await post(api, captured, edited(captured, (argument) => Object.assign(argument, { serviceSlug, submissionKey: `forged-key-${randomBytes(4).toString("hex")}`, email: forgedEmail, phone: freshPhone() })));
+      const response = await post(api, captured, edited(captured, (argument) => Object.assign(argument, { serviceSlug, submissionKey: `forged-key-${randomBytes(4).toString("hex")}`, email: forgedEmail })));
       return { text: await response.text(), rows: await bookingsOf(db, workerTenant.organizationId, forgedEmail) };
     };
     for (const slug of ["furnace-tune-up", "radiant-heat-estimate", "does-not-exist", "../etc/passwd", "UPPER"]) {
@@ -485,7 +484,7 @@ test.describe("a visitor's booking", () => {
     const api = await apiAs(null);
     const attempt = async (siteSlug: string) => {
       const forgedEmail = `forged-${randomBytes(3).toString("hex")}@example.test`;
-      const response = await post(api, captured, edited(captured, (argument) => Object.assign(argument, { siteSlug, submissionKey: `forged-key-${randomBytes(4).toString("hex")}`, email: forgedEmail, phone: freshPhone() })));
+      const response = await post(api, captured, edited(captured, (argument) => Object.assign(argument, { siteSlug, submissionKey: `forged-key-${randomBytes(4).toString("hex")}`, email: forgedEmail })));
       return { text: await response.text(), forgedEmail };
     };
     for (const slug of ["nobody-at-all", "apexclimate-commercial"]) {
@@ -519,7 +518,7 @@ test.describe("a visitor's booking", () => {
     ];
     for (const [label, change, message] of attempts) {
       const forgedEmail = `forged-${randomBytes(3).toString("hex")}@example.test`;
-      const response = await post(api, captured, edited(captured, (argument) => Object.assign(argument, { submissionKey: `forged-key-${randomBytes(4).toString("hex")}`, email: forgedEmail, phone: freshPhone() }, change)));
+      const response = await post(api, captured, edited(captured, (argument) => Object.assign(argument, { submissionKey: `forged-key-${randomBytes(4).toString("hex")}`, email: forgedEmail }, change)));
       const text = await response.text();
       expect(text, label).toMatch(message);
       expect(text, label).not.toMatch(/violates|constraint|postgres|stack trace|ECONN|select\s+\w+\s+from|insert\s+into/i);
@@ -545,7 +544,7 @@ test.describe("a visitor's booking", () => {
     expect(await bookingsOf(db, workerTenant.organizationId, email)).toHaveLength(1);
     // A different person at the same time is a different booking.
     const other = `other-${randomBytes(3).toString("hex")}@example.test`;
-    const different = await post(api, captured, edited(captured, (argument) => Object.assign(argument, { submissionKey: `third-key-${randomBytes(4).toString("hex")}`, email: other, phone: freshPhone() })));
+    const different = await post(api, captured, edited(captured, (argument) => Object.assign(argument, { submissionKey: `third-key-${randomBytes(4).toString("hex")}`, email: other })));
     expect(await different.text()).not.toContain(`BK-${first.number}`);
     expect(await bookingsOf(db, workerTenant.organizationId, other)).toHaveLength(1);
   });

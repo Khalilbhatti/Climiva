@@ -86,7 +86,7 @@ export function ReviewsView() {
     <>
       <PageHeader
         title="Reviews"
-        description="View customer reviews and respond from one place."
+        description="What customers say about your work, and your replies to them."
         actions={
           canManage && (
             <Button size="lg" onClick={openRequest}>
@@ -97,17 +97,15 @@ export function ReviewsView() {
         }
       />
 
-      <section aria-label="Review totals" className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard label="Total reviews" value={metrics.total} icon={MessageSquareText} hint="Customer reviews received" />
-        <KpiCard
-          label="Average rating"
-          value={empty ? "—" : metrics.average.toFixed(1)}
-          icon={Star}
-          hint={empty ? "No reviews recorded yet" : "Across recorded reviews"}
-        />
-        <KpiCard label="Awaiting reply" value={metrics.awaiting} icon={Reply} hint="Reviews without a response" />
-        <KpiCard label="Review requests" value={previewEmpty ? 0 : metrics.requests} icon={Send} hint="Requests sent recently" />
-      </section>
+      {/* Totals mean something once there is a review to count: before that, four zeros would only say "nothing" four times. */}
+      {!empty && (
+        <section aria-label="Review totals" className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <KpiCard label="Total reviews" value={metrics.total} icon={MessageSquareText} hint="Customer reviews received" />
+          <KpiCard label="Average rating" value={metrics.average.toFixed(1)} icon={Star} hint="Across recorded reviews" />
+          <KpiCard label="Awaiting reply" value={metrics.awaiting} icon={Reply} hint="Reviews without a response" />
+          <KpiCard label="Review requests" value={previewEmpty ? 0 : metrics.requests} icon={Send} hint="Requests sent recently" />
+        </section>
+      )}
 
       <Card padding="md" className="space-y-4">
         <Tabs
@@ -127,17 +125,12 @@ export function ReviewsView() {
             <EmptyState
               icon={MessageSquareText}
               title="No reviews yet"
-              description="Customer reviews will appear here when they are submitted."
-              action={
-                canManage && (
-                  <Button size="lg" onClick={openRequest}>
-                    <Send aria-hidden className="size-4" />
-                    Request review
-                  </Button>
-                )
+              description={
+                canManage
+                  ? "Request feedback from a customer after completing work. Their review appears here, and you can reply to it."
+                  : "Customer reviews appear here once customers submit them."
               }
             />
-            <p className="mt-3 text-center text-xs text-ink-muted">Review requests can be sent to existing customers after completed work.</p>
           </div>
         ) : (
           <>

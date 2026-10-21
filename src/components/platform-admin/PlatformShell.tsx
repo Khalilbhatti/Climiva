@@ -7,7 +7,8 @@ import { PlatformSignOut } from "./PlatformSignOut";
 /**
  * The frame of Climvia's own control plane: a navigation, who is signed in, and the page. It is deliberately not the workspace's shell: it has no
  * organization switcher, no active business, no Climvia product navigation and no workspace data, because platform authority does not come from a
- * business. It is dense and quiet, an internal tool, not a marketing page.
+ * business. It is dense and quiet, an internal tool, not a marketing page. Its rail is dark, where a business's workspace is light, so nobody has to
+ * read a label to know they are in the console that acts on every business.
  */
 export function PlatformShell({ admin, children }: { admin: PlatformAdmin; children: ReactNode }) {
   return (
@@ -15,24 +16,24 @@ export function PlatformShell({ admin, children }: { admin: PlatformAdmin; child
       <a href="#platform-main" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:m-2 focus:rounded-btn focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:text-primary">
         Skip to main content
       </a>
-      <header className="border-b border-line bg-surface lg:sticky lg:top-0 lg:flex lg:h-dvh lg:w-64 lg:shrink-0 lg:flex-col lg:border-r lg:border-b-0">
+      <header className="border-b border-white/10 bg-ink text-white [&_:focus-visible]:outline-white lg:sticky lg:top-0 lg:flex lg:h-dvh lg:w-64 lg:shrink-0 lg:flex-col lg:border-r lg:border-b-0">
         <div className="flex items-center gap-2.5 px-4 py-4">
-          <span aria-hidden className="flex size-8 items-center justify-center rounded-btn bg-primary text-base font-bold text-white shadow-card">
+          <span aria-hidden className="flex size-8 items-center justify-center rounded-btn bg-white text-base font-bold text-ink shadow-card">
             C
           </span>
           <div className="leading-tight">
-            <p className="text-sm font-bold tracking-tight text-ink">Climvia</p>
-            <p className="inline-flex items-center gap-1 text-mini font-semibold tracking-wider text-primary uppercase">
+            <p className="text-sm font-bold tracking-tight text-white">Climvia</p>
+            <p className="inline-flex items-center gap-1 text-mini font-semibold tracking-wider text-white/80 uppercase">
               <ShieldCheck aria-hidden className="size-3" />
               Platform
             </p>
           </div>
         </div>
         <PlatformNav />
-        <div className="mt-auto hidden border-t border-line px-4 py-4 lg:block">
-          <p className="truncate text-sm font-semibold text-ink">{admin.name}</p>
-          <p className="truncate text-xs text-ink-muted">{admin.email}</p>
-          <p className="mt-1 text-mini font-semibold tracking-wider text-ink-muted uppercase">Super administrator</p>
+        <div className="mt-auto hidden border-t border-white/10 px-4 py-4 lg:block">
+          <p className="truncate text-sm font-semibold text-white">{admin.name}</p>
+          <p className="truncate text-xs text-white/75">{admin.email}</p>
+          <p className="mt-1 text-mini font-semibold tracking-wider text-white/75 uppercase">Super administrator</p>
           <div className="mt-3">
             <PlatformSignOut />
           </div>

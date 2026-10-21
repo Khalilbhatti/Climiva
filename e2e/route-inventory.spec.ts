@@ -181,7 +181,7 @@ test.describe("going back works", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Jobs" })).toBeVisible();
     await page.goBack();
     await expect(page).toHaveURL(/\/overview$/);
-    await expect(page.getByRole("heading", { level: 1, name: "Workspace Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
   });
 });
 

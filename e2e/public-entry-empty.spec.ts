@@ -167,10 +167,11 @@ test("a first owner: landing, List Your Business, sign up, set up, and a workspa
   expect(await rows("select count(*)::int as n from sites where organization_id = $1 and status = 'published'", [org.id])).toEqual([{ n: 0 }]);
 
   // The first screen is a welcome with things to do, not a report of numbers that do not exist.
-  await expect(ownerPage.getByRole("heading", { level: 2, name: "Your workspace is ready" })).toBeVisible();
-  const steps = ownerPage.getByRole("list", { name: "Next steps" });
+  await expect(ownerPage.getByRole("heading", { level: 2, name: "Getting started" })).toBeVisible();
+  await expect(ownerPage.getByText("0 of 5 completed")).toBeVisible();
+  const steps = ownerPage.getByRole("list", { name: "Setup steps" });
   await expect(steps.getByRole("link")).toHaveCount(5);
-  for (const [name, href] of [["Add your services", "/services"], ["Set up your team", "/team"], ["Check your business hours", "/settings/hours"], ["Customize your website", "/website"], ["Publish your Marketplace listing", "/marketplace-listing"]] as const) {
+  for (const [name, href] of [["Add your first service", "/services?new=1"], ["Add your team", "/team"], ["Customize and publish your website", "/website"], ["Publish your Marketplace Listing", "/marketplace-listing"], ["Add your first customer", "/customers?new=1"]] as const) {
     await expect(steps.getByRole("link", { name: new RegExp(`^${name}`) })).toHaveAttribute("href", href);
   }
   const text = await ownerPage.locator("main").innerText();
@@ -211,11 +212,11 @@ test("the owner adds one Service, sets up the Marketplace with a place, publishe
   const wizard = ownerPage.getByRole("dialog", { name: "Add new service" });
   await wizard.getByLabel("Service name").fill("Furnace Tune-Up");
   await wizard.getByLabel("Customer-facing description").fill("A yearly check of your furnace.");
-  await wizard.getByRole("button", { name: /^Next: Booking/ }).click();
+  await wizard.getByRole("button", { name: /^Next: How customers book/ }).click();
   await wizard.getByRole("radio", { name: /^Instant booking/ }).check();
   await wizard.getByRole("button", { name: /^Next: Pricing/ }).click();
   await wizard.getByLabel("Fee amount (USD)").or(wizard.getByLabel("Price (USD)")).fill("89");
-  await wizard.getByRole("button", { name: /^Next: Availability/ }).click();
+  await wizard.getByRole("button", { name: /^Next: Where customers see it/ }).click();
   await wizard.getByRole("button", { name: /^Next: Review/ }).click();
   await wizard.getByRole("button", { name: "Add service" }).click();
   await expect(wizard).toBeHidden();

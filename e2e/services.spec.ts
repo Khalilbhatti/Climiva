@@ -11,11 +11,11 @@ async function fillWizard(page: Page, name: string) {
   const wizard = page.getByRole("dialog", { name: "Add new service" });
   await wizard.getByLabel("Service name").fill(name);
   await wizard.getByLabel("Customer-facing description").fill("A demo service used by the browser tests.");
-  await wizard.getByRole("button", { name: /^Next: Booking/ }).click();
+  await wizard.getByRole("button", { name: /^Next: How customers book/ }).click();
   await wizard.getByRole("radio", { name: /^Instant booking/ }).check();
   await wizard.getByRole("button", { name: /^Next: Pricing/ }).click();
   await wizard.getByLabel("Fee amount (USD)").or(wizard.getByLabel("Price (USD)")).fill("75");
-  await wizard.getByRole("button", { name: /^Next: Availability/ }).click();
+  await wizard.getByRole("button", { name: /^Next: Where customers see it/ }).click();
   await wizard.getByRole("button", { name: /^Next: Review/ }).click();
   return wizard;
 }
@@ -236,7 +236,7 @@ test.describe("Add Service", () => {
     await expect(wizard.getByRole("list", { name: "Add service steps" }).getByRole("listitem")).toHaveCount(5);
 
     // Step 1 blocks on empty required fields and announces them.
-    await wizard.getByRole("button", { name: /^Next: Booking/ }).click();
+    await wizard.getByRole("button", { name: /^Next: How customers book/ }).click();
     await expect(wizard.getByLabel("Service name")).toHaveAttribute("aria-invalid", "true");
     await expect(wizard.getByText("Enter a service name.")).toBeVisible();
     await expect(wizard.getByText("Describe what the service includes.")).toBeVisible();
@@ -244,7 +244,7 @@ test.describe("Add Service", () => {
     // A duplicate of a canonical name is rejected.
     await wizard.getByLabel("Service name").fill("ac repair & diagnostics");
     await wizard.getByLabel("Customer-facing description").fill("Duplicate.");
-    await wizard.getByRole("button", { name: /^Next: Booking/ }).click();
+    await wizard.getByRole("button", { name: /^Next: How customers book/ }).click();
     await expect(wizard.getByText("A service with this name already exists.")).toBeVisible();
 
     // Cancel discards; reopening starts blank.

@@ -104,10 +104,10 @@ test.describe("every module shows JB-204 as completed work", () => {
 });
 
 test.describe("the Completed Jobs aggregate is the approved 18 plus what has happened since", () => {
-  test("Overview, the sidebar badge and Analytics all say 18", async ({ page }) => {
+  test("Overview and Analytics say 18, and the sidebar carries no count beside Jobs", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("region", { name: "Key metrics" })).toContainText("18");
-    await expect(primaryNav(page).getByRole("link", { name: /^Jobs/ })).toContainText("18");
+    await expect(primaryNav(page).getByRole("link", { name: /^Jobs/ })).not.toContainText(/\d/);
     await page.goto("/analytics");
     await expect(page.getByRole("region", { name: "Key metrics" })).toContainText("18");
   });

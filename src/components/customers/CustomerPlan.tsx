@@ -44,7 +44,7 @@ export function MaintenanceAgreementCard({ customer }: { customer: Customer }) {
   const booking = next ? getVisitBooking(next, ops) : undefined;
 
   return (
-    <SectionCard title="Maintenance agreement" icon={ShieldCheck} action={<StatusBadge tone="positive">{plan.status}</StatusBadge>}>
+    <SectionCard title="Maintenance plan" icon={ShieldCheck} action={<StatusBadge tone="positive">{plan.status}</StatusBadge>}>
       <div className="rounded-card bg-surface-low p-4">
         <div className="flex items-baseline justify-between gap-2">
           <p className="text-lg font-semibold text-ink">{plan.name}</p>

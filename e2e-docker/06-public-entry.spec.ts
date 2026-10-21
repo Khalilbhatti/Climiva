@@ -22,7 +22,7 @@ test("the platform's address answers a visitor with Climvia's landing: two doors
   expect(home.body).toMatch(/href="\/signup"/);
   expect(home.body).toMatch(/href="\/login"/);
   expect(String(home.headers["set-cookie"] ?? "")).toBe("");
-  expect(home.body).not.toMatch(/Workspace Overview|better-auth|organizationId|"session"/i);
+  expect(home.body).not.toMatch(/What needs your attention today|better-auth|organizationId|"session"/i);
 });
 
 test("a review link is kept out of the proxy's log, in the address and in a Referer, and out of the application's log", async () => {

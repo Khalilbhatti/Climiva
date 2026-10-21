@@ -1,18 +1,23 @@
 "use client";
 
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Mail, MapPin, Phone, ShieldCheck, type LucideIcon } from "lucide-react";
+import { Mail, MapPin, Phone, ShieldCheck, Star, type LucideIcon } from "lucide-react";
+import { useOperations } from "@/components/operations/OperationsProvider";
+import { RequestReviewModal } from "@/components/reviews/RequestReviewModal";
+import { useReviews } from "@/components/reviews/ReviewsProvider";
 import { Avatar } from "@/components/ui/Avatar";
-import { ButtonLink } from "@/components/ui/Button";
+import { Button, ButtonLink } from "@/components/ui/Button";
 import { cardClasses } from "@/components/ui/Card";
 import { customerPropertiesHref } from "@/config/routes";
 import { getPrimaryProperty, type Customer } from "@/data/customers";
 import { toTelHref } from "@/lib/format";
+import { eligibleReviewJobs } from "@/lib/review-rules";
 import { PlanStatusText } from "./CustomerPlan";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
-import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 
-function InfoTile({ icon: Icon, label, children }: { icon: LucideIcon; label: string; children: React.ReactNode }) {
+function InfoTile({ icon: Icon, label, children }: { icon: LucideIcon; label: string; children: ReactNode }) {
   return (
     <div className={`${cardClasses("md")} flex items-center gap-3`}>
       <span className="flex size-10 shrink-0 items-center justify-center rounded-btn bg-primary-subtle text-primary">
@@ -28,8 +33,14 @@ function InfoTile({ icon: Icon, label, children }: { icon: LucideIcon; label: st
 
 export function CustomerHeader({ customer }: { customer: Customer }) {
   const dir = useDirectory();
-  const { hasSampleData } = useWorkspace();
+  const canBook = useCan("operations:manage");
+  const canAskForReview = useCan("reviews:manage");
+  const { data: operations } = useOperations();
+  const { data: reviews } = useReviews();
+  const [requesting, setRequesting] = useState(false);
   const property = getPrimaryProperty(customer, dir);
+  // A review is asked for after work is done: only a customer with a completed Job that has no request yet is offered one.
+  const canRequestReview = canAskForReview && eligibleReviewJobs(customer.id, operations, reviews.requests).length > 0;
 
   return (
     <div className="space-y-5">
@@ -46,16 +57,16 @@ export function CustomerHeader({ customer }: { customer: Customer }) {
             <p className="mt-1 text-sm text-ink-muted">Preferred contact: {customer.preferredContact}</p>
           </div>
         </div>
-        {/* Quotes, Jobs and Bookings are not on the database yet, so only the sample business has them to start from. */}
-        {hasSampleData && (
+        {/* What to do next with this customer: book a visit (the main thing), and ask for a review once there is finished work to ask about. */}
+        {(canBook || canRequestReview) && (
           <div className="flex flex-wrap items-center gap-2">
-            <ButtonLink href="/quotes-invoices" variant="secondary">
-              Create quote
-            </ButtonLink>
-            <ButtonLink href="/jobs" variant="secondary">
-              New job
-            </ButtonLink>
-            <ButtonLink href={`/bookings?new=1&customer=${customer.id}`}>New booking</ButtonLink>
+            {canRequestReview && (
+              <Button variant="secondary" onClick={() => setRequesting(true)}>
+                <Star aria-hidden className="size-4" />
+                Request review
+              </Button>
+            )}
+            {canBook && <ButtonLink href={`/bookings?new=1&customer=${customer.id}`}>Create booking</ButtonLink>}
           </div>
         )}
       </div>
@@ -92,6 +103,7 @@ export function CustomerHeader({ customer }: { customer: Customer }) {
           <PlanStatusText customer={customer} />
         </InfoTile>
       </div>
+      {requesting && <RequestReviewModal onClose={() => setRequesting(false)} />}
     </div>
   );
 }

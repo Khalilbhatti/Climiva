@@ -332,9 +332,10 @@ export function BookingJourney({ service, view, hours, today, submit, bookingHre
 
         {stage === "done" && created && slot && (
           <section aria-labelledby="done-heading" className="max-w-2xl space-y-5">
-            <div role="status" className="rounded-card border border-positive-line bg-positive-soft p-5">
-              <p className="flex items-center gap-2 text-positive">
-                <CircleCheck aria-hidden className="size-5" />
+            {/* A confirmed booking is green with a check. A request is not confirmed yet, so it is the neutral colour with a clock: it must never read as a booking. */}
+            <div role="status" className={method === "instant" ? "rounded-card border border-positive-line bg-positive-soft p-5" : "rounded-card border border-line bg-surface-low p-5"}>
+              <p className={`flex items-center gap-2 ${method === "instant" ? "text-positive" : "text-primary"}`}>
+                {method === "instant" ? <CircleCheck aria-hidden className="size-5" /> : <Clock aria-hidden className="size-5" />}
                 <span className="text-xs font-bold tracking-wider uppercase">
                   {method === "instant" ? "Booking confirmed" : "Request received"}
                 </span>

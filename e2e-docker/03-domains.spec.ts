@@ -133,7 +133,7 @@ test("on a customer's name nothing private exists, even for a request that carri
     for (const method of ["GET", "POST"]) {
       const response = await get(hosts.active, path, { method, headers: { cookie, origin, ...(method === "POST" ? { "content-type": "application/json" } : {}) }, body: method === "POST" ? "{}" : undefined });
       expect(response.status, `${method} ${path}`).toBe(404);
-      expect(response.body, `${method} ${path}`).not.toMatch(/Workspace Overview|Log in|better-auth|"user"|"session"|organization/i);
+      expect(response.body, `${method} ${path}`).not.toMatch(/What needs your attention today|Log in|better-auth|"user"|"session"|organization/i);
     }
   }
   // An upload aimed at the customer's name creates nothing.
@@ -200,7 +200,7 @@ test("a visitor books through the customer's own name, and the booking is the na
   const text = await visitor.locator("body").innerText();
   expect(text).not.toContain("Dana Owner");
   expect(text).not.toContain(state.email);
-  expect(text).not.toMatch(/Workspace Overview|Quotes & Invoices|Payments/);
+  expect(text).not.toMatch(/What needs your attention today|Quotes & Invoices|Payments/);
   await visitor.context().close();
 });
 

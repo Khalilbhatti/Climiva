@@ -139,7 +139,7 @@ test.describe("Sarah Mitchell's Comfort Care plan comes from the database", () =
 
   test("Customer Sarah Mitchell shows the plan, its coverage and the next visit from the same records", async ({ page }) => {
     await page.goto("/customers/sarah-mitchell");
-    const agreement = page.getByRole("region", { name: "Maintenance agreement" });
+    const agreement = page.getByRole("region", { name: "Maintenance plan" });
     await expect(agreement).toContainText("Comfort Care");
     await expect(agreement).toContainText("$189");
     await expect(agreement).toContainText("Cooling maintenance");
@@ -201,7 +201,7 @@ test.describe("Sarah's second visit is already the one real booking BK-1048 afte
     await expect(drawer).toContainText("Nov 19");
     await expect(drawer.getByRole("link", { name: /Comfort Care/ })).toBeVisible();
     await other.goto("/customers/sarah-mitchell");
-    await expect(other.getByRole("region", { name: "Maintenance agreement" })).toContainText("BK-1048");
+    await expect(other.getByRole("region", { name: "Maintenance plan" })).toContainText("BK-1048");
     await other.goto("/maintenance-plans/plan-sarah-comfort-care");
     await expect(other.getByRole("table", { name: "Plan service history" })).toContainText("BK-1048");
     await expect(other.getByRole("button", { name: "Schedule visit" })).toHaveCount(0);
@@ -346,7 +346,7 @@ test.describe("Create plan stores the plan, its coverage and its visits", () => 
     const fresh = await browser.newContext({ baseURL: ORIGIN, storageState: workerTenant.storageState, extraHTTPHeaders: { "x-forwarded-for": clientAddresses() } });
     const other = await fresh.newPage();
     await other.goto("/customers/elena-rodriguez");
-    await expect(other.getByRole("region", { name: "Maintenance agreement" })).toContainText("Peace of Mind");
+    await expect(other.getByRole("region", { name: "Maintenance plan" })).toContainText("Peace of Mind");
     await fresh.close();
   });
 
@@ -885,7 +885,7 @@ test.describe("a new business starts with empty plans and reviews, not 'unavaila
     await expect(page.getByRole("heading", { level: 1, name: "Reviews" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "No reviews yet" })).toBeVisible();
     await expect(page.getByText(/isn't available for Clean Slate Heating yet/)).toHaveCount(0);
-    await expect(page.getByRole("region", { name: "Review totals" })).toContainText("No reviews recorded yet");
+    await expect(page.getByRole("region", { name: "Review totals" })).toHaveCount(0);
 
     expect(await page.locator("body").innerText()).not.toMatch(/Sarah Mitchell|Comfort Care|Seasonal Maintenance|Marcus Sterling/);
     await page.goto("/maintenance-plans/plan-sarah-comfort-care");

@@ -675,11 +675,9 @@ test.describe("a new business starts with empty money, not 'unavailable'", () =>
     await expect(recordDialog(page).getByRole("radio")).toHaveCount(0);
 
     await page.goto("/quotes-invoices");
-    const totals = page.getByRole("region", { name: "Quote and invoice totals" });
-    for (const label of ["Open quotes", "Approved quotes", "Unpaid invoices", "Paid invoices"]) {
-      await expect(totals.getByText(label, { exact: true }).locator("xpath=../..")).toContainText("0");
-    }
-    await expect(page.getByText("No quotes yet.")).toBeVisible();
+    // With no quote or invoice to count there are no totals to show: one empty state says what the page holds.
+    await expect(page.getByRole("region", { name: "Quote and invoice totals" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "No quotes or invoices yet" })).toBeVisible();
     await expect(page.getByText(/isn't available for Clean Slate Heating yet/)).toHaveCount(0);
     expect(await page.locator("body").innerText()).not.toMatch(/Sarah Mitchell|Arthur Pendleton|PAY-10|INV-10|QT-8/);
 

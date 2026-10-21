@@ -1,6 +1,7 @@
 /**
- * Phase 8, Parts C, E and F: Help is a finished route, the sidebar is exactly the approved navigation, and the four
- * Overview quick actions open the one real implementation of each flow.
+ * Phase 8, Parts C, E and F: Help is a finished route, the sidebar is exactly the approved navigation, and the
+ * Overview quick actions open the one real implementation of each flow. (Phase 19F regrouped the sidebar by how an owner thinks of the work,
+ * named the Marketplace's workspace page "Marketplace Listing", and made the one count on it the requests waiting for an answer.)
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -9,37 +10,38 @@ import { expect, test } from "./fixtures";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
 
-const SIDEBAR: { group: string; items: [string, string][] }[] = [
-  { group: "Overview", items: [["Overview", "/overview"]] },
+/** `group: null` is a link that stands alone: Overview and Customers are a heading of their own, so they have no extra one. */
+const SIDEBAR: { group: string | null; items: [string, string][] }[] = [
+  { group: null, items: [["Overview", "/overview"]] },
   {
-    group: "Operations",
+    group: "Work",
     items: [
       ["Bookings", "/bookings"],
       ["Schedule", "/schedule"],
       ["Jobs", "/jobs"],
-      ["Customers", "/customers"],
     ],
   },
+  { group: null, items: [["Customers", "/customers"]] },
   {
     group: "Business",
     items: [
       ["Services", "/services"],
       ["Team", "/team"],
+      ["Maintenance Plans", "/maintenance-plans"],
     ],
   },
   {
-    group: "Financials",
+    group: "Money",
     items: [
       ["Quotes & Invoices", "/quotes-invoices"],
       ["Payments", "/payments"],
-      ["Maintenance Plans", "/maintenance-plans"],
     ],
   },
   {
     group: "Growth",
     items: [
       ["Website", "/website"],
-      ["Marketplace", "/marketplace-listing"],
+      ["Marketplace Listing", "/marketplace-listing"],
       ["Reviews", "/reviews"],
       ["Marketing", "/marketing"],
     ],
@@ -56,9 +58,9 @@ async function readSidebar(page: Page) {
   return primaryNav(page).evaluate((nav) => ({
     groups: [...nav.querySelectorAll("h2")].map((heading) => heading.textContent?.trim()),
     links: [...nav.querySelectorAll("a")].map((link) => ({
-      label: (link.textContent ?? "").replace(/\d+$/, "").trim(),
+      label: (link.textContent ?? "").replace(/\d+\s*waiting for an answer$/, "").trim(),
       href: link.getAttribute("href"),
-      badge: /\d+$/.exec((link.textContent ?? "").trim())?.[0] ?? null,
+      badge: /(\d+)\s*waiting for an answer$/.exec((link.textContent ?? "").trim())?.[1] ?? null,
     })),
   }));
 }
@@ -134,10 +136,10 @@ test.describe("Help is a finished route", () => {
 });
 
 test.describe("the sidebar is exactly the approved navigation", () => {
-  test("six groups in order, seventeen links, exact labels and routes, Settings and Help pinned below", async ({ page }) => {
+  test("five named groups in order, seventeen links, exact labels and routes, Settings and Help pinned below", async ({ page }) => {
     await page.goto("/");
     const sidebar = await readSidebar(page);
-    expect(sidebar.groups).toEqual(SIDEBAR.map((entry) => entry.group));
+    expect(sidebar.groups).toEqual(SIDEBAR.flatMap((entry) => (entry.group ? [entry.group] : [])));
     const expected = [...SIDEBAR.flatMap((entry) => entry.items), ...UTILITY];
     expect(sidebar.links.map((link) => [link.label, link.href])).toEqual(expected);
     expect(new Set(sidebar.links.map((link) => link.href)).size).toBe(sidebar.links.length);
@@ -148,13 +150,10 @@ test.describe("the sidebar is exactly the approved navigation", () => {
     expect(utility).toEqual([]);
   });
 
-  test("the only counts are the approved aggregates on Bookings and Jobs", async ({ page }) => {
+  test("the only count is the requests waiting for an answer, on Bookings (a total of the month is on the Overview, not beside a link)", async ({ page }) => {
     await page.goto("/");
     const badges = (await readSidebar(page)).links.filter((link) => link.badge).map((link) => [link.label, link.badge]);
-    expect(badges).toEqual([
-      ["Bookings", "24"],
-      ["Jobs", "18"],
-    ]);
+    expect(badges).toEqual([["Bookings", "2"]]);
   });
 
   test("no obsolete or duplicate item is offered", async ({ page }) => {
@@ -225,16 +224,17 @@ test.describe("the sidebar is exactly the approved navigation", () => {
 
 test.describe("the Overview quick actions are the real flows", () => {
   const FLOWS: { title: string; href: string; description: string; open: (page: Page) => Promise<void> }[] = [
-    { title: "New booking", href: "/bookings?new=1", description: "Book customer visit", open: (page) => expect(page.getByRole("dialog", { name: "Create booking" })).toBeVisible() },
-    { title: "Record payment", href: "/payments?record=1", description: "Log customer payment", open: (page) => expect(page.getByRole("dialog", { name: "Record payment" })).toBeVisible() },
-    { title: "Create maintenance plan", href: "/maintenance-plans?new=1", description: "Add maintenance plan", open: (page) => expect(page.getByRole("dialog", { name: "Create maintenance plan" })).toBeVisible() },
-    { title: "Create campaign", href: "/marketing/new", description: "Create customer campaign", open: (page) => expect(page.getByRole("heading", { level: 1, name: "Create campaign" })).toBeVisible() },
+    { title: "Create booking", href: "/bookings?new=1", description: "Book a visit for a customer", open: (page) => expect(page.getByRole("dialog", { name: "Create booking" })).toBeVisible() },
+    { title: "Add customer", href: "/customers?new=1", description: "Save someone you serve", open: (page) => expect(page.getByRole("dialog", { name: "Add customer" })).toBeVisible() },
+    { title: "Record payment", href: "/payments?record=1", description: "Log a payment you received", open: (page) => expect(page.getByRole("dialog", { name: "Record payment" })).toBeVisible() },
+    { title: "Create maintenance plan", href: "/maintenance-plans?new=1", description: "Plan regular visits for a customer", open: (page) => expect(page.getByRole("dialog", { name: "Create maintenance plan" })).toBeVisible() },
+    { title: "Create campaign", href: "/marketing/new", description: "Write to your customers", open: (page) => expect(page.getByRole("heading", { level: 1, name: "Create campaign" })).toBeVisible() },
   ];
 
-  test("the four actions, with their approved wording, are the only ones", async ({ page }) => {
+  test("the five actions, with their approved wording, are the only ones", async ({ page }) => {
     await page.goto("/");
-    const section = page.getByRole("region", { name: "Core Operational Workflows" });
-    await expect(section.getByRole("link")).toHaveCount(4);
+    const section = page.getByRole("region", { name: "Quick actions" });
+    await expect(section.getByRole("link")).toHaveCount(5);
     for (const flow of FLOWS) {
       const link = section.getByRole("link", { name: new RegExp(`^${flow.title}`) });
       await expect(link).toHaveAttribute("href", flow.href);
@@ -245,12 +245,12 @@ test.describe("the Overview quick actions are the real flows", () => {
   for (const flow of FLOWS) {
     test(`${flow.title} opens the real flow, and Back returns to the Overview`, async ({ page }) => {
       await page.goto("/");
-      await page.getByRole("region", { name: "Core Operational Workflows" }).getByRole("link", { name: new RegExp(`^${flow.title}`) }).click();
+      await page.getByRole("region", { name: "Quick actions" }).getByRole("link", { name: new RegExp(`^${flow.title}`) }).click();
       await expect(page).toHaveURL(new RegExp(flow.href.replace(/[?]/g, "\\?")));
       await flow.open(page);
       await page.goBack();
       await expect(page).toHaveURL(/\/overview$/);
-      await expect(page.getByRole("heading", { level: 1, name: "Workspace Overview" })).toBeVisible();
+      await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
     });
   }
 

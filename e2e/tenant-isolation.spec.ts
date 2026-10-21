@@ -63,7 +63,7 @@ test.describe("the sample business belongs to Apex alone", () => {
     const { page, problems } = await openAs("taylor");
     await page.goto("/");
     await expect(activeBusiness(page)).toContainText(NORTHSTAR.name);
-    await expect(page.getByText("Your workspace is ready")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Getting started" })).toBeVisible();
     const card = page.getByRole("region", { name: "Business information" });
     await expect(card).toContainText(NORTHSTAR.phone);
     await expect(card).toContainText(NORTHSTAR.email);
@@ -168,14 +168,15 @@ test.describe("the sample business belongs to Apex alone", () => {
   test("the sidebar counts and the top-bar search are Apex's alone", async ({ openAs }) => {
     const taylor = await openAs("taylor");
     await taylor.page.goto("/");
-    await expect(taylor.page.getByRole("navigation", { name: "Primary" }).locator("span.font-mono")).toHaveCount(0);
+    // Each business counts its own requests waiting for an answer: Northstar has one, Apex two, and neither sees the other's number.
+    await expect(taylor.page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: /^Bookings/ })).toContainText("1 waiting for an answer");
     await taylor.page.getByRole("combobox", { name: /Search customers/ }).fill("Sarah");
     await expect(taylor.page.getByText("No matches for")).toBeVisible();
     await expect(taylor.page.getByRole("option")).toHaveCount(0);
 
     const alex = await openAs("alex");
     await alex.page.goto("/");
-    expect(await alex.page.getByRole("navigation", { name: "Primary" }).locator("span.font-mono").count()).toBeGreaterThan(0);
+    await expect(alex.page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: /^Bookings/ })).toContainText("2 waiting for an answer");
     await alex.page.getByRole("combobox", { name: /Search customers/ }).fill("Sarah");
     await expect(alex.page.getByRole("option").first()).toBeVisible();
   });
@@ -365,7 +366,7 @@ test.describe("nothing about a workspace is cached", () => {
     await alex.page.getByLabel(/^Email/).fill("taylor.brooks@northstar.test");
     await alex.page.getByLabel(/^Password/).fill(process.env.SEED_PASSWORD ?? "");
     await alex.page.getByRole("button", { name: "Log in" }).click();
-    await expect(alex.page.getByRole("heading", { level: 1, name: "Workspace Overview" })).toBeVisible();
+    await expect(alex.page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
     await alex.page.goto("/settings");
     await expect(alex.page.getByLabel(/^Business name/)).toHaveValue(NORTHSTAR.name);
     await alex.page.goBack({ waitUntil: "load" });

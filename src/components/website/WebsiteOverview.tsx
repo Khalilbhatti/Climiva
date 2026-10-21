@@ -10,15 +10,11 @@ import {
   Circle,
   Clock,
   CloudUpload,
-  Eye,
-  FilePenLine,
   Globe,
   LayoutTemplate,
   Layers,
   Plus,
-  Rocket,
   Store,
-  SquareArrowOutUpRight,
   EyeOff,
   Info,
 } from "lucide-react";
@@ -35,9 +31,8 @@ import { WEEK_ORDER } from "@/data/settings";
 import { findPage, getPlatformAddress, getPrimaryAddress, getShownServices, hasUnpublishedChanges, orderedPages, primaryDomainOf, type VersionModel } from "@/data/website";
 import { DOMAIN_STATUS_LABEL } from "@/lib/domain-rules";
 import { DOMAIN_TONE } from "./domain-ui";
-import { publicSiteHref } from "@/lib/site-domain";
 import { DEFAULT_THEME, themeAttributes, themeStyle } from "@/lib/site-theme";
-import { PREVIEW_BASE, previewHref } from "./site-links";
+import { PREVIEW_BASE } from "./site-links";
 import { SiteFooter, SiteHeader, SiteRenderer } from "./SiteRenderer";
 import { BrowserFrame, SiteStatusBadge, usePublishing } from "./site-ui";
 import { useSiteView, useWebsite } from "./WebsiteProvider";
@@ -126,7 +121,7 @@ export function WebsiteOverview() {
   const brandStyle = useBrandStyle();
   const business = settings.business;
   const hours = useHoursRows();
-  const { publishNow, askUnpublish, unpublishModal, busy } = usePublishing();
+  const { askUnpublish, unpublishModal } = usePublishing();
   const canManage = useCan("website:manage");
   const preview = useSearchParams().get("state") === "empty";
   const { services: catalog } = useServices();
@@ -159,9 +154,9 @@ export function WebsiteOverview() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label="Website status"
-          value={published ? "Published" : "Private"}
+          value={published ? "Published" : "Draft"}
           icon={published ? CloudUpload : EyeOff}
-          hint={published ? `Live at ${primary}` : "Preview link accessible"}
+          hint={published ? `Live at ${primary}` : "Only you can see it until you publish"}
           hintDot={published}
         />
         <KpiCard label="Pages" value={`${pages.length} pages`} icon={Layers} hint={pages.map((page) => page.title).join(", ")} href="/website/pages" />
@@ -187,26 +182,14 @@ export function WebsiteOverview() {
             title="Customer-facing preview"
             aside={<span className="text-xs text-ink-muted">{published ? "Live website" : "Draft · not published"}</span>}
           >
-            <BrowserFrame address={primary} note={published ? "Live" : "Private"}>
+            <BrowserFrame address={primary} note={published ? "Live" : "Draft"}>
               <div inert {...themeAttributes(shownVersion.theme)} style={{ ...brandStyle, ...themeStyle(shownVersion.theme) }} className="@container h-80 overflow-hidden bg-surface">
                 <SiteHeader view={view} />
                 {home && <SiteRenderer page={home} view={view} embedded />}
                 <SiteFooter view={view} />
               </div>
             </BrowserFrame>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-ink-muted">Rendered from your saved pages and your Services catalog.</p>
-              <div className="flex gap-2">
-                <ButtonLink href="/website/builder" variant="secondary" size="sm">
-                  <FilePenLine aria-hidden className="size-3.5" />
-                  Edit website
-                </ButtonLink>
-                <ButtonLink href={published ? publicSiteHref(website.site.platformSlug) : previewHref()} size="sm">
-                  <Eye aria-hidden className="size-3.5" />
-                  {published ? "View live website" : "Preview website"}
-                </ButtonLink>
-              </div>
-            </div>
+            <p className="mt-4 text-xs text-ink-muted">Rendered from your saved pages and your Services catalog.</p>
           </Card>
 
           <Card title="Connected business content">
@@ -263,27 +246,15 @@ export function WebsiteOverview() {
                 {pending && (
                   <p className="mt-3 flex items-start gap-2 rounded-btn bg-warning-soft px-3 py-2 text-xs text-warning">
                     <Clock aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-                    You have saved changes that are not live yet.
+                    You have saved changes that are not live yet. Choose Publish changes at the top of the page to make them live.
                   </p>
                 )}
-                <div className="mt-4 space-y-2">
-                  {pending && canManage && (
-                    <Button className="w-full" onClick={publishNow} disabled={busy}>
-                      <Rocket aria-hidden className="size-4" />
-                      Publish changes
-                    </Button>
-                  )}
-                  <ButtonLink href={publicSiteHref(website.site.platformSlug)} variant="secondary" className="w-full">
-                    View live website
-                    <SquareArrowOutUpRight aria-hidden className="size-4" />
-                  </ButtonLink>
-                  {canManage && (
-                    <Button variant="secondary" className="w-full" onClick={askUnpublish}>
-                      <EyeOff aria-hidden className="size-4" />
-                      Unpublish
-                    </Button>
-                  )}
-                </div>
+                {canManage && (
+                  <Button variant="secondary" className="mt-4 w-full" onClick={askUnpublish}>
+                    <EyeOff aria-hidden className="size-4" />
+                    Unpublish
+                  </Button>
+                )}
                 <p className="mt-3 text-xs text-ink-muted">
                   Unpublishing makes the website private without deleting any pages or content.
                 </p>
@@ -291,14 +262,9 @@ export function WebsiteOverview() {
             ) : (
               <>
                 <p className="text-sm text-ink-muted">
-                  Your website is ready to preview. Publish it when you are satisfied with the content and booking setup.
+                  Your website is a draft that only you can see.
+                  {canManage ? " Choose Publish website at the top of the page when you are satisfied with the content and booking setup." : ""}
                 </p>
-                {canManage && (
-                  <Button className="mt-4 w-full" onClick={publishNow} disabled={busy}>
-                    <Rocket aria-hidden className="size-4" />
-                    Publish website
-                  </Button>
-                )}
                 <p className="mt-3 rounded-btn bg-surface-low px-3 py-2 text-xs text-ink-muted">
                   Publishing makes the website accessible to customers at <strong className="break-all text-ink">{platform}</strong>. Publishing does not
                   change your Bookings, Services, Customers, Jobs, Invoices, or Payments.

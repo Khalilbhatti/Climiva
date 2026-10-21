@@ -58,7 +58,7 @@ async function captureAll(page: Page): Promise<Calls> {
   await page.goto("/website");
   await page.getByRole("region", { name: "Publishing" }).getByRole("button", { name: "Unpublish" }).click();
   const unpublish = await captureAction(page, () => page.getByRole("dialog", { name: "Unpublish website?" }).getByRole("button", { name: "Unpublish" }).click());
-  await expect(page.getByRole("region", { name: "Publishing" })).toContainText("Your website is ready to preview.");
+  await expect(page.getByRole("region", { name: "Publishing" })).toContainText("Your website is a draft that only you can see.");
   return { save, publish, unpublish, add, verify, activate, disable, remove, main };
 }
 

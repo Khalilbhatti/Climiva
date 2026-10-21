@@ -312,9 +312,12 @@ export async function insertReviews(tx: Tx, organizationId: string, timeZone: st
   }
 }
 
-/** Remove every review, reply and request of one organization (tests reset a worker's copy of the sample business with this). */
+/**
+ * Remove every review, reply and request of one organization (tests reset a worker's copy of the sample business with this). In the order the rows depend on
+ * one another: a reply needs its review, and a review that answers a request needs that request, so the requests go last.
+ */
 export async function clearReviews(tx: Tx, organizationId: string): Promise<void> {
   await tx.delete(reviewReplies).where(eq(reviewReplies.organizationId, organizationId));
-  await tx.delete(reviewRequests).where(eq(reviewRequests.organizationId, organizationId));
   await tx.delete(reviews).where(eq(reviews.organizationId, organizationId));
+  await tx.delete(reviewRequests).where(eq(reviewRequests.organizationId, organizationId));
 }

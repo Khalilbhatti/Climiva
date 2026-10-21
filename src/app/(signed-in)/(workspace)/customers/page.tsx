@@ -16,7 +16,7 @@ export default async function CustomersPage() {
     <>
       <PageHeader
         title="Customers"
-        description="Manage customer relationships, service locations and HVAC equipment history."
+        description="People your business serves, and their service history."
         // The empty state carries its own primary action, so the header one waits for the first customer.
         actions={book.customers.length > 0 && <AddCustomerButton />}
       />

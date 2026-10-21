@@ -304,7 +304,7 @@ test.describe("Record payment", () => {
 
   test("the Overview quick action opens this same flow, ending in the same PAY-1009 and totals", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("region", { name: "Core Operational Workflows" }).getByRole("link", { name: /Record payment/ }).click();
+    await page.getByRole("region", { name: "Quick actions" }).getByRole("link", { name: /Record payment/ }).click();
     await expect(page).toHaveURL(/\/payments\?record=1$/);
     await expect(page.getByRole("heading", { level: 1, name: "Payments" })).toBeVisible();
     const dialog = recordDialog(page);

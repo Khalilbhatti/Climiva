@@ -167,7 +167,7 @@ test.describe("a customer's domain with an active claim", () => {
             expect(response.headers["set-cookie"], label).toBeUndefined();
             expect(response.body, label).not.toContain(LANDING);
             expect(response.body, label).not.toContain(provider.name);
-            expect(text(response.body), label).not.toMatch(/Workspace Overview|Platform sign-in|Climvia Marketplace|Log in to|Create your account/);
+            expect(text(response.body), label).not.toMatch(/What needs your attention today|Platform sign-in|Climvia Marketplace|Log in to|Create your account/);
           }
         }
       }

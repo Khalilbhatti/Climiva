@@ -105,11 +105,11 @@ test.describe("Services come from the database", () => {
     const wizard = page.getByRole("dialog", { name: "Add new service" });
     await wizard.getByLabel("Service name").fill("Zephyr Duct Cleaning");
     await wizard.getByLabel("Customer-facing description").fill("Whole-home duct cleaning, added by the browser tests.");
-    await wizard.getByRole("button", { name: /^Next: Booking/ }).click();
+    await wizard.getByRole("button", { name: /^Next: How customers book/ }).click();
     await wizard.getByRole("radio", { name: /^Instant booking/ }).check();
     await wizard.getByRole("button", { name: /^Next: Pricing/ }).click();
     await wizard.getByLabel("Fee amount (USD)").or(wizard.getByLabel("Price (USD)")).fill("75");
-    await wizard.getByRole("button", { name: /^Next: Availability/ }).click();
+    await wizard.getByRole("button", { name: /^Next: Where customers see it/ }).click();
     await wizard.getByRole("button", { name: /^Next: Review/ }).click();
     await wizard.getByRole("button", { name: "Add service" }).click();
     await expect(toast(page).filter({ hasText: "Zephyr Duct Cleaning was added to your services." })).toBeVisible();

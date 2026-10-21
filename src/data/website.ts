@@ -188,7 +188,7 @@ export type PageStatus = "published" | "unpublished-changes" | "private";
 export const PAGE_STATUS_LABEL: Record<PageStatus, string> = {
   published: "Published",
   "unpublished-changes": "Saved · unpublished changes",
-  private: "Private",
+  private: "Draft",
 };
 
 export function getPageStatus(state: WebsiteState, key: PageKey): PageStatus {

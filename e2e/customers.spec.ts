@@ -7,7 +7,7 @@ test.describe("Customers", () => {
     await page.goto("/customers");
 
     await expect(page.getByRole("heading", { level: 1, name: "Customers" })).toBeVisible();
-    await expect(page.getByText("Manage customer relationships, service locations and HVAC equipment history.")).toBeVisible();
+    await expect(page.getByText("People your business serves, and their service history.")).toBeVisible();
 
     const table = page.getByRole("table", { name: "Customers" });
     await expect(table.getByRole("columnheader")).toHaveText([
@@ -90,12 +90,12 @@ test.describe("Customers", () => {
     // JB-204 is completed, so Sarah has no service in progress: it is listed in her visit history instead.
     await expect(page.getByRole("heading", { name: "Current service" })).toHaveCount(0);
     for (const heading of [
-      "Service properties (1)",
-      "HVAC equipment snapshot",
-      "Recent service visits",
-      "Customer contact",
+      "Properties (1)",
+      "Equipment",
+      "Jobs",
+      "Contact",
       "Customer notes",
-      "Maintenance agreement",
+      "Maintenance plan",
     ]) {
       await expect(page.getByRole("heading", { name: heading })).toBeVisible();
     }
@@ -150,7 +150,7 @@ test.describe("Customers", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Hannah Wright" })).toBeVisible();
     await expect(page.getByText("No equipment is on record yet.")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Customer notes" })).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "Maintenance agreement" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Maintenance plan" })).toHaveCount(0);
 
     await page.goto("/customers/hannah-wright/properties");
     await expect(page.getByText("No equipment is on record for this property yet.")).toBeVisible();

@@ -167,13 +167,15 @@ test.describe("creating the workspace", () => {
   test("the new workspace is empty: no customers, services, jobs, bookings or money, and no sample data", async ({ page, db }) => {
     const owner = await signUp(page, { name: "Dana Founder" });
     await completeOnboarding(page, { name: "Blank Slate Cooling" });
-    await expect(page.getByText("Your workspace is ready")).toBeVisible();
+    // A new business is asked to set up, and shown the true state of it: nothing is done, and no day or figure is made up for it.
+    await expect(page.getByRole("heading", { level: 2, name: "Getting started" })).toBeVisible();
+    await expect(page.getByText("0 of 5 completed")).toBeVisible();
     await expect(page.getByRole("region", { name: "Key metrics" })).toHaveCount(0);
-    await expect(page.getByText("Core Operational Workflows")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Today" })).toHaveCount(0);
     await expect(page.getByText("Apex")).toHaveCount(0);
     await expect(switcher(page)).toContainText("Blank Slate Cooling");
-    // Sidebar counts belong to the sample business.
-    await expect(page.getByRole("navigation", { name: "Primary" }).locator("a span.font-mono")).toHaveCount(0);
+    // A new business has no request waiting for an answer, so no count sits beside Bookings.
+    await expect(page.getByRole("navigation", { name: "Primary" }).getByText("waiting for an answer")).toHaveCount(0);
     // Payments and Quotes & Invoices are the business's own now, and it has none yet: real empty states with zero totals, not "isn't available".
     await page.goto("/payments");
     await expect(page.getByRole("heading", { name: "No payments recorded yet" })).toBeVisible();
@@ -182,14 +184,13 @@ test.describe("creating the workspace", () => {
       await expect(paymentTotals.getByText(label, { exact: true }).locator("xpath=../..")).toContainText(value);
     }
     await page.goto("/quotes-invoices");
-    await expect(page.getByText("No quotes yet.")).toBeVisible();
-    await page.getByRole("tab", { name: /^Invoices/ }).click();
-    await expect(page.getByText("No invoices yet.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "No quotes or invoices yet" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Quote and invoice totals" })).toHaveCount(0);
     await expect(page.getByText(/isn't available for Blank Slate Cooling yet/)).toHaveCount(0);
     await expect(page.getByText("Sarah Mitchell")).toHaveCount(0);
     // Bookings, Jobs and the Schedule are the business's own now, and it has none yet: real empty states.
     await page.goto("/bookings");
-    await expect(page.getByText("No bookings yet. Create a booking to get started.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "No bookings yet" })).toBeVisible();
     await page.goto("/jobs");
     await expect(page.getByRole("heading", { name: "No jobs yet" })).toBeVisible();
     await page.goto("/schedule");
@@ -265,7 +266,7 @@ test.describe("creating the workspace", () => {
     for (let step = 0; step < 3; step++) await page.getByRole("button", { name: "Continue" }).click();
     const create = page.getByRole("button", { name: "Create workspace" });
     await create.dblclick();
-    await expect(page.getByRole("heading", { level: 1, name: "Workspace Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
     const user = await db.query<{ id: string }>("select id from auth_user where email = $1", [email]);
     expect((await db.query("select 1 from organization_memberships where user_id = $1", [user.rows[0].id])).rowCount).toBe(1);
   });
@@ -307,7 +308,7 @@ test.describe("creating the workspace", () => {
     expect((await db.query("select 1 from organization_memberships where user_id = $1", [user.rows[0].id])).rowCount).toBe(0);
     await page.unroute("**/onboarding");
     await page.getByRole("button", { name: "Create workspace" }).click();
-    await expect(page.getByRole("heading", { level: 1, name: "Workspace Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
   });
 });
 

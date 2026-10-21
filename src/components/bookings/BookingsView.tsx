@@ -3,13 +3,14 @@
 import { useMemo, useState } from "react";
 import type { Route } from "next";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Link2, Plus } from "lucide-react";
+import { CalendarDays, Link2, Plus } from "lucide-react";
 import { useMaintenancePlans } from "@/components/maintenance-plans/MaintenancePlansProvider";
 import { useOperations } from "@/components/operations/OperationsProvider";
 import { BookingStatusBadge } from "@/components/operations/StatusBadges";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Select } from "@/components/ui/Select";
@@ -163,154 +164,162 @@ export function BookingsView() {
         }
       />
 
-      <Card padding="md" className="space-y-4">
-        <Tabs
-          label="Booking lists"
-          idPrefix="bookings"
-          tabs={tabs}
-          value={tabId}
-          onChange={(id) => setParams({ tab: id, booking: null })}
+      {data.bookings.length === 0 ? (
+        <EmptyState
+          icon={CalendarDays}
+          title="No bookings yet"
+          description={
+            canManage
+              ? "Customers book through your website and the Marketplace, and each request lands here. You can also create a booking yourself for a customer."
+              : "Customers book through your website and the Marketplace, and each request lands here."
+          }
         />
-
-        <div className="flex flex-wrap items-end gap-3">
-          <SearchInput
-            wrapperClassName="min-w-60 flex-1"
-            aria-label="Search bookings"
-            placeholder="Search customer, service, phone or address..."
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
+      ) : (
+        <Card padding="md" className="space-y-4">
+          <Tabs
+            label="Booking lists"
+            idPrefix="bookings"
+            tabs={tabs}
+            value={tabId}
+            onChange={(id) => setParams({ tab: id, booking: null })}
           />
-          <div className="w-52">
-            <Select label="Service" hideLabel value={serviceFilter} onChange={(event) => setServiceFilter(event.target.value)}>
-              <option value="all">Service: All</option>
-              {dir.services.map((service) => (
-                <option key={service.id} value={service.id}>
-                  {service.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="w-52">
-            <Select label="Source" hideLabel value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value as "all" | BookingSource)}>
-              <option value="all">Source: All sources</option>
-              {BOOKING_SOURCES.map((source) => (
-                <option key={source}>{source}</option>
-              ))}
-            </Select>
-          </div>
-          {filtering && (
-            <Button
-              variant="tertiary"
-              onClick={() => {
-                setQuery("");
-                setServiceFilter("all");
-                setSourceFilter("all");
-              }}
-            >
-              Clear filters
-            </Button>
-          )}
-        </div>
 
-        <div
-          role="tabpanel"
-          id={`bookings-panel-${tabId}`}
-          aria-labelledby={`bookings-tab-${tabId}`}
-          className={cn("gap-5", compact ? "grid grid-cols-[minmax(0,1fr)] items-start xl:grid-cols-[minmax(0,1fr)_24rem]" : "block")}
-        >
-          <div className="space-y-3">
-            <Table aria-label={`${activeTab.label} bookings`} className="[&_td]:px-3 [&_th]:px-3">
-              <TableHead>
-                <tr>
-                  <TableHeaderCell>Customer</TableHeaderCell>
-                  <TableHeaderCell>Service</TableHeaderCell>
-                  <TableHeaderCell>{tabId === "requests" ? "Requested time" : "Time"}</TableHeaderCell>
-                  {!compact && <TableHeaderCell>Booking method</TableHeaderCell>}
-                  {!compact && <TableHeaderCell>Source</TableHeaderCell>}
-                  <TableHeaderCell>Status</TableHeaderCell>
-                  {!compact && <TableHeaderCell>Received</TableHeaderCell>}
-                  <TableHeaderCell>
-                    <span className="sr-only">Action</span>
-                  </TableHeaderCell>
-                </tr>
-              </TableHead>
-              <TableBody>
-                {visible.length === 0 ? (
+          <div className="flex flex-wrap items-end gap-3">
+            <SearchInput
+              wrapperClassName="min-w-60 flex-1"
+              aria-label="Search bookings"
+              placeholder="Search customer, service, phone or address..."
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <div className="w-52">
+              <Select label="Service" hideLabel value={serviceFilter} onChange={(event) => setServiceFilter(event.target.value)}>
+                <option value="all">Service: All</option>
+                {dir.services.map((service) => (
+                  <option key={service.id} value={service.id}>
+                    {service.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="w-52">
+              <Select label="Source" hideLabel value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value as "all" | BookingSource)}>
+                <option value="all">Source: All sources</option>
+                {BOOKING_SOURCES.map((source) => (
+                  <option key={source}>{source}</option>
+                ))}
+              </Select>
+            </div>
+            {filtering && (
+              <Button
+                variant="tertiary"
+                onClick={() => {
+                  setQuery("");
+                  setServiceFilter("all");
+                  setSourceFilter("all");
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </div>
+
+          <div
+            role="tabpanel"
+            id={`bookings-panel-${tabId}`}
+            aria-labelledby={`bookings-tab-${tabId}`}
+            className={cn("gap-5", compact ? "grid grid-cols-[minmax(0,1fr)] items-start xl:grid-cols-[minmax(0,1fr)_24rem]" : "block")}
+          >
+            <div className="space-y-3">
+              <Table aria-label={`${activeTab.label} bookings`} className="[&_td]:px-3 [&_th]:px-3">
+                <TableHead>
                   <tr>
-                    <td colSpan={8} className="px-4 py-10 text-center text-sm text-ink-muted">
-                      {filtering
-                        ? "No bookings match your search."
-                        : data.bookings.length === 0
-                          ? `No bookings yet.${canManage ? " Create a booking to get started." : ""}`
-                          : EMPTY_COPY[tabId]}
-                    </td>
+                    <TableHeaderCell>Customer</TableHeaderCell>
+                    <TableHeaderCell>Service</TableHeaderCell>
+                    <TableHeaderCell>{tabId === "requests" ? "Requested time" : "Time"}</TableHeaderCell>
+                    {!compact && <TableHeaderCell>Booking method</TableHeaderCell>}
+                    {!compact && <TableHeaderCell>Source</TableHeaderCell>}
+                    <TableHeaderCell>Status</TableHeaderCell>
+                    {!compact && <TableHeaderCell>Received</TableHeaderCell>}
+                    <TableHeaderCell>
+                      <span className="sr-only">Action</span>
+                    </TableHeaderCell>
                   </tr>
-                ) : (
-                  visible.map((booking) => {
-                    const name = getPartyName(booking, dir);
-                    const service = getServiceById(booking.serviceId, dir.services);
-                    const isSelected = booking.id === selectedId;
-                    return (
-                      <TableRow key={booking.id} className={isSelected ? "bg-primary-subtle/50" : undefined}>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <Avatar name={name} />
-                            <span className="font-semibold whitespace-nowrap text-ink">{name}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="max-w-56">
-                          <div className="font-medium">{getServiceNameFor(booking, dir)}</div>
-                          {booking.note && <div className="text-xs text-ink-muted">{booking.note}</div>}
-                          {(() => {
-                            const included = getPlanVisitForBooking(booking, plans);
-                            return included ? (
-                              <div className="text-xs text-ink-muted">
-                                {included.plan.name} · Visit {included.visit.sequence} of {included.plan.visitsPerYear}
-                              </div>
-                            ) : null;
-                          })()}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          <div className="font-medium">{formatWeekdayDate(booking.date)}</div>
-                          <div className="text-xs text-ink-muted">{formatTimeRange(booking.start, booking.end)}</div>
-                        </TableCell>
-                        {!compact && <TableCell>{service ? BOOKING_METHOD_LABEL[service.bookingMethod] : "—"}</TableCell>}
-                        {!compact && <TableCell>{booking.source ?? "—"}</TableCell>}
-                        <TableCell>
-                          <BookingStatusBadge status={booking.status} />
-                        </TableCell>
-                        {!compact && (
-                          <TableCell className="whitespace-nowrap text-xs text-ink-muted">
-                            {booking.receivedAt ? formatLocalDateTime(booking.receivedAt) : "—"}
+                </TableHead>
+                <TableBody>
+                  {visible.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-10 text-center text-sm text-ink-muted">
+                        {filtering ? "No bookings match your search." : EMPTY_COPY[tabId]}
+                      </td>
+                    </tr>
+                  ) : (
+                    visible.map((booking) => {
+                      const name = getPartyName(booking, dir);
+                      const service = getServiceById(booking.serviceId, dir.services);
+                      const isSelected = booking.id === selectedId;
+                      return (
+                        <TableRow key={booking.id} className={isSelected ? "bg-primary-subtle/50" : undefined}>
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <Avatar name={name} />
+                              <span className="font-semibold whitespace-nowrap text-ink">{name}</span>
+                            </div>
                           </TableCell>
-                        )}
-                        <TableCell className="text-right">
-                          <button
-                            type="button"
-                            id={`review-${booking.id}`}
-                            aria-label={`Review booking ${booking.id} for ${name}`}
-                            aria-pressed={isSelected}
-                            onClick={() => setParams({ booking: booking.id })}
-                            className="rounded-btn px-2 py-1 text-sm font-semibold text-primary transition-colors hover:bg-primary-subtle"
-                          >
-                            Review
-                          </button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-            <p aria-live="polite" className="text-xs text-ink-muted">
-              Showing {visible.length} of {tabBookings.length} {tabId === "requests" ? "pending" : activeTab.label.toLowerCase()} booking
-              {tabBookings.length === 1 ? "" : "s"}
-            </p>
-          </div>
+                          <TableCell className="max-w-56">
+                            <div className="font-medium">{getServiceNameFor(booking, dir)}</div>
+                            {booking.note && <div className="text-xs text-ink-muted">{booking.note}</div>}
+                            {(() => {
+                              const included = getPlanVisitForBooking(booking, plans);
+                              return included ? (
+                                <div className="text-xs text-ink-muted">
+                                  {included.plan.name} · Visit {included.visit.sequence} of {included.plan.visitsPerYear}
+                                </div>
+                              ) : null;
+                            })()}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            <div className="font-medium">{formatWeekdayDate(booking.date)}</div>
+                            <div className="text-xs text-ink-muted">{formatTimeRange(booking.start, booking.end)}</div>
+                          </TableCell>
+                          {!compact && <TableCell>{service ? BOOKING_METHOD_LABEL[service.bookingMethod] : "—"}</TableCell>}
+                          {!compact && <TableCell>{booking.source ?? "—"}</TableCell>}
+                          <TableCell>
+                            <BookingStatusBadge status={booking.status} />
+                          </TableCell>
+                          {!compact && (
+                            <TableCell className="whitespace-nowrap text-xs text-ink-muted">
+                              {booking.receivedAt ? formatLocalDateTime(booking.receivedAt) : "—"}
+                            </TableCell>
+                          )}
+                          <TableCell className="text-right">
+                            <button
+                              type="button"
+                              id={`review-${booking.id}`}
+                              aria-label={`Review booking ${booking.id} for ${name}`}
+                              aria-pressed={isSelected}
+                              onClick={() => setParams({ booking: booking.id })}
+                              className="rounded-btn px-2 py-1 text-sm font-semibold text-primary transition-colors hover:bg-primary-subtle"
+                            >
+                              Review
+                            </button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+              <p aria-live="polite" className="text-xs text-ink-muted">
+                Showing {visible.length} of {tabBookings.length} {tabId === "requests" ? "pending" : activeTab.label.toLowerCase()} booking
+                {tabBookings.length === 1 ? "" : "s"}
+              </p>
+            </div>
 
-          {selected && <BookingDrawer booking={selected} onClose={closeDrawer} onTabChange={(id) => setParams({ tab: id })} />}
-        </div>
-      </Card>
+            {selected && <BookingDrawer booking={selected} onClose={closeDrawer} onTabChange={(id) => setParams({ tab: id })} />}
+          </div>
+        </Card>
+      )}
 
       {creating && (
         <CreateBookingModal

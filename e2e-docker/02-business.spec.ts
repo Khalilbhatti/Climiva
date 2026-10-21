@@ -70,9 +70,9 @@ test("the first person signs up from the landing and sets up a business on the e
   email = await signUp(page, { name: "Dana Owner" });
   await completeOnboarding(page, { name: BUSINESS });
   await expect(page).toHaveURL(/\/overview$/);
-  // A workspace with nothing in it but things to do: a welcome and five next steps, no sample record and no invented figure.
-  await expect(page.getByRole("heading", { level: 2, name: "Your workspace is ready" })).toBeVisible();
-  await expect(page.getByRole("list", { name: "Next steps" }).getByRole("link")).toHaveCount(5);
+  // A workspace with nothing in it but things to do: Getting started with five steps, none done, no sample record and no invented figure.
+  await expect(page.getByRole("heading", { level: 2, name: "Getting started" })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Setup steps" }).getByRole("link")).toHaveCount(5);
   expect(await page.locator("main").innerText()).not.toMatch(/Apex|Northstar|Sarah Mitchell|NaN|undefined|\$\d/);
   expect(Number(one("select count(*) from customers"))).toBe(0);
   expect(Number(one("select count(*) from team_members"))).toBe(1);
@@ -103,11 +103,11 @@ test("a Service is added through the wizard and the Website shows it", async () 
   const wizard = page.getByRole("dialog", { name: "Add new service" });
   await wizard.getByLabel("Service name").fill("Docker Tune-up");
   await wizard.getByLabel("Customer-facing description").fill("A tune-up, booked on a customer's own domain.");
-  await wizard.getByRole("button", { name: /^Next: Booking/ }).click();
+  await wizard.getByRole("button", { name: /^Next: How customers book/ }).click();
   await wizard.getByRole("radio", { name: /^Instant booking/ }).check();
   await wizard.getByRole("button", { name: /^Next: Pricing/ }).click();
   await wizard.getByLabel("Fee amount (USD)").or(wizard.getByLabel("Price (USD)")).fill("75");
-  await wizard.getByRole("button", { name: /^Next: Availability/ }).click();
+  await wizard.getByRole("button", { name: /^Next: Where customers see it/ }).click();
   await wizard.getByRole("button", { name: /^Next: Review/ }).click();
   await wizard.getByRole("button", { name: "Add service" }).click();
   await expect(wizard).toBeHidden();

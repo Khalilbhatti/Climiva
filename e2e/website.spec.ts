@@ -15,7 +15,7 @@ test.describe("Website overview", () => {
     const host = siteAddress(workerTenant.platformSlug);
     await page.goto("/website");
     await expect(page.getByRole("heading", { level: 1, name: "Website" })).toBeVisible();
-    await expect(page.getByText("Manage your public website, service pages, booking experience, and domain.")).toBeVisible();
+    await expect(page.getByText("Your public website: what visitors see, how they book, and the address they use.")).toBeVisible();
     await expect(primaryNav(page).getByRole("link", { name: /^Website/ })).toHaveAttribute("aria-current", "page");
     await expect(main(page).getByText("Published").first()).toBeVisible();
 
@@ -30,7 +30,9 @@ test.describe("Website overview", () => {
 
     const publishing = card(page, "Publishing");
     await expect(publishing).toContainText("Your website is live and open to visitors.");
-    await expect(publishing.getByRole("link", { name: /View live website/ })).toBeVisible();
+    // Looking at the live site is one of the header's actions, not repeated in the card.
+    await expect(page.getByRole("link", { name: /View live website/ })).toBeVisible();
+    await expect(publishing.getByRole("link", { name: /View live website/ })).toHaveCount(0);
     await expect(publishing.getByRole("button", { name: "Unpublish" })).toBeVisible();
     await expect(publishing).toContainText("Unpublishing makes the website private without deleting any pages or content.");
 
@@ -421,9 +423,9 @@ test.describe("Publishing", () => {
     await card(page, "Publishing").getByRole("button", { name: "Unpublish" }).click();
     await page.getByRole("dialog", { name: "Unpublish website?" }).getByRole("button", { name: "Unpublish" }).click();
     await expect(toast(page)).toContainText("Website unpublished. It is now private.");
-    await expect(main(page)).toContainText("Private");
-    await expect(main(page)).toContainText("Preview link accessible");
-    await expect(card(page, "Publishing")).toContainText("Your website is ready to preview.");
+    await expect(main(page)).toContainText("Draft");
+    await expect(main(page)).toContainText("Only you can see it until you publish");
+    await expect(card(page, "Publishing")).toContainText("Your website is a draft that only you can see.");
     await expect(card(page, "Publishing")).toContainText("Publishing does not change your Bookings, Services, Customers, Jobs, Invoices, or Payments.");
     await expect(page.getByRole("link", { name: /View live website/ })).toHaveCount(0);
     // Visitors can no longer open it.
@@ -431,9 +433,9 @@ test.describe("Publishing", () => {
     expect(closed?.status()).toBe(404);
     await page.goto("/website");
 
-    // Private: the pages say so, the draft is still previewable, the live view is not available.
+    // Draft: the pages say so, the draft is still previewable, the live view is not available.
     await websiteTabs(page).getByRole("link", { name: "Pages & content" }).click();
-    await expect(page.getByRole("region", { name: "Website pages" }).getByText("Private")).toHaveCount(6); // five rows + the summary
+    await expect(page.getByRole("region", { name: "Website pages" }).getByText("Draft", { exact: true })).toHaveCount(6); // five rows + the summary
     await page.getByRole("link", { name: "Preview website" }).click();
     await expect(page.getByRole("heading", { level: 1, name: /Heating & cooling service/ })).toBeVisible();
     await page.getByRole("link", { name: "Back to editor" }).click();

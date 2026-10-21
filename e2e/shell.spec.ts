@@ -47,11 +47,11 @@ test.describe("Global shell", () => {
   });
 });
 
-test.describe("Workspace Overview", () => {
+test.describe("Overview", () => {
   test("renders the approved content from the centralized fixtures", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { level: 1, name: "Workspace Overview" })).toBeVisible();
-    await expect(page.getByText(`Operational activity, scheduled appointments, and pending records for ${business.name}.`)).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
+    await expect(page.getByText(`What needs your attention today at ${business.name}.`)).toBeVisible();
 
     const metrics = page.getByRole("region", { name: "Key metrics" });
     await expect(metrics).toContainText(String(OVERVIEW_TOTALS.bookings));
@@ -60,8 +60,8 @@ test.describe("Workspace Overview", () => {
     await expect(metrics).toContainText("$2,130");
     await expect(metrics).toContainText("7 recorded non-voided payments");
 
-    for (const title of ["New booking", "Record payment", "Create maintenance plan", "Create campaign"]) {
-      await expect(page.getByRole("region", { name: "Core Operational Workflows" }).getByRole("link", { name: new RegExp(title) })).toBeVisible();
+    for (const title of ["Create booking", "Add customer", "Record payment", "Create maintenance plan", "Create campaign"]) {
+      await expect(page.getByRole("region", { name: "Quick actions" }).getByRole("link", { name: new RegExp(title) })).toBeVisible();
     }
   });
 
@@ -85,7 +85,7 @@ test.describe("Workspace Overview", () => {
     ];
     for (const [title, href] of targets) {
       await page.goto("/");
-      await page.getByRole("region", { name: "Core Operational Workflows" }).getByRole("link", { name: new RegExp(title) }).click();
+      await page.getByRole("region", { name: "Quick actions" }).getByRole("link", { name: new RegExp(title) }).click();
       await expect(page).toHaveURL(href);
     }
   });

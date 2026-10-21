@@ -2248,3 +2248,65 @@ A customer made from a booking has a name, a phone, an email and a default prefe
 **The rule (0031).** Phase 19E first shipped with a resolver that, when the email was new, took "the only customer who has this phone" for the same person. A shared landline, a household, an office's front desk: that would have folded one person's bookings into another's customer, and their activity, their review requests and their marketing with it. Migration **0031** (hand-written, no schema change, `0030` untouched) replaces the resolver's body with the table in §40.3 and keeps its name, signature and privileges (nobody but its owner and the booking function that calls it). It was proved three ways: a database at the migration before it, with data, is upgraded and its customers are byte-for-byte what they were (`customer-resolver-upgrade.spec.ts`); a second migrate changes nothing; and the upgraded database compares equal to one built from zero on every table and sixteen kinds of catalog object. The ten cases of the rule are one test each in `customer-acquisition-database.spec.ts`, the concurrency tests were re-run with it (a household's two people booking six times each at the same instant are two customers with six bookings each, three rounds), and `customer-identity-safety.spec.ts` holds what is downstream: the marketing audiences keep a household's people as separate customers with their own emails (nothing is sent), a review request names the person it was made for and the review that returns is theirs alone, and a repeat booking, a changed phone and a third person on the same phone move nobody's bookings to another's page.
 
 **The tests' shared state.** The Phase 19E repeat reported `fingerprint-catalog.spec.ts` failing when its repetitions ran at once. Two things were shared, and both are fixed at their root: the spec made its databases under fixed names (`climvia_fp_source`, `climvia_fp_copy`), so one repetition dropped the databases another was comparing (each worker now has names of its own, by its index), and every migration of a database rewrote the **runtime role**, which belongs to the whole server and which PostgreSQL will not let two sessions change at once (`tuple concurrently updated`). `provisionRuntimeRole` now leaves the role alone when it already is what provisioning would make it (it can log in and nothing else, and this password opens a session); a changed `POSTGRES_APP_PASSWORD` is still applied on the next migrate, and `db:roles` and the restore script behave as before. The spec, with the upgrade spec, was then run three times at once, six workers, and nothing collided.
+
+## 41. The workspace, simplified (Phase 19F)
+
+Phase 19F changed **how the product is organised and worded, not what it does**. No schema, migration, policy, server action, rule or total changed (`drizzle-kit generate` reports no changes); every figure and every row on a screen is still read from the records it was read from. What changed is where things are, what they are called, what is offered first, and what a screen says when there is nothing on it. It started from the running application: screenshots of every workspace page for the sample business and for a brand-new business made through the real Sign up and set-up, and of the public pages at desktop and phone width.
+
+### 41.1 What the audit found
+
+- The sidebar was a sixteen-module wall; on an ordinary window the last group sat under the pinned Settings and Help. Its two counts were **the month's totals** (24 bookings, 18 jobs), which nobody acts on.
+- A business that is not the sample business saw a static "Your workspace is ready" list, not its real state; the sample business saw four KPI cards and "Core Operational Workflows". Neither said what was on today or what needed an answer.
+- The workspace page for the Marketplace was titled "Marketplace", the same word as the public page homeowners search, and showed five "Not configured / Not selected" tiles above a "Set up listing" button that was offered twice.
+- A customer's page offered "Create quote / New job / New booking" **only to the sample business**, so a real business's customer had no way to start a booking from it.
+- Empty pages (Reviews, Marketing, Quotes & Invoices, Bookings) were rows of zero totals above an empty table.
+- The Website page offered Publish, Edit and Preview three times; an unpublished site was "Private" in some places and "not published" in others.
+
+### 41.2 Navigation
+
+| | Before | After |
+| --- | --- | --- |
+| Groups | Overview / Operations / Business / Financials / Growth / Insights | Overview, **Work** (Bookings, Schedule, Jobs), Customers, **Business** (Services, Team, Maintenance Plans), **Money** (Quotes & Invoices, Payments), **Growth** (Website, **Marketplace Listing**, Reviews, Marketing), **Insights** (Analytics); Settings and Help pinned below |
+| Single links | under a heading | Overview and Customers stand alone, with no heading that repeats their name |
+| Counts | Bookings 24, Jobs 18 (the month) | one: Bookings, the **requests waiting for an answer** (the same number as the Requests tab and the Overview's attention list); nothing beside Jobs |
+| Fit | Growth and Insights hidden under Settings and Help at 860 px | rows and gaps tightened; all fifteen modules fit at 860 px, and on a shorter window the list scrolls under a shadow that says it continues |
+| Hover | none | each link carries a one-line purpose |
+
+`src/config/navigation.ts` stays the one definition (the Help page and the shell specs read it). Routes did not change: the Marketplace's workspace page is still `/marketplace-listing`, and the public Marketplace is still `/marketplace`. Only the workspace page was renamed; nothing public was.
+
+### 41.3 The Overview
+
+`src/lib/overview-rules.ts` holds, as pure functions of the workspace's own records, everything the Overview says: the setup steps and how many are done, today's agenda, what needs attention, what is coming up and what is in progress. The page (`overview/page.tsx`) calls them for **any** business (the `hasSampleData` branch is gone), so the sample business and a new one are drawn by the same code.
+
+- **Getting started** lists five steps (a first Service, a Team, a published Website, a published Marketplace Listing, a first Customer or Booking). A step is done **only when the thing it names exists**: a service in the catalog, a second person on the team (the owner is the first), a published website, a published listing, a customer or a booking. It is never ticked by a click. Each step links to where it is done; Service and Customer open the real Add flow. It shows "N of 5 completed", is for owners and admins only, and can be hidden: the choice is a cookie for that business in that browser (read on the server, so the list never flashes), not a stored field.
+- **Today** is the jobs scheduled today and the bookings for today that have not become a job (a booking with a job is listed once, as the job). **Needs your attention** lists only what is real and non-zero: requests waiting, confirmed bookings with no technician, invoices not paid in full, reviews with no reply, each with the page where it is handled. **Coming up** is the next five bookings after today; **In progress** is jobs being worked on.
+- A business with nothing yet sees Getting started and no empty "Today"; **This month** (the four totals, unchanged: `getMonthTotals()`, region "Key metrics") appears once there is activity. **Quick actions** (Create booking, Add customer, Record payment, Create maintenance plan, Create campaign) is for people who may manage operations.
+
+### 41.4 "+ New", and links that open a flow
+
+A **New** button in the top bar offers Booking, Customer, Service and Payment, each only if the person's role allows it (a member sees no button). It is a list of links, not a command system. A link such as `/customers?new=1` opens the real Add flow on the destination page and then **removes the flag from the address** (`useOpenedByLink`), so a reload does not open it again. It is a convenience for the screen: the page and the server action still ask the server whether the person may.
+
+### 41.5 Words
+
+One vocabulary is used on every screen: Customer, Booking, Job, Service, Team member, Marketplace Listing, Website, Review Request, Quote, Invoice, Payment. The module is **Marketplace Listing** ("listing" in running text); an unpublished website and its pages are **Draft** (not "Private"); a customer's sections are Bookings, Properties, Equipment, Jobs, Contact, Maintenance plan; the Add Service steps are Service basics, How customers book, Pricing, Where customers see it, Review; a request for an appointment is a **request**, in words and in colour (a clock on a neutral panel), never the green check of an instant booking.
+
+### 41.6 Pages
+
+- **Customers**: the header offers **Create booking** (to anyone who manages operations, not only the sample business) and **Request review** (only for a customer with a completed job that has no request yet); a customer made from a guest's booking opens on its Bookings, so it never looks empty.
+- **Bookings / Jobs**: an empty business sees one empty state; a confirmed booking says what happens next; Jobs explains Booking → Job → Completion in its empty state.
+- **Website**: one header holds Edit website (the main action), View live website or Preview website, and Publish; the cards below no longer repeat them.
+- **Marketplace Listing**: the main action follows the state (Set up listing, Publish listing, View public profile; Preview listing while suspended); the summary tiles appear once there is a listing to summarise.
+- **Reviews, Marketing, Quotes & Invoices, Bookings**: no zero totals before there is anything to count; each says what the page is and the one thing to do first. The Request review dialog says why a customer cannot be asked yet.
+- **Settings** points to Team permissions, Booking and Domains, which are set where they are used. **Analytics** and **Marketing** have plain-language descriptions.
+- **Platform console**: the rail is dark where a workspace is light, so nobody has to read a label to know which they are in.
+
+### 41.7 Limits (left as they were, on purpose)
+
+- A Quote **cannot be created** by hand (only an Invoice from an approved Quote, and a Payment), and a **Property cannot be added** to a customer by hand, so neither is offered anywhere; no flow was built for them in this phase.
+- A customer page has no "Add note": notes are read-only today.
+- The global search still covers Customers, Jobs, Bookings and the Schedule, and says so.
+- The workspace is still tablet and desktop first; the sidebar does not collapse.
+
+### 41.8 Tests and checks
+
+`ux-journeys.spec.ts` walks the main journeys by what is on the screen: a new owner from the landing page to a published Marketplace Listing (Getting started counts only what is really there, and hiding it survives a reload); a returning owner working the day from the Overview; a review asked for from the customer, answered on the public page and read by the business; a visitor on a phone asking for an appointment; a platform administrator moving through the console; a team member offered nothing to create; the navigation and the New menu. Existing specs that read the old words were adapted to the new ones, and the pages that now show a single empty state are held to it. The new and navigation-sensitive specs were run three times over with no failure. `docs/manual-qa-checklist.md` is the 25-minute walk-through for a person who is not a developer.

@@ -5,7 +5,7 @@ import { ListingEditor } from "@/components/marketplace/ListingEditor";
 import { can } from "@/lib/policy";
 import { requireWorkspaceContext } from "@/server/workspace";
 
-export const metadata: Metadata = { title: "Edit Marketplace listing" };
+export const metadata: Metadata = { title: "Edit Marketplace Listing" };
 
 export default async function EditMarketplaceListingPage() {
   const { role } = await requireWorkspaceContext();

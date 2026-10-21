@@ -8,6 +8,7 @@ import { CircleCheck, Clock, FileCheck2, FileText, Info } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { KpiCard } from "@/components/ui/KpiCard";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Select } from "@/components/ui/Select";
@@ -121,9 +122,23 @@ export function QuotesInvoicesView() {
     setInvoiceStatus("all");
   }
 
+  // Nothing has been created yet: say what this page holds, instead of four zero totals over two empty tables.
+  if (quotes.length === 0 && invoices.length === 0) {
+    return (
+      <>
+        <PageHeader title="Quotes & Invoices" description="What you have quoted and billed your customers." />
+        <EmptyState
+          icon={FileText}
+          title="No quotes or invoices yet"
+          description="Quotes, and the invoices made from approved quotes, are listed here. Payments you receive are recorded against those invoices."
+        />
+      </>
+    );
+  }
+
   return (
     <>
-      <PageHeader title="Quotes & Invoices" description="Track customer quotes and invoices, and bill approved work." />
+      <PageHeader title="Quotes & Invoices" description="What you have quoted and billed your customers." />
 
       <section aria-label="Quote and invoice totals" className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard

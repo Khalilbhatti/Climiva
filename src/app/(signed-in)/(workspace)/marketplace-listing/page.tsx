@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { MarketplaceOverview } from "@/components/marketplace/MarketplaceOverview";
 import { requireWorkspaceContext } from "@/server/workspace";
 
-export const metadata: Metadata = { title: "Marketplace" };
+export const metadata: Metadata = { title: "Marketplace Listing" };
 
 export default async function MarketplacePage() {
   await requireWorkspaceContext();

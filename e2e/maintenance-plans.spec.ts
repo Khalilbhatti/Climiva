@@ -212,12 +212,12 @@ test.describe("Create maintenance plan", () => {
     await expect(wizard).toBeHidden();
 
     await page.goto("/");
-    await page.getByRole("region", { name: "Core Operational Workflows" }).getByRole("link", { name: /Create maintenance plan/ }).click();
+    await page.getByRole("region", { name: "Quick actions" }).getByRole("link", { name: /Create maintenance plan/ }).click();
     await expect(page.getByRole("dialog", { name: "Create maintenance plan" })).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(1);
     // Other quick actions are unaffected.
     await page.goto("/");
-    await page.getByRole("region", { name: "Core Operational Workflows" }).getByRole("link", { name: /Record payment/ }).click();
+    await page.getByRole("region", { name: "Quick actions" }).getByRole("link", { name: /Record payment/ }).click();
     await expect(page).toHaveURL("/payments?record=1");
   });
 
@@ -469,7 +469,7 @@ test.describe("Schedule an included visit", () => {
 test.describe("Customers show the plan record", () => {
   test("Sarah's agreement and David's final plan label come from Maintenance Plans", async ({ page }) => {
     await page.goto("/customers/sarah-mitchell");
-    const agreement = page.getByRole("region", { name: "Maintenance agreement" });
+    const agreement = page.getByRole("region", { name: "Maintenance plan" });
     await expect(agreement).toContainText("Comfort Care");
     await expect(agreement).toContainText("$189");
 
@@ -488,6 +488,6 @@ test.describe("Customers show the plan record", () => {
     await expect(page.getByRole("table", { name: "Customers" }).locator("tbody tr", { hasText: "Elena Rodriguez" })).toContainText("Comfort Care");
     await page.getByRole("searchbox", { name: "Search customers", exact: true }).fill("elena");
     await page.getByRole("link", { name: /^View customer/ }).first().click();
-    await expect(page.getByRole("region", { name: "Maintenance agreement" })).toContainText("Comfort Care");
+    await expect(page.getByRole("region", { name: "Maintenance plan" })).toContainText("Comfort Care");
   });
 });

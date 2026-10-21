@@ -21,7 +21,7 @@ export function PageStatusBadge({ status }: { status: PageStatus }) {
 }
 
 export function SiteStatusBadge({ published }: { published: boolean }) {
-  return <StatusBadge tone={published ? "positive" : "neutral"}>{published ? "Published" : "Private"}</StatusBadge>;
+  return <StatusBadge tone={published ? "positive" : "neutral"}>{published ? "Published" : "Draft"}</StatusBadge>;
 }
 
 /** Publish and unpublish with their confirmations. Neither touches Bookings, Services, Customers, Jobs, Invoices or Payments. */

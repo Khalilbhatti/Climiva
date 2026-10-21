@@ -106,10 +106,10 @@ export function BookingDrawer({
           <KeyValueList
             className="rounded-card bg-surface-low p-4"
             items={[
+              { label: "Technician", value: assignee ?? "Unassigned" },
+              { label: "Booking method", value: service ? BOOKING_METHOD_LABEL[service.bookingMethod] : "—" },
               ...(booking.receivedAt ? [{ label: "Received", value: formatLocalDateTime(booking.receivedAt) }] : []),
               { label: "Source", value: booking.source ?? "—" },
-              { label: "Booking method", value: service ? BOOKING_METHOD_LABEL[service.bookingMethod] : "—" },
-              { label: "Technician", value: assignee ?? "Unassigned" },
             ]}
           />
         </section>
@@ -319,6 +319,14 @@ export function BookingDrawer({
               )
             )}
           </div>
+        )}
+
+        {booking.status === "confirmed" && canManage && (
+          <p className="text-xs text-ink-muted">
+            {booking.jobId
+              ? "The job now carries the work. Open it to start the visit, and complete it when the work is done."
+              : "Assign a technician, then create a job when it is time to do the work."}
+          </p>
         )}
 
         {booking.status === "completed" && booking.jobId && (

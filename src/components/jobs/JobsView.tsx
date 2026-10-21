@@ -116,11 +116,11 @@ export function JobsView() {
   if (jobs.length === 0) {
     return (
       <>
-        <PageHeader title="Jobs" description="Track active service work from assignment through completion." actions={actions} />
+        <PageHeader title="Jobs" description="The work for your bookings, from assigning a technician to completing the visit." actions={actions} />
         <EmptyState
           icon={ClipboardCheck}
           title="No jobs yet"
-          description="Jobs will appear when service work is created from a booking."
+          description="A job is the work you do for a confirmed booking. Open a booking and choose Create job, start it when the technician arrives, and complete it when the work is done."
           action={
             <ButtonLink href="/bookings" size="lg">
               <CalendarDays aria-hidden className="size-[18px]" />
@@ -134,7 +134,7 @@ export function JobsView() {
 
   return (
     <>
-      <PageHeader title="Jobs" description="Track active service work from assignment through completion." actions={actions} />
+      <PageHeader title="Jobs" description="The work for your bookings, from assigning a technician to completing the visit." actions={actions} />
 
       <Card padding="md" className="space-y-4">
         <Tabs

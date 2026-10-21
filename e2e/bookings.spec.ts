@@ -52,9 +52,10 @@ test.describe("Bookings list", () => {
     await expect(bookingRows(page, "Requests")).toHaveCount(2);
   });
 
-  test("the sidebar Bookings badge stays the Overview aggregate (24), not the number of fixtures", async ({ page }) => {
+  test("the sidebar Bookings badge is the requests waiting for an answer, as many as the Requests tab holds", async ({ page }) => {
     await page.goto("/bookings");
-    await expect(primaryNav(page).getByRole("link", { name: /^Bookings/ })).toContainText("24");
+    await expect(primaryNav(page).getByRole("link", { name: /^Bookings/ })).toContainText("2 waiting for an answer");
+    await expect(page.getByRole("tab", { name: /^Requests/ })).toContainText("2");
   });
 
   test("each tab shows only its status, from the shared status badges", async ({ page }) => {
@@ -364,23 +365,23 @@ test.describe("Create booking", () => {
 });
 
 test.describe("one Create booking flow, many entry points", () => {
-  test("Overview 'New booking' (header action and quick action) opens the real flow", async ({ page }) => {
+  test("Overview 'Create booking' (header action and quick action) opens the real flow", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("link", { name: "New booking", exact: true }).click();
+    await page.getByRole("link", { name: "Create booking", exact: true }).click();
     await expect(page).toHaveURL(/\/bookings\?new=1$/);
     await expect(page.getByRole("dialog", { name: "Create booking" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 1, name: "Bookings" })).toBeVisible();
 
     await page.goto("/");
-    await page.getByRole("region", { name: "Core Operational Workflows" }).getByRole("link", { name: /New booking/ }).click();
+    await page.getByRole("region", { name: "Quick actions" }).getByRole("link", { name: /Create booking/ }).click();
     await expect(page).toHaveURL(/\/bookings\?new=1$/);
     const wizard = page.getByRole("dialog", { name: "Create booking" });
     await expect(wizard.getByRole("list", { name: "Create booking steps" }).getByRole("listitem")).toHaveCount(5);
   });
 
-  test("the customer page's 'New booking' preselects that customer", async ({ page }) => {
+  test("the customer page's 'Create booking' preselects that customer", async ({ page }) => {
     await page.goto("/customers/sarah-mitchell");
-    await page.getByRole("link", { name: "New booking" }).click();
+    await page.getByRole("link", { name: "Create booking" }).click();
     const wizard = page.getByRole("dialog", { name: "Create booking" });
     await expect(wizard.getByRole("radio", { name: /^Sarah Mitchell/ })).toBeChecked();
     await wizard.getByRole("button", { name: /^Next: Service & property/ }).click();

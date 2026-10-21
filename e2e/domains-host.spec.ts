@@ -234,7 +234,7 @@ test.describe("a customer's domain is a public surface only", () => {
           const label = `${method} ${path} ${"cookie" in headers ? "signed in" : "anonymous"}`;
           expect([400, 404, 405], label).toContain(response.status);
           const text = visibleText(response.body);
-          expect(text, label).not.toMatch(/Workspace Overview|Website Builder|Log in to|Sign up|Your session has ended/);
+          expect(text, label).not.toMatch(/What needs your attention today|Website Builder|Log in to|Sign up|Your session has ended/);
           expect(response.body, label).not.toContain(headline);
           expect(response.headers["set-cookie"], label).toBeUndefined();
         }

@@ -212,7 +212,7 @@ test.describe("signed in", () => {
       }
       const overview = await fetchPage(api, "/overview");
       expect(overview.status).toBe(200);
-      expect(await (await api.get("/overview")).text()).toContain("Workspace Overview");
+      expect(await (await api.get("/overview")).text()).toContain("What needs your attention today");
       await api.dispose();
     }
   });

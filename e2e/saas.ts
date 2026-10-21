@@ -127,7 +127,7 @@ export async function completeOnboarding(page: Page, business: NewBusiness) {
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByRole("heading", { name: "Review and create your workspace" })).toBeVisible();
   await page.getByRole("button", { name: "Create workspace" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Workspace Overview" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
   await hydrated(page);
 }
 

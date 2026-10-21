@@ -941,7 +941,7 @@ test.describe("a business keeps its own service areas", () => {
     await expect(page.getByRole("status").filter({ hasText: "Climvia has suspended your Marketplace listing" })).toContainText("Your listing content is saved and it is still set to published");
     await expect(page.getByRole("region", { name: "Listing summary" })).toContainText("Not discoverable: suspended by Climvia");
     // The way to the public page is replaced by the preview: the public page is not there.
-    await expect(page.getByRole("link", { name: "View public listing" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "View public profile" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Preview listing" })).toHaveAttribute("href", "/marketplace-listing/preview");
     expect(await publicStatus()).toBe(404);
     // The reason, and any sign of the decision's author, never reach the business's pages.
@@ -968,7 +968,7 @@ test.describe("a business keeps its own service areas", () => {
     expect(await publicStatus()).toBe(200);
     await page.goto("/marketplace-listing");
     await expect(page.getByText("Climvia has suspended your Marketplace listing")).toHaveCount(0);
-    await expect(page.getByRole("link", { name: "View public listing" })).toHaveAttribute("href", `/listings/${workerTenant.listingSlug}`);
+    await expect(page.getByRole("link", { name: "View public profile" })).toHaveAttribute("href", `/listings/${workerTenant.listingSlug}`);
   });
 
   test("the business sees how many bookings came from its listing, counted from the bookings themselves", async ({ page, workerTenant, db }) => {

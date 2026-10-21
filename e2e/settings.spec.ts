@@ -169,7 +169,7 @@ test.describe("Business information reaches the rest of the workspace", () => {
     await expect(topBar(page).getByRole("button", { name: /Summit HVAC Services/ })).toBeVisible();
 
     await primaryNav(page).getByRole("link", { name: "Overview" }).click();
-    await expect(page.getByText("Operational activity, scheduled appointments, and pending records for Summit HVAC Services.")).toBeVisible();
+    await expect(page.getByText("What needs your attention today at Summit HVAC Services.")).toBeVisible();
     const card = page.getByRole("region", { name: "Business information" });
     await expect(card).toContainText("Summit HVAC Services");
     await expect(card).not.toContainText("Apex Climate");
@@ -807,7 +807,13 @@ test.describe("Settings: scope and boundaries", () => {
   test("Services, Team, Website and Marketplace content are not editable from Settings", async ({ page }) => {
     for (const path of ["/settings", "/settings/hours", "/settings/branding", "/settings/preferences", "/settings/profile"]) {
       await page.goto(path);
-      const text = (await page.locator("main").innerText()).toLowerCase();
+      // The signposts to where Team, Booking and Domains live are links, not settings: they are held to being links below, and left out of the words read here.
+      const text = (await page.locator("main").evaluate((main) => {
+        const copy = main.cloneNode(true) as HTMLElement;
+        copy.querySelector('[aria-label="Other settings"]')?.remove();
+        return copy.innerText;
+      })).toLowerCase();
+      await expect(page.getByRole("region", { name: "Other settings" }).locator("input, select, textarea, button")).toHaveCount(0);
       for (const banned of ["service price", "pricing", "booking method", "permissions", "invite", "domain", "marketplace listing", "page content", "dispatch", "fleet", "verification", "verified"]) expect(text, `${path}: ${banned}`).not.toContain(banned);
     }
   });

@@ -23,7 +23,7 @@ export function PagesContent() {
   const pages = orderedPages(website.draft);
   const statuses = pages.map((page) => getPageStatus(website, page.key));
   const changed = statuses.filter((status) => status === "unpublished-changes").length;
-  const summary = !website.published ? "Private" : changed > 0 ? `${changed} with unpublished changes` : `${pages.length} Published`;
+  const summary = !website.published ? "Draft" : changed > 0 ? `${changed} with unpublished changes` : `${pages.length} Published`;
   const shown = getShownServices(website.draft.settings.serviceDisplay, catalog);
 
   return (

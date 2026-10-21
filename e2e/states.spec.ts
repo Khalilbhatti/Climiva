@@ -78,7 +78,7 @@ test.describe("the approved empty states", () => {
   test("a list with nothing to show says so rather than drawing an empty table", async ({ page }) => {
     await page.goto("/jobs?state=empty");
     await expect(page.getByText("No jobs yet")).toBeVisible();
-    await expect(page.getByText("Jobs will appear when service work is created from a booking.")).toBeVisible();
+    await expect(page.getByText("A job is the work you do for a confirmed booking. Open a booking and choose Create job, start it when the technician arrives, and complete it when the work is done.")).toBeVisible();
     await page.goto("/payments?state=empty");
     await expect(page.locator("main")).toContainText(/No payments/i);
   });

@@ -126,7 +126,7 @@ test.describe("signed out", () => {
     await page.getByLabel(/^Email/).fill(SEED.alex);
     await page.getByLabel(/^Password/).fill(SEED_PASSWORD);
     await page.getByRole("button", { name: "Log in" }).click();
-    await expect(page.getByRole("heading", { level: 1, name: "Workspace Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
     await expect(page.getByTitle("Switch workspace")).toContainText("Apex Climate Heating & Air");
     const session = (await context.cookies()).find((cookie) => cookie.name.endsWith("session_token"));
     expect(session?.httpOnly).toBe(true);
@@ -151,7 +151,7 @@ test.describe("signed out", () => {
       await page.getByLabel(/^Email/).fill(SEED.alex);
       await page.getByLabel(/^Password/).fill(SEED_PASSWORD);
       await page.getByRole("button", { name: "Log in" }).click();
-      await expect(page.getByRole("heading", { level: 1, name: "Workspace Overview" })).toBeVisible();
+      await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
       expect(new URL(page.url()).origin).toBe(ORIGIN);
     });
   }
@@ -223,7 +223,7 @@ test.describe("signed in", () => {
     await expect(page).toHaveURL(/\/overview$/);
     await page.goto("/signup");
     await expect(page).toHaveURL(/\/overview$/);
-    await expect(page.getByRole("heading", { level: 1, name: "Workspace Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
   });
 
   test("Log out ends the session in the database, clears the cookie and closes every workspace page", async ({ browser, workerTenant, clientAddresses, db }) => {
@@ -289,7 +289,7 @@ test.describe("signed in", () => {
     const context = await browser.newContext({ storageState, extraHTTPHeaders: { "x-forwarded-for": clientAddresses() } });
     const page = waitsForHydration(await context.newPage());
     await page.goto("/");
-    await expect(page.getByRole("heading", { level: 1, name: "Workspace Overview" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
     const token = decodeURIComponent(storageState.cookies.find((cookie) => cookie.name.endsWith("session_token"))!.value).split(".")[0];
     await db.query("delete from auth_session where token = $1", [token]);
     await page.goto("/payments");

@@ -27,8 +27,10 @@ export default async function CustomerOverviewPage({ params }: PageProps<"/custo
       <div className="space-y-6 lg:col-span-7">
         <CurrentServiceCard customerId={customer.id} />
 
+        <CustomerBookingsCard customerId={customer.id} />
+
         <SectionCard
-          title={`Service properties (${properties.length})`}
+          title={`Properties (${properties.length})`}
           icon={Home}
           action={
             <Link href={propertiesHref} className={linkClasses}>
@@ -67,7 +69,7 @@ export default async function CustomerOverviewPage({ params }: PageProps<"/custo
         </SectionCard>
 
         <SectionCard
-          title="HVAC equipment snapshot"
+          title="Equipment"
           icon={ShieldCheck}
           action={
             equipment.length > 0 && (
@@ -89,15 +91,13 @@ export default async function CustomerOverviewPage({ params }: PageProps<"/custo
           )}
         </SectionCard>
 
-        <CustomerBookingsCard customerId={customer.id} />
-
         <RecentVisitsCard customerId={customer.id} />
 
         <CustomerFinancialsCard customerId={customer.id} />
       </div>
 
       <div className="space-y-6 lg:col-span-5">
-        <SectionCard title="Customer contact">
+        <SectionCard title="Contact">
           <KeyValueList
             items={[
               { label: "Phone", value: customer.phone || "Not on file" },

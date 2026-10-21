@@ -418,7 +418,7 @@ test.describe("a server whose database role can run the public functions and not
         for (const path of ["/", "/customers", "/website/builder", "/website/preview", "/marketplace-listing/preview"]) {
           const response = await api.get(path, { maxRedirects: 0 });
           const body = await response.text();
-          expect(response.status() === 200 && /Website Builder|Workspace Overview|Customers/.test(body), `${viewer} was served ${path} by the restricted server`).toBe(false);
+          expect(response.status() === 200 && /Website Builder|What needs your attention today|Customers/.test(body), `${viewer} was served ${path} by the restricted server`).toBe(false);
           for (const name of CUSTOMERS.map((customer) => customer.name)) expect(body, `${viewer} ${path}`).not.toContain(name);
         }
       } finally {

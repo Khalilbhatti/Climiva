@@ -16,7 +16,7 @@ test.describe("Analytics: structure", () => {
   test("renders the approved header, the four tabs, the range control and Export report", async ({ page }) => {
     await page.goto("/analytics");
     await expect(page.getByRole("heading", { level: 1, name: "Analytics" })).toBeVisible();
-    await expect(page.getByText("Review operational activity and financial records across your workspace.")).toBeVisible();
+    await expect(page.getByText("How your business is doing: bookings, finished jobs and money, for the dates you choose.")).toBeVisible();
     await expect(primaryNav(page).getByRole("link", { name: "Analytics" })).toHaveAttribute("aria-current", "page");
     await expect(tabs(page).getByRole("tab")).toHaveText(["Overview", "Bookings & Jobs", "Financial Records", "Maintenance Plans & Services"]);
     await expect(tab(page, "Overview")).toHaveAttribute("aria-selected", "true");

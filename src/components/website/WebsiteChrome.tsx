@@ -32,7 +32,7 @@ function Chrome() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
-        <div>
+        <div className="min-w-0 md:flex-1">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight text-ink">Website</h1>
             {empty ? (
@@ -44,38 +44,33 @@ function Chrome() {
               </>
             )}
           </div>
-          <p className="mt-1 text-sm text-ink-muted">Manage your public website, service pages, booking experience, and domain.</p>
+          <p className="mt-1 text-sm text-ink-muted">Your public website: what visitors see, how they book, and the address they use.</p>
         </div>
         {!empty && website && (
-          <div className="flex flex-wrap items-center gap-3">
-            <ButtonLink href={previewHref()} variant="secondary">
-              <Eye aria-hidden className="size-4" />
-              Preview website
-            </ButtonLink>
-            <ButtonLink href="/website/builder" variant="secondary">
-              <FilePenLine aria-hidden className="size-4" />
-              Edit website
-            </ButtonLink>
-            {!published ? (
-              canManage && (
-                <Button onClick={publishNow} disabled={busy}>
-                  <Rocket aria-hidden className="size-4" />
-                  Publish website
-                </Button>
-              )
+          <div className="flex flex-wrap items-center gap-3 md:shrink-0 md:flex-nowrap">
+            {/* One place for what to do with the site: edit it (the main thing), look at it, and make it live. */}
+            {canManage && (
+              <ButtonLink href="/website/builder">
+                <FilePenLine aria-hidden className="size-4" />
+                Edit website
+              </ButtonLink>
+            )}
+            {published ? (
+              <ButtonLink href={publicSiteHref(website.site.platformSlug)} variant="secondary">
+                View live website
+                <SquareArrowOutUpRight aria-hidden className="size-4" />
+              </ButtonLink>
             ) : (
-              <>
-                {pending && canManage && (
-                  <Button onClick={publishNow} disabled={busy}>
-                    <Rocket aria-hidden className="size-4" />
-                    Publish changes
-                  </Button>
-                )}
-                <ButtonLink href={publicSiteHref(website.site.platformSlug)} variant={pending && canManage ? "secondary" : "primary"}>
-                  View live website
-                  <SquareArrowOutUpRight aria-hidden className="size-4" />
-                </ButtonLink>
-              </>
+              <ButtonLink href={previewHref()} variant="secondary">
+                <Eye aria-hidden className="size-4" />
+                Preview website
+              </ButtonLink>
+            )}
+            {canManage && (!published || pending) && (
+              <Button variant="secondary" onClick={publishNow} disabled={busy}>
+                <Rocket aria-hidden className="size-4" />
+                {published ? "Publish changes" : "Publish website"}
+              </Button>
             )}
           </div>
         )}

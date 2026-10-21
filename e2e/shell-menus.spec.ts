@@ -110,7 +110,7 @@ test.describe("the open menus are accessible", () => {
   test("the empty workspace overview and the pages of a small business pass the checks", async ({ openAs }) => {
     const { page } = await openAs("taylor");
     await page.goto("/");
-    await expect(page.getByText("Your workspace is ready")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Getting started" })).toBeVisible();
     await expectAccessible(page);
     // Customers, Services and Team are the business's own data now: Northstar's pages are real, and pass the same checks.
     for (const path of ["/customers", "/services", "/team"]) {

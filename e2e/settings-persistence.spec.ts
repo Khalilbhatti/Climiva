@@ -66,7 +66,7 @@ test.describe("Business information", () => {
     await page.reload();
     await expect(page.getByTitle("Switch workspace")).toContainText("Everywhere Air");
     await page.goto("/");
-    await expect(page.getByText("Operational activity, scheduled appointments, and pending records for Everywhere Air.")).toBeVisible();
+    await expect(page.getByText("What needs your attention today at Everywhere Air.")).toBeVisible();
     await page.goto("/website/preview/contact");
     await expect(page.getByText("Everywhere Air").first()).toBeVisible();
   });

@@ -29,7 +29,7 @@ export function PlatformNav() {
                 aria-current={current ? "page" : undefined}
                 className={cn(
                   "flex items-center gap-2.5 rounded-btn px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors",
-                  current ? "bg-primary-subtle text-primary" : "text-ink-muted hover:bg-hover hover:text-ink",
+                  current ? "bg-white/15 text-white" : "text-white/75 hover:bg-white/10 hover:text-white",
                 )}
               >
                 <item.icon aria-hidden className="size-4 shrink-0" />

@@ -41,8 +41,8 @@ const listed = (scope: ReturnType<Page["locator"]>) => scope.getByRole("region",
 test.describe("Marketplace listing", () => {
   test("renders the approved header, Published badge, five summary tiles and the Marketplace sidebar state", async ({ page, workerTenant }) => {
     await page.goto("/marketplace-listing");
-    await expect(page.getByRole("heading", { level: 1, name: "Marketplace" })).toBeVisible();
-    await expect(page.getByText("Manage how your business appears in the Climvia directory.")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Marketplace Listing" })).toBeVisible();
+    await expect(page.getByText("Control how your business appears in Climvia's public Marketplace, where homeowners search for HVAC help.")).toBeVisible();
     await expect(primaryNav(page).getByRole("link", { name: /^Marketplace/ })).toHaveAttribute("aria-current", "page");
     await expect(main(page).getByText("Published").first()).toBeVisible();
 
@@ -61,7 +61,7 @@ test.describe("Marketplace listing", () => {
 
     await expect(page.getByRole("link", { name: "Edit listing" })).toHaveAttribute("href", "/marketplace-listing/edit");
     // The public listing is its own page, at the listing's public address.
-    await expect(page.getByRole("link", { name: "View public listing" })).toHaveAttribute("href", `/listings/${workerTenant.listingSlug}`);
+    await expect(page.getByRole("link", { name: "View public profile" })).toHaveAttribute("href", `/listings/${workerTenant.listingSlug}`);
   });
 
   test("business information comes from the organization's record, in the preview and beside it", async ({ page, workerTenant }) => {
@@ -121,7 +121,7 @@ test.describe("Edit listing", () => {
     await page.goto("/marketplace-listing");
     await page.getByRole("link", { name: "Edit listing" }).click();
     await expect(page).toHaveURL("/marketplace-listing/edit");
-    await expect(page.getByRole("heading", { level: 1, name: "Edit Marketplace listing" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Edit Marketplace Listing" })).toBeVisible();
     await expect(primaryNav(page).getByRole("link", { name: /^Marketplace/ })).toHaveAttribute("aria-current", "page");
     for (const heading of ["Listing details", "Contact information", "Services shown", "Customer actions", "Listing visibility"]) {
       await expect(page.getByRole("heading", { name: heading })).toBeVisible();
@@ -221,7 +221,7 @@ test.describe("Edit listing", () => {
     await primaryNav(page).getByRole("link", { name: /^Marketplace/ }).click();
     await expect(summary(page)).toContainText("Not shown");
     await expect(summary(page)).toContainText('The "Book service" button is off');
-    await page.getByRole("link", { name: "View public listing" }).click();
+    await page.getByRole("link", { name: "View public profile" }).click();
     await expect(page.getByRole("link", { name: "Book service" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "View website" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Contact business" })).toBeVisible();
@@ -317,7 +317,7 @@ test.describe("Hide and publish", () => {
     await expect(page.getByRole("heading", { name: "Your Marketplace listing is hidden" })).toBeVisible();
     await expect(page.getByText("Your listing content remains saved while the listing is hidden.")).toBeVisible();
     await expect(page.getByText("Listing currently hidden")).toBeVisible();
-    await expect(page.getByRole("link", { name: "View public listing" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "View public profile" })).toHaveCount(0);
     await expect(listed(preview(page))).toHaveText(FIVE);
     // Business and Services are unchanged.
     await expect(page.getByRole("region", { name: "Business information" })).toContainText(business.name);
@@ -336,7 +336,7 @@ test.describe("Hide and publish", () => {
     await page.getByRole("button", { name: "Publish listing" }).click();
     await expect(toast(page)).toContainText("Marketplace listing published.");
     await expect(summary(page)).toContainText("Visible in Climvia Marketplace");
-    await expect(page.getByRole("link", { name: "View public listing" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "View public profile" })).toBeVisible();
     await expect(preview(page)).toContainText("Restored after hiding.");
     await expect(preview(page)).not.toContainText("Contact business");
     await expect(preview(page)).toContainText("Book service");
@@ -356,7 +356,7 @@ test.describe("Hide and publish", () => {
 test.describe("Directory preview", () => {
   test("is the public listing: no workspace sidebar, top bar, internal controls or state labels", async ({ page, workerTenant }) => {
     await page.goto("/marketplace-listing");
-    await page.getByRole("link", { name: "View public listing" }).click();
+    await page.getByRole("link", { name: "View public profile" }).click();
     await expect(page).toHaveURL(`/listings/${workerTenant.listingSlug}`);
 
     await expect(primaryNav(page)).toHaveCount(0);
@@ -436,13 +436,11 @@ test.describe("First-time setup and empty state", () => {
   test("the empty state offers one primary action, and no second business onboarding", async ({ page }) => {
     await page.goto("/marketplace-listing?state=empty");
     await expect(page.getByRole("heading", { name: "Set up your Marketplace listing" })).toBeVisible();
-    await expect(page.getByText("Create a public business profile using the information and Services already configured in Climvia.")).toBeVisible();
-    await expect(summary(page)).toContainText("Not configured");
-    await expect(summary(page)).toContainText("Not selected");
-    await expect(summary(page)).toContainText("No services selected");
-    await expect(summary(page)).toContainText("Booking link unassigned");
+    await expect(page.getByText("Choose which of your Services homeowners can book, where you work and which contact details they see. Nothing is public until you publish.")).toBeVisible();
+    // Nothing is set up, so there is no summary of settings to show: five "not set" tiles would only repeat what the empty state says once.
+    await expect(summary(page)).toHaveCount(0);
     await expect(page.getByText("Your Marketplace listing can use existing Business information and public Services. You choose what customers see.")).toBeVisible();
-    await expect(main(page).getByRole("link", { name: /Set up listing/ })).toHaveCount(2); // header action + the empty state's own
+    await expect(main(page).getByRole("link", { name: /Set up listing/ })).toHaveCount(1); // one way in: the empty state's own
     for (const promo of [/upgrade/i, /learn more/i, /free trial/i, /onboarding/i]) await expect(main(page)).not.toContainText(promo);
   });
 
@@ -450,7 +448,7 @@ test.describe("First-time setup and empty state", () => {
     await page.goto("/marketplace-listing?state=empty");
     await main(page).getByRole("link", { name: /Set up listing/ }).first().click();
     await expect(page).toHaveURL("/marketplace-listing/edit?setup=1");
-    await expect(page.getByRole("heading", { level: 1, name: "Set up Marketplace listing" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Set up Marketplace Listing" })).toBeVisible();
     await expect(page.getByText("Draft", { exact: true })).toBeVisible();
     await expect(page.getByText("Nothing is publicly discoverable until you click Save & publish listing.")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Listing visibility" })).toHaveCount(0);

@@ -115,9 +115,9 @@ test.describe("on a phone", () => {
     await page.getByRole("button", { name: "Create workspace" }).focus();
     await page.keyboard.press("Enter");
     await page.waitForURL(`${ORIGIN}/overview`);
-    await expect(page.getByRole("heading", { level: 1, name: "Workspace Overview" })).toBeVisible();
-    // The welcome's next steps fit a phone as cards and each is a link. (The workspace shell is laid out for tablets and up, so the page itself is not held to the phone's width.)
-    const steps = page.getByRole("list", { name: "Next steps" });
+    await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
+    // The Getting started steps fit a phone as cards and each is a link. (The workspace shell is laid out for tablets and up, so the page itself is not held to the phone's width.)
+    const steps = page.getByRole("list", { name: "Setup steps" });
     await expect(steps.getByRole("link")).toHaveCount(5);
     for (const link of await steps.getByRole("link").all()) await expect(link).toBeVisible();
     await expectAccessible(page);

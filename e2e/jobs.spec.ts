@@ -22,10 +22,10 @@ test.describe("Jobs list", () => {
   test("renders the approved header, Active tab with derived counts and the Jobs sidebar state", async ({ page }) => {
     await page.goto("/jobs");
     await expect(page.getByRole("heading", { level: 1, name: "Jobs" })).toBeVisible();
-    await expect(page.getByText("Track active service work from assignment through completion.")).toBeVisible();
+    await expect(page.getByText("The work for your bookings, from assigning a technician to completing the visit.")).toBeVisible();
     await expect(primaryNav(page).getByRole("link", { name: /^Jobs/ })).toHaveAttribute("aria-current", "page");
-    // The sidebar badge is the Overview aggregate (18 completed jobs), not the number of fixtures.
-    await expect(primaryNav(page).getByRole("link", { name: /^Jobs/ })).toContainText("18");
+    // Jobs carry no count beside the link: the month's completed jobs are on the Overview.
+    await expect(primaryNav(page).getByRole("link", { name: /^Jobs/ })).not.toContainText(/\d/);
 
     await expect(page.getByRole("tablist", { name: "Job lists" }).getByRole("tab")).toHaveText([/^Active\s*4$/, /^Upcoming\s*2$/, /^Completed\s*7$/]);
     await expect(tab(page, "Active")).toHaveAttribute("aria-selected", "true");
@@ -113,7 +113,7 @@ test.describe("Jobs list", () => {
     await page.goto("/jobs?state=empty");
     await expect(page.getByRole("heading", { level: 1, name: "Jobs" })).toBeVisible();
     await expect(page.getByText("No jobs yet")).toBeVisible();
-    await expect(page.getByText("Jobs will appear when service work is created from a booking.")).toBeVisible();
+    await expect(page.getByText("A job is the work you do for a confirmed booking. Open a booking and choose Create job, start it when the technician arrives, and complete it when the work is done.")).toBeVisible();
     await expect(page.getByRole("table")).toHaveCount(0);
 
     await page.getByRole("link", { name: "View bookings" }).click();
@@ -361,7 +361,7 @@ test.describe("Start and complete a job", () => {
     await primaryNav(page).getByRole("link", { name: "Customers" }).click();
     await page.getByRole("link", { name: "David Chen" }).first().click();
     await expect(page.getByRole("heading", { name: "Current service" })).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "Recent service visits" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Jobs" })).toBeVisible();
     const visits = page.locator("li").filter({ hasText: "Job #JB-201" });
     await expect(visits).toContainText("Completed");
 

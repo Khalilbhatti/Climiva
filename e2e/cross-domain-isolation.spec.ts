@@ -50,7 +50,7 @@ test.describe("switching business", () => {
     await switchWorkspace(page, new RegExp(NORTHSTAR));
     await expect(switcher(page)).toContainText(NORTHSTAR);
     await expect(page).toHaveURL(/\/overview$/);
-    await expect(page.getByText("Your workspace is ready")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Getting started" })).toBeVisible();
     expect(problems).toEqual([]);
   });
 

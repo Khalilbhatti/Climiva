@@ -134,7 +134,7 @@ export function ListingEditor() {
         <div className="mt-2 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
           <div>
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight text-ink">{setup ? "Set up Marketplace listing" : "Edit Marketplace listing"}</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-ink">{setup ? "Set up Marketplace Listing" : "Edit Marketplace Listing"}</h1>
               {setup ? (
                 <StatusBadge tone="neutral">Draft</StatusBadge>
               ) : (
@@ -151,7 +151,7 @@ export function ListingEditor() {
             {setup ? (
               <>
                 <ButtonLink href="/marketplace-listing" variant="secondary">
-                  Back to Marketplace
+                  Back to Marketplace Listing
                 </ButtonLink>
                 <Button onClick={saveAndPublish} disabled={busy}>
                   <Rocket aria-hidden className="size-4" />

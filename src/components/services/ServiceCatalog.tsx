@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
+import { useOpenedByLink } from "@/components/ui/useOpenedByLink";
 import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { serviceHref } from "@/config/routes";
 import {
@@ -64,6 +65,8 @@ export function ServiceCatalog() {
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [adding, setAdding] = useState(false);
   const openWizard = () => setAdding(true);
+  // "+ New → Service" opens this page with ?new=1.
+  const link = useOpenedByLink("/services", canManage);
 
   const catalog = useMemo(() => (previewEmpty ? [] : getServices(services)), [previewEmpty, services]);
   const visible = useMemo(() => catalog.filter((service) => matches(service, filters)), [catalog, filters]);
@@ -207,12 +210,16 @@ export function ServiceCatalog() {
       )}
 
       <AddServiceModal
-        open={adding}
-        onClose={() => setAdding(false)}
+        open={adding || link.asked}
+        onClose={() => {
+          setAdding(false);
+          link.done();
+        }}
         onAdd={async (service) => {
           const result = await addService(service);
           if (!result.ok) return result.error;
           setAdding(false);
+          link.done();
           toast(`${result.data.name} was added to your services.`);
           if (previewEmpty) router.replace("/services");
         }}

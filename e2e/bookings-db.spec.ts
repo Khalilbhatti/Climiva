@@ -104,8 +104,8 @@ test.describe("a new business", () => {
     await completeOnboarding(page, { name: "Fresh Air Services" });
 
     await page.goto("/bookings");
-    await expect(page.getByRole("tablist", { name: "Booking lists" }).getByRole("tab")).toHaveText([/^Requests\s*0$/, /^Upcoming\s*0$/, /^Past\s*0$/, /^Cancelled\s*0$/]);
-    await expect(page.getByText("No bookings yet. Create a booking to get started.")).toBeVisible();
+    await expect(page.getByRole("tablist", { name: "Booking lists" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "No bookings yet" })).toBeVisible();
     await expect(page.getByText(/isn.t available/i)).toHaveCount(0);
     await expect(page.getByText("Sarah Mitchell")).toHaveCount(0);
 

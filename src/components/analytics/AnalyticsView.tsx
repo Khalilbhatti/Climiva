@@ -61,7 +61,7 @@ export function AnalyticsView({ report }: { report: AnalyticsReport }) {
     <>
       <PageHeader
         title="Analytics"
-        description="Review operational activity and financial records across your workspace."
+        description="How your business is doing: bookings, finished jobs and money, for the dates you choose."
         actions={
           <div className="flex flex-wrap items-center gap-3">
             <Button variant="secondary" size="lg" onClick={() => setPicking(true)} aria-haspopup="dialog">

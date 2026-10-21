@@ -58,6 +58,7 @@ export function MarketplaceOverview() {
     toast(result.ok ? "Marketplace listing published." : result.error);
   }
 
+  // One main action for the state the listing is in: set it up (the empty state carries that one), publish it, or look at it as homeowners do.
   const actions =
     status === "published" ? (
       <>
@@ -69,7 +70,7 @@ export function MarketplaceOverview() {
         )}
         <ButtonLink href={listing.slug && !suspended ? publicListingHref(listing.slug) : "/marketplace-listing/preview"} size="lg">
           <SquareArrowOutUpRight aria-hidden className="size-4" />
-          {suspended ? "Preview listing" : "View public listing"}
+          {suspended ? "Preview listing" : "View public profile"}
         </ButtonLink>
       </>
     ) : status === "hidden" ? (
@@ -85,74 +86,69 @@ export function MarketplaceOverview() {
           </Button>
         </>
       )
-    ) : (
-      canManage && (
-        <ButtonLink href="/marketplace-listing/edit?setup=1" size="lg">
-          <Store aria-hidden className="size-4" />
-          Set up listing
-        </ButtonLink>
-      )
-    );
+    ) : null;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
         <div>
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight text-ink">Marketplace</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-ink">Marketplace Listing</h1>
             <StatusBadge tone={suspended ? "danger" : STATUS_TONE[status]}>{suspended ? "Suspended by Climvia" : LISTING_STATUS_LABEL[status]}</StatusBadge>
           </div>
-          <p className="mt-1 text-sm text-ink-muted">Manage how your business appears in the Climvia directory.</p>
+          <p className="mt-1 text-sm text-ink-muted">Control how your business appears in Climvia&apos;s public Marketplace, where homeowners search for HVAC help.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">{actions}</div>
       </div>
 
       {suspended && <SuspendedNotice published={status === "published"} />}
 
-      <section aria-label="Listing summary" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <KpiCard
-          label="Listing status"
-          value={suspended ? "Suspended" : configured ? LISTING_STATUS_LABEL[status] : "Not configured"}
-          icon={suspended ? ShieldAlert : status === "published" ? BadgeCheck : EyeOff}
-          hint={suspended ? "Not discoverable: suspended by Climvia" : status === "published" ? "Visible in Climvia Marketplace" : status === "hidden" ? "Not discoverable in directory" : "Listing has not been set up"}
-          hintDot={status === "published" && !suspended}
-        />
-        <KpiCard
-          label="Public services"
-          value={configured ? shown.length : "Not selected"}
-          icon={Wrench}
-          hint={
-            !configured
-              ? "No services selected"
-              : `${shown.length} of ${eligible.length} eligible Services ${status === "published" ? "shown" : "configured"}`
-          }
-        />
-        <KpiCard
-          label="Contact details"
-          value={!configured ? "Not configured" : isAnyContactShown(config) ? "Shown" : "Not shown"}
-          icon={Phone}
-          hint={!configured ? "Public details hidden" : isAnyContactShown(config) ? "Public contact information enabled" : "Contact details are off"}
-        />
-        <KpiCard
-          label="Booking"
-          value={!configured ? "Not configured" : config.actions.book ? "Enabled" : "Not shown"}
-          icon={CalendarCheck}
-          hint={!configured ? "Booking link unassigned" : config.actions.book ? "Customers can book from your listing" : 'The "Book service" button is off'}
-        />
-        <KpiCard
-          label="Marketplace bookings"
-          value={marketplaceBookings}
-          icon={Store}
-          hint={marketplaceBookings === 0 ? "None yet from your listing" : "Booked from your Marketplace listing"}
-        />
-      </section>
+      {configured && (
+        <section aria-label="Listing summary" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <KpiCard
+            label="Listing status"
+            value={suspended ? "Suspended" : configured ? LISTING_STATUS_LABEL[status] : "Not configured"}
+            icon={suspended ? ShieldAlert : status === "published" ? BadgeCheck : EyeOff}
+            hint={suspended ? "Not discoverable: suspended by Climvia" : status === "published" ? "Visible in Climvia Marketplace" : status === "hidden" ? "Not discoverable in directory" : "Listing has not been set up"}
+            hintDot={status === "published" && !suspended}
+          />
+          <KpiCard
+            label="Public services"
+            value={configured ? shown.length : "Not selected"}
+            icon={Wrench}
+            hint={
+              !configured
+                ? "No services selected"
+                : `${shown.length} of ${eligible.length} eligible Services ${status === "published" ? "shown" : "configured"}`
+            }
+          />
+          <KpiCard
+            label="Contact details"
+            value={!configured ? "Not configured" : isAnyContactShown(config) ? "Shown" : "Not shown"}
+            icon={Phone}
+            hint={!configured ? "Public details hidden" : isAnyContactShown(config) ? "Public contact information enabled" : "Contact details are off"}
+          />
+          <KpiCard
+            label="Booking"
+            value={!configured ? "Not configured" : config.actions.book ? "Enabled" : "Not shown"}
+            icon={CalendarCheck}
+            hint={!configured ? "Booking link unassigned" : config.actions.book ? "Customers can book from your listing" : 'The "Book service" button is off'}
+          />
+          <KpiCard
+            label="Marketplace bookings"
+            value={marketplaceBookings}
+            icon={Store}
+            hint={marketplaceBookings === 0 ? "None yet from your listing" : "Booked from your Marketplace listing"}
+          />
+        </section>
+      )}
 
       {status === "not-set-up" ? (
         <>
           <EmptyState
             icon={Store}
             title="Set up your Marketplace listing"
-            description="Create a public business profile using the information and Services already configured in Climvia."
+            description="Choose which of your Services homeowners can book, where you work and which contact details they see. Nothing is public until you publish."
             action={
               canManage ? (
                 <ButtonLink href="/marketplace-listing/edit?setup=1" size="lg">

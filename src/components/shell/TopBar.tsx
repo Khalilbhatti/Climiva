@@ -12,6 +12,7 @@ import { hardNavigate } from "@/lib/hard-navigate";
 import { ROLE_LABEL } from "@/lib/workspace-types";
 import { signOutAction, switchOrganizationAction } from "@/server/actions/workspace";
 import { GlobalSearch } from "./GlobalSearch";
+import { NewMenu } from "./NewMenu";
 import { NotificationsMenu } from "./NotificationsMenu";
 import { usePopover } from "./usePopover";
 
@@ -193,7 +194,7 @@ export function TopBar() {
   return (
     <header className="sticky top-0 z-30 flex h-(--topbar-height) items-center justify-between border-b border-line bg-surface px-4 lg:px-6">
       <div className="flex min-w-0 items-center gap-3 lg:gap-6">
-        <Link href="/overview" aria-label="Climvia — Workspace Overview" className="flex shrink-0 items-center gap-2.5">
+        <Link href="/overview" aria-label="Climvia — Overview" className="flex shrink-0 items-center gap-2.5">
           <span
             aria-hidden
             className="flex size-8 items-center justify-center rounded-btn bg-primary text-base font-bold tracking-tight text-white shadow-card"
@@ -209,6 +210,8 @@ export function TopBar() {
       <GlobalSearch />
 
       <div className="flex shrink-0 items-center gap-3 lg:gap-4">
+        <NewMenu />
+
         <NotificationsMenu />
 
         <div aria-hidden className="h-6 w-px bg-line" />

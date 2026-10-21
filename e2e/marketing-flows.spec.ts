@@ -530,9 +530,8 @@ test.describe("a new business", () => {
       await expect(page.getByRole("heading", { name: "No campaigns yet" })).toBeVisible();
       await expect(page.getByText(/isn't available yet/)).toHaveCount(0);
       await expect(tabCounts(page)).toHaveText([/^All campaigns\s*0$/, /^Drafts\s*0$/, /^Scheduled\s*0$/, /^Sent\s*0$/]);
-      for (const label of ["Drafts", "Scheduled", "Sent", "Recent recipients"]) {
-        await expect(totals(page).locator("div", { hasText: new RegExp(`^${label}`) }).first()).toContainText("0");
-      }
+      // No campaign to count, so no totals: the tabs above still say 0.
+      await expect(totals(page)).toHaveCount(0);
       await expect(page.getByText("Fall maintenance reminder")).toHaveCount(0);
       await page.goto("/marketing/cmp-fall-maintenance-reminder");
       await expect(page.getByRole("heading", { name: "Campaign not found" })).toBeVisible();

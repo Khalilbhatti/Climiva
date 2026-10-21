@@ -63,7 +63,7 @@ export function MarketingView() {
     <>
       <PageHeader
         title="Marketing"
-        description="Create and manage customer email and SMS campaigns."
+        description="Write emails and texts to your customers, and see what you have sent."
         actions={
           canManage && (
             <ButtonLink href="/marketing/new" size="lg">
@@ -74,12 +74,15 @@ export function MarketingView() {
         }
       />
 
-      <section aria-label="Campaign totals" className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard label="Drafts" value={metrics.drafts} icon={FileText} hint="Campaigns being prepared" />
-        <KpiCard label="Scheduled" value={metrics.scheduled} icon={Timer} hint="Campaign ready to send later" />
-        <KpiCard label="Sent" value={metrics.sent} icon={Send} hint="Completed campaigns" />
-        <KpiCard label="Recent recipients" value={metrics.recentRecipients} icon={Users} hint="Recipients across recent sends" />
-      </section>
+      {/* Totals are for counting campaigns: with none yet, four zeros would only repeat "nothing" above the empty state that says it. */}
+      {!previewEmpty && (
+        <section aria-label="Campaign totals" className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <KpiCard label="Drafts" value={metrics.drafts} icon={FileText} hint="Campaigns being prepared" />
+          <KpiCard label="Scheduled" value={metrics.scheduled} icon={Timer} hint="Campaign ready to send later" />
+          <KpiCard label="Sent" value={metrics.sent} icon={Send} hint="Completed campaigns" />
+          <KpiCard label="Recent recipients" value={metrics.recentRecipients} icon={Users} hint="Recipients across recent sends" />
+        </section>
+      )}
 
       <Card padding="md" className="space-y-4">
         <Tabs

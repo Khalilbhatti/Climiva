@@ -20,9 +20,9 @@ import { createBlankService, createServiceId, validateService, type ServiceError
 
 const STEPS = [
   { id: "basics", label: "Service basics", fields: ["name", "description", "audience"] },
-  { id: "booking", label: "Booking", fields: ["duration"] },
+  { id: "booking", label: "How customers book", fields: ["duration"] },
   { id: "pricing", label: "Pricing", fields: ["amount", "priceLabel"] },
-  { id: "availability", label: "Availability & visibility", fields: [] },
+  { id: "availability", label: "Where customers see it", fields: [] },
   { id: "review", label: "Review", fields: [] },
 ] as const satisfies readonly { id: string; label: string; fields: readonly (keyof ServiceErrors)[] }[];
 
@@ -105,7 +105,7 @@ function AddServiceWizard({ onClose, onAdd }: Omit<AddServiceModalProps, "open">
       onClose={onClose}
       size="xl"
       title="Add new service"
-      description="Configure catalog positioning, online booking rules, and pricing."
+      description="Set up what you offer, how customers book it, and what it costs."
       footer={
         <>
           <Button variant="tertiary" onClick={onClose} className="mr-auto">

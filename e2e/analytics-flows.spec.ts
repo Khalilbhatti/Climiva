@@ -45,11 +45,14 @@ test.describe("what a person does reaches Analytics, the Overview and the sideba
     await expect(kpis(page)).toContainText(new RegExp(`Bookings\\s*${bookings}`));
     await page.getByRole("tab", { name: "Bookings & Jobs" }).click();
     await expect(section(page, "Bookings")).toContainText(`${bookings} total logged`);
-    // The sidebar counts are this month's totals from the same report.
-    await expect(sidebarCount(page, "Bookings")).toContainText(bookings);
+    // The sidebar's Bookings count is the requests waiting for an answer (not a total), so it agrees with the Requests tab and the Overview's attention list.
+    const waiting = Number((await db.query("select count(*) as n from bookings where organization_id = $1 and status = 'pending'", [workerTenant.organizationId])).rows[0].n);
+    const expectWaiting = () => (waiting > 0 ? expect(sidebarCount(page, "Bookings")).toContainText(`${waiting} waiting for an answer`) : expect(sidebarCount(page, "Bookings")).not.toContainText(/\d/));
+    await expectWaiting();
     // The booking is stored, so a reload keeps every figure.
-    await page.reload();
-    await expect(sidebarCount(page, "Bookings")).toContainText(bookings);
+    await page.goto("/");
+    await expect(kpis(page)).toContainText(new RegExp(`Bookings\\s*${bookings}`));
+    await expectWaiting();
   });
 
   test("completing a job moves Completed Jobs, the Jobs panel and the sidebar to 19, and Jobs scheduled to 3", async ({ page }) => {
@@ -70,7 +73,8 @@ test.describe("what a person does reaches Analytics, the Overview and the sideba
     await expect(page.getByText("JB-201").first()).toBeVisible();
     await page.goto("/");
     await expect(kpis(page)).toContainText("19");
-    await expect(sidebarCount(page, "Jobs")).toContainText("19");
+    // Jobs carry no count in the sidebar: what a person acts on there is a booking waiting for an answer.
+    await expect(sidebarCount(page, "Jobs")).not.toContainText(/\d/);
   });
 
   test("recording $300 on INV-1050 and voiding it again: received, outstanding, the payment count and the invoice statuses move together and come back", async ({ page }) => {
@@ -185,7 +189,7 @@ test.describe("tenant switching recalculates everything", () => {
     await expect(kpis(page)).toContainText("$6,240");
     await page.getByRole("tab", { name: "Maintenance Plans & Services" }).click();
     await expect(page.getByRole("table", { name: "Service activity" })).toContainText("AC Repair & Diagnostics");
-    await expect(sidebarCount(page, "Bookings")).toContainText("24");
+    await expect(sidebarCount(page, "Bookings")).toContainText("waiting for an answer");
 
     await toNorthstar();
     await page.goto("/analytics?range=custom&from=2024-10-01&to=2024-10-31");
@@ -282,7 +286,7 @@ test.describe("a new business", () => {
   test("reports zeros and a real empty state: no Apex baseline, no counts in the sidebar, an Overview that says it is ready, and nothing to export", async ({ page }) => {
     await signUp(page);
     await completeOnboarding(page, { name: "Brand New HVAC" });
-    await expect(page.getByText("Your workspace is ready")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Getting started" })).toBeVisible();
     await expect(sidebarCount(page, "Bookings")).not.toContainText(/\d/);
     await expect(sidebarCount(page, "Jobs")).not.toContainText(/\d/);
 

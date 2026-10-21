@@ -344,7 +344,7 @@ test.describe("a guest who books becomes the business's customer", () => {
     const bookingsCard = page.getByRole("heading", { name: "Bookings (2)" });
     await expect(bookingsCard).toBeVisible();
     await expect(page.getByRole("link", { name: /^Booking #BK-\d{4}$/ })).toHaveCount(2);
-    await expect(page.getByText("No service visits are recorded yet.")).toBeVisible();
+    await expect(page.getByText("No jobs yet. A job is created from a confirmed booking.")).toBeVisible();
     await expectAccessible(page);
     await page.getByRole("link", { name: /^Booking #BK-\d{4}$/ }).first().click();
     await expect(page).toHaveURL(/\/bookings\?tab=upcoming&booking=BK-\d{4}$/);

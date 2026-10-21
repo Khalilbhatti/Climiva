@@ -101,7 +101,7 @@ export function RequestReviewModal({ onClose }: { onClose: () => void }) {
         </>
       }
     >
-      {dir.customers.length === 0 && <p className="rounded-card bg-surface-low p-4 text-sm text-ink-muted">You have no customers yet. A review is requested from a customer on your list.</p>}
+      {dir.customers.length === 0 && <p className="rounded-card bg-surface-low p-4 text-sm text-ink-muted">You have no customers yet. A review is requested from a customer on your list, once their work is done.</p>}
       <Select
         label="Customer"
         hint="Select an existing customer from your records."
@@ -127,7 +127,10 @@ export function RequestReviewModal({ onClose }: { onClose: () => void }) {
             </option>
           ))}
         </Select>
-        <p className="mt-1 text-xs text-ink-muted">Only completed jobs are available for review requests.</p>
+        <p className="mt-1 text-xs text-ink-muted">
+          Only completed jobs are available for review requests.
+          {customer && completed.length === 0 && ` ${customer.name} has no completed job waiting for a request yet. Ask once their work is done.`}
+        </p>
       </div>
 
       <OptionGroup legend="Send by" hint="Available delivery methods use the contact details saved on this Customer record." className="sm:grid-cols-2">

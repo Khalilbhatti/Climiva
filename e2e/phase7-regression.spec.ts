@@ -42,8 +42,9 @@ test.describe("the Overview baseline is unchanged", () => {
     await expect(kpis(page)).toContainText("$6,240");
     await expect(kpis(page)).toContainText("$2,130");
     await expect(kpis(page)).toContainText("7 recorded non-voided payments");
-    await expect(primaryNav(page).getByRole("link", { name: /^Bookings/ })).toContainText("24");
-    await expect(primaryNav(page).getByRole("link", { name: /^Jobs/ })).toContainText("18");
+    // The sidebar no longer repeats the month's totals: Bookings carries the requests waiting for an answer, and Jobs nothing.
+    await expect(primaryNav(page).getByRole("link", { name: /^Bookings/ })).toContainText("2 waiting for an answer");
+    await expect(primaryNav(page).getByRole("link", { name: /^Jobs/ })).not.toContainText(/\d/);
   });
 
   test("its Business information card is the saved Settings and links to them; it holds no Analytics", async ({ page, workerTenant }) => {

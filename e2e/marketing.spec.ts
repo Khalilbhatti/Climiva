@@ -28,7 +28,7 @@ test.describe("Marketing list", () => {
   test("renders the approved header, the 2 / 1 / 8 / 146 totals, tabs and the Marketing sidebar state", async ({ page }) => {
     await page.goto("/marketing");
     await expect(page.getByRole("heading", { level: 1, name: "Marketing" })).toBeVisible();
-    await expect(page.getByText("Create and manage customer email and SMS campaigns.")).toBeVisible();
+    await expect(page.getByText("Write emails and texts to your customers, and see what you have sent.")).toBeVisible();
     await expect(primaryNav(page).getByRole("link", { name: /^Marketing/ })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("link", { name: "Create campaign" })).toHaveAttribute("href", "/marketing/new");
 
@@ -100,7 +100,7 @@ test.describe("Marketing list", () => {
     await expect(tab(page, "Scheduled")).toHaveAttribute("aria-selected", "true");
   });
 
-  test("the empty state is concise: zero totals and one primary action, no promotional cards", async ({ page }) => {
+  test("the empty state is concise: no totals to count and one primary action, no promotional cards", async ({ page }) => {
     await page.goto("/marketing?state=empty");
     await expect(page.getByRole("heading", { name: "No campaigns yet" })).toBeVisible();
     await expect(page.getByText("Create an Email or SMS campaign to communicate with existing customers.")).toBeVisible();
@@ -127,7 +127,7 @@ test.describe("Marketing list", () => {
 test.describe("Create campaign: Email", () => {
   test("the Overview quick action and the Marketing button open the same single campaign editor", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("region", { name: "Core Operational Workflows" }).getByRole("link", { name: /Create campaign/ }).click();
+    await page.getByRole("region", { name: "Quick actions" }).getByRole("link", { name: /Create campaign/ }).click();
     await expect(page).toHaveURL("/marketing/new");
     await expect(page.getByRole("heading", { level: 1, name: "Create campaign" })).toBeVisible();
     await expect(primaryNav(page).getByRole("link", { name: /^Marketing/ })).toHaveAttribute("aria-current", "page");
@@ -137,7 +137,7 @@ test.describe("Create campaign: Email", () => {
     await expect(page).toHaveURL("/marketing/new");
     // The other quick actions still work.
     await page.goto("/");
-    await page.getByRole("region", { name: "Core Operational Workflows" }).getByRole("link", { name: /New booking/ }).click();
+    await page.getByRole("region", { name: "Quick actions" }).getByRole("link", { name: /Create booking/ }).click();
     await expect(page).toHaveURL(/\/bookings/);
   });
 

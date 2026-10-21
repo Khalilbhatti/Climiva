@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useReporting } from "@/components/reporting/ReportingProvider";
+import { useOperations } from "@/components/operations/OperationsProvider";
 import { NAV_GROUPS, NAV_UTILITY, isRouteActive, type NavItem } from "@/config/navigation";
 import { cn } from "@/lib/cn";
 
 function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
   const active = isRouteActive(item.href, pathname);
-  // The count pills are this month's totals from the business's own records: a business with none shows no pill.
-  const { month } = useReporting();
-  const count = item.badge ? month[item.badge] : 0;
+  // The count pill is the number of booking requests waiting for an answer, read from the business's own Bookings: it is what needs doing, and none shows no pill.
+  const { data } = useOperations();
+  const count = item.badge === "requests" ? data.bookings.filter((booking) => booking.status === "pending").length : 0;
   const Icon = item.icon;
 
   return (
@@ -20,8 +20,9 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
       // page view that the next click cannot reuse. Navigation fetches the page when it is chosen.
       prefetch={false}
       aria-current={active ? "page" : undefined}
+      title={item.purpose}
       className={cn(
-        "flex w-full items-center justify-between rounded-btn px-3 py-3 text-sm transition-colors",
+        "flex w-full items-center justify-between rounded-btn px-3 py-1.5 text-sm transition-colors",
         active
           ? "bg-primary font-semibold text-white shadow-card"
           : "font-medium text-ink-muted hover:bg-surface-low hover:text-ink",
@@ -34,11 +35,12 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
       {count > 0 && (
         <span
           className={cn(
-            "rounded px-1.5 py-0.5 font-mono text-xs font-medium",
-            active ? "bg-white/20 text-white" : "bg-surface-low text-ink-muted",
+            "rounded-full px-2 py-0.5 text-xs font-semibold",
+            active ? "bg-white/20 text-white" : "bg-primary-subtle text-primary",
           )}
         >
           {count}
+          <span className="sr-only"> waiting for an answer</span>
         </span>
       )}
     </Link>
@@ -56,18 +58,19 @@ export function Sidebar() {
     >
       <div className="flex h-full flex-col select-none">
         {/* Only the module list scrolls; Settings and Help stay pinned and always reachable. */}
-        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-3 py-4">
+        <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-3 py-3">
           {NAV_GROUPS.map((group) => {
             const headingId = `nav-group-${group.label.toLowerCase()}`;
+            // A group that is one page of the same name (Overview, Customers) is just that page: a heading over it would say the same thing twice.
+            const alone = group.items.length === 1 && group.items[0].label === group.label;
             return (
-              <section key={group.label} aria-labelledby={headingId}>
-                <h2
-                  id={headingId}
-                  className="px-3 pb-2 text-micro font-bold tracking-wider text-ink-muted uppercase"
-                >
-                  {group.label}
-                </h2>
-                <ul className="space-y-0.5">
+              <section key={group.label} {...(alone ? { "aria-label": group.label } : { "aria-labelledby": headingId })}>
+                {!alone && (
+                  <h2 id={headingId} className="px-3 pb-1 text-micro font-semibold tracking-wider text-ink-muted uppercase">
+                    {group.label}
+                  </h2>
+                )}
+                <ul className="space-y-px">
                   {group.items.map((item) => (
                     <li key={item.href}>
                       <NavLink item={item} pathname={pathname} />
@@ -79,7 +82,8 @@ export function Sidebar() {
           })}
         </div>
 
-        <ul className="shrink-0 space-y-0.5 border-t border-line bg-surface p-3">
+        {/* Settings and Help stay in reach. The shadow above them says the list continues when the window is short. */}
+        <ul className="shrink-0 space-y-px border-t border-line bg-surface p-2 shadow-[0_-10px_10px_-10px_rgb(0_0_0/0.14)]">
           {NAV_UTILITY.map((item) => (
             <li key={item.href}>
               <NavLink item={item} pathname={pathname} />

@@ -55,7 +55,7 @@ export function CurrentServiceCard({ customerId }: { customerId: string }) {
 
 /**
  * The customer's bookings, read from the same operations records the Bookings module shows (not copied onto the customer). A customer made from a guest's
- * booking has this and nothing else yet: no Property, no Job. It is left out for a customer with no booking.
+ * booking has this and nothing else yet: no Property, no Job. It sits first on the page so that customer never looks empty, and is left out for a customer with no booking.
  */
 export function CustomerBookingsCard({ customerId }: { customerId: string }) {
   const dir = useDirectory();
@@ -99,9 +99,9 @@ export function RecentVisitsCard({ customerId }: { customerId: string }) {
   const jobs = getJobsForCustomer(customerId, data);
 
   return (
-    <SectionCard title="Recent service visits" icon={History}>
+    <SectionCard title={jobs.length > 0 ? `Jobs (${jobs.length})` : "Jobs"} icon={History}>
       {jobs.length === 0 ? (
-        <p className="rounded-card bg-surface-low p-4 text-sm text-ink-muted">No service visits are recorded yet.</p>
+        <p className="rounded-card bg-surface-low p-4 text-sm text-ink-muted">No jobs yet. A job is created from a confirmed booking.</p>
       ) : (
         <ul className="space-y-2">
           {jobs.map((job) => (

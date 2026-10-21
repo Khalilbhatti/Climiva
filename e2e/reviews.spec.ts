@@ -16,7 +16,7 @@ test.describe("Reviews list", () => {
   test("renders the approved header, the 12 / 4.7 / 3 / 5 totals and the Reviews sidebar state", async ({ page }) => {
     await page.goto("/reviews");
     await expect(page.getByRole("heading", { level: 1, name: "Reviews" })).toBeVisible();
-    await expect(page.getByText("View customer reviews and respond from one place.")).toBeVisible();
+    await expect(page.getByText("What customers say about your work, and your replies to them.")).toBeVisible();
     await expect(primaryNav(page).getByRole("link", { name: /^Reviews/ })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("button", { name: "Request review" })).toBeVisible();
 
@@ -85,12 +85,11 @@ test.describe("Reviews list", () => {
   test("the empty state is concise: zero totals, one way forward", async ({ page }) => {
     await page.goto("/reviews?state=empty");
     await expect(page.getByRole("heading", { name: "No reviews yet" })).toBeVisible();
-    await expect(page.getByText("Customer reviews will appear here when they are submitted.")).toBeVisible();
+    await expect(page.getByText("Request feedback from a customer after completing work. Their review appears here, and you can reply to it.")).toBeVisible();
     await expect(page.getByRole("tablist", { name: "Review views" }).getByRole("tab")).toHaveText([/^All reviews\s*0$/, /^Awaiting reply\s*0$/, /^Responded\s*0$/]);
-    await expect(totals(page)).toContainText("—");
-    await expect(totals(page)).toContainText("No reviews recorded yet");
+    // Four zeros would only repeat "nothing yet": the totals appear with the first review.
+    await expect(totals(page)).toHaveCount(0);
     await expect(page.getByRole("article")).toHaveCount(0);
-    await expect(page.getByText("Review requests can be sent to existing customers after completed work.")).toBeVisible();
     for (const promo of [/upgrade/i, /learn more/i, /free trial/i]) await expect(main(page)).not.toContainText(promo);
   });
 });

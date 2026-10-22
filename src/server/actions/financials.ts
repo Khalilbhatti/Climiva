@@ -118,7 +118,10 @@ export async function createInvoiceFromQuoteAction(quoteReference: unknown, inpu
 
 /* ───────────────────────── quotes ───────────────────────── */
 
-/** Create a draft quote with its line items. No screen offers it yet; the rules and the numbering are in place for when one does. */
+/**
+ * Create a draft quote with its line items, for the business's own customer (and, if named, its own job). Quotes & Invoices offers it to an owner or admin.
+ * The total is never read from the request: the server adds the lines up in whole cents, and the number comes from the business's own counter.
+ */
 export async function createQuoteAction(input: unknown): Promise<ActionResult<Answer & { quote: Quote }>> {
   return mutate(async (ctx) => {
     const reference = await createQuoteTx(ctx, valid(parseNewQuote(input)));

@@ -301,6 +301,8 @@ export async function createInvoiceFromQuoteTx(ctx: FinContext, input: NewInvoic
 export async function createQuoteTx(ctx: FinContext, input: NewQuote): Promise<string> {
   const { tx, organizationId, refs } = ctx;
 
+  // The rules still read a quote for a named contact (the table allows one), but a quote made here is for a customer of this business.
+  if (!input.customerId) refuse("Choose the customer this quote is for.", { customerId: "Choose a customer." });
   let customerId: string | null = null;
   let propertyId: string | null = null;
   if (input.customerId) {
@@ -317,6 +319,8 @@ export async function createQuoteTx(ctx: FinContext, input: NewQuote): Promise<s
   for (const linked of [job, booking]) {
     if (linked && customerId && linked.customerId && linked.customerId !== customerId) refuse("That job or booking belongs to another customer.");
   }
+
+  if (input.validThrough && input.validThrough < ctx.today) refuse("The quote can't be good through a day that has already passed.", { validThrough: "Choose today or a later day." });
 
   const number = await allocateNumber(tx, organizationId, "quote");
   const [quote] = await tx

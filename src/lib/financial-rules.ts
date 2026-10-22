@@ -12,7 +12,7 @@
  */
 import { PAYMENT_METHODS, PAYMENT_TERMS, VOID_REASONS, type PaymentMethod, type PaymentTerms, type QuoteStatus } from "@/data/financials";
 import { isValidDate } from "./dates";
-import { amountToCents, fromCents } from "./money";
+import { amountToCents, fromCents, lineCents, sumCents } from "./money";
 import { formatUSD } from "./format";
 import { isRecord, text, type Parsed } from "./validation";
 
@@ -163,20 +163,36 @@ export type NewQuote = {
 
 export const MAX_QUOTE_LINES = 50;
 
-function parseLine(input: unknown): NewQuoteLine | undefined {
-  if (!isRecord(input)) return undefined;
+/**
+ * How much one line, and one quote, may come to, in whole cents ($10,000,000.00 and $20,000,000.00). Amounts are stored as 32-bit integers, so a request
+ * that multiplies a large quantity by a large price is refused in words here instead of failing in the database.
+ */
+export const MAX_LINE_CENTS = 1_000_000_000;
+export const MAX_QUOTE_CENTS = 2_000_000_000;
+
+/** What a quote's lines add up to, in whole cents. The only total there is: the server works it out, whatever a request claims. */
+export const quoteLinesTotalCents = (lines: readonly Pick<NewQuoteLine, "quantity" | "unitPriceCents">[]): number => sumCents(lines.map((line) => lineCents(line.quantity, line.unitPriceCents)));
+
+/** One line of a request, or what is wrong with it in words a person can act on (`position` is the line's place in the list, from 1). */
+function parseLine(input: unknown, position: number): { line: NewQuoteLine } | { error: string; field: string } {
+  const where = `Line ${position}`;
+  const bad = (error: string, field: string) => ({ error: `${where}: ${error}`, field });
+  if (!isRecord(input)) return bad("this line was not understood.", "lines");
   const description = text(input.description, 200)?.trim();
-  if (!description) return undefined;
+  if (!description) return bad("describe the work, in 200 characters or fewer.", `line${position}Description`);
   const detail = input.detail === undefined || input.detail === "" ? undefined : text(input.detail, 500)?.trim();
   const unit = input.unit === undefined || input.unit === "" ? undefined : text(input.unit, 20)?.trim();
-  if ((input.detail && detail === undefined) || (input.unit && unit === undefined)) return undefined;
+  if ((input.detail && detail === undefined) || (input.unit && unit === undefined)) return bad("the details or the unit are too long.", "lines");
   const quantity = input.quantity;
-  if (typeof quantity !== "number" || !Number.isFinite(quantity) || quantity <= 0 || quantity > 99_999.99 || Math.abs(quantity * 100 - Math.round(quantity * 100)) > 1e-6) return undefined;
+  if (typeof quantity !== "number" || !Number.isFinite(quantity) || quantity <= 0 || quantity > 99_999.99 || Math.abs(quantity * 100 - Math.round(quantity * 100)) > 1e-6) {
+    return bad("enter a quantity above zero, with at most two decimals.", `line${position}Quantity`);
+  }
   const unitPriceCents = amountToCents(input.rate);
-  if (unitPriceCents === undefined) return undefined;
+  if (unitPriceCents === undefined) return bad("enter a price of $0.00 or more, with at most two decimals.", `line${position}Rate`);
+  if (lineCents(quantity, unitPriceCents) > MAX_LINE_CENTS) return bad("that comes to more than one line can hold. Check the quantity and the price.", `line${position}Rate`);
   const serviceId = input.serviceId === undefined ? undefined : slugOf(input.serviceId);
-  if (input.serviceId !== undefined && !serviceId) return undefined;
-  return { description, detail: detail || undefined, quantity, unit: unit || undefined, unitPriceCents, serviceId };
+  if (input.serviceId !== undefined && !serviceId) return bad("that service was not understood.", "lines");
+  return { line: { description, detail: detail || undefined, quantity, unit: unit || undefined, unitPriceCents, serviceId } };
 }
 
 export function parseNewQuote(input: unknown): Parsed<NewQuote> {
@@ -201,12 +217,20 @@ export function parseNewQuote(input: unknown): Parsed<NewQuote> {
   const message = input.message === undefined || input.message === "" ? undefined : text(input.message, 2000)?.trim();
   if (input.message !== undefined && input.message !== "" && message === undefined) return fail("Keep the message under 2,000 characters.");
 
-  if (!Array.isArray(input.lines) || input.lines.length === 0 || input.lines.length > MAX_QUOTE_LINES) return fail(`A quote needs between 1 and ${MAX_QUOTE_LINES} line items.`);
+  if (!Array.isArray(input.lines) || input.lines.length === 0 || input.lines.length > MAX_QUOTE_LINES) return fail(`A quote needs between 1 and ${MAX_QUOTE_LINES} line items.`, { lines: `Add between 1 and ${MAX_QUOTE_LINES} line items.` });
   const lines: NewQuoteLine[] = [];
-  for (const candidate of input.lines) {
-    const line = parseLine(candidate);
-    if (!line) return fail("Each line item needs a description, a quantity above zero and a price.");
-    lines.push(line);
+  for (const [index, candidate] of input.lines.entries()) {
+    const parsedLine = parseLine(candidate, index + 1);
+    if ("error" in parsedLine) return fail(parsedLine.error, { [parsedLine.field]: parsedLine.error });
+    lines.push(parsedLine.line);
+  }
+  if (quoteLinesTotalCents(lines) > MAX_QUOTE_CENTS) return fail("The total comes to more than a quote can hold. Check the quantities and prices.", { lines: "The total is too large for one quote." });
+  // What the person was shown. The server always stores its own sum; a screen that sends the total it showed lets a stale or tampered request be refused
+  // instead of quietly stored at another price. Any other total in the request (a subtotal, a line's total) is never read.
+  if (input.expectedTotal !== undefined) {
+    const expected = amountToCents(input.expectedTotal);
+    if (expected === undefined) return fail("The total was not understood. Reload the page and try again.");
+    if (expected !== quoteLinesTotalCents(lines)) return fail("The total on screen does not match the line items. Reload the page and try again.", { lines: "The total did not match the line items." });
   }
   return { ok: true, value: { customerId, contactName: contactName || undefined, propertyId, serviceId, jobNumber, bookingNumber, validThrough: validThrough as string | undefined, message: message || undefined, lines } };
 }

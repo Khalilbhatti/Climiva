@@ -23,6 +23,7 @@ import {
 import { formatDate } from "@/lib/format";
 import { CreateInvoiceModal } from "./CreateInvoiceModal";
 import { useFinancials } from "./FinancialProvider";
+import { QuoteStatusActions } from "./QuoteStatusActions";
 import { InvoiceStatusBadge, QuoteStatusBadge } from "./StatusBadges";
 import { CustomerCard, PartyName, RelatedRecords, usd } from "./shared";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
@@ -188,6 +189,7 @@ function QuotePage({ quote }: { quote: Quote }) {
               ]}
             />
             <p className="mt-3 text-xs text-ink-muted">An approved quote remains separate from its invoice until an invoice is created.</p>
+            {canManage && <QuoteStatusActions quote={quote} />}
             {canInvoice && (
               <Button className="mt-3 w-full" onClick={() => setCreating(true)}>
                 Create invoice

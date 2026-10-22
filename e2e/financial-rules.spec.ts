@@ -6,6 +6,8 @@
 import { expect, test } from "playwright/test";
 import { PAYMENT_METHODS, VOID_REASONS, type QuoteStatus } from "../src/data/financials";
 import {
+  MAX_LINE_CENTS,
+  MAX_QUOTE_CENTS,
   MAX_QUOTE_LINES,
   QUOTE_TRANSITIONS,
   canInvoiceError,
@@ -18,6 +20,7 @@ import {
   parseVoidPayment,
   paymentAmountError,
   paymentReference,
+  quoteLinesTotalCents,
   quoteReference,
   quoteTransitionError,
 } from "../src/lib/financial-rules";
@@ -174,6 +177,42 @@ test.describe("creating a quote", () => {
     for (const bad of [{ description: "" }, { quantity: 0 }, { quantity: -1 }, { quantity: 1.005 }, { quantity: "1" }, { rate: 12.345 }, { rate: -1 }, { rate: "abc" }, { serviceId: "Not A Slug" }]) {
       expect(parseNewQuote(quote({ lines: [line(bad)] })).ok, JSON.stringify(bad)).toBe(false);
     }
+  });
+
+  test("a bad line is said to be bad in words that name the line and the field", () => {
+    const wrong = (over: Record<string, unknown>) => parseNewQuote(quote({ lines: [line(), line(over)] }));
+    expect(wrong({ description: "" })).toMatchObject({ ok: false, error: "Line 2: describe the work, in 200 characters or fewer.", fields: { line2Description: expect.any(String) } });
+    expect(wrong({ quantity: 0 })).toMatchObject({ ok: false, error: "Line 2: enter a quantity above zero, with at most two decimals.", fields: { line2Quantity: expect.any(String) } });
+    expect(wrong({ rate: -1 })).toMatchObject({ ok: false, error: "Line 2: enter a price of $0.00 or more, with at most two decimals.", fields: { line2Rate: expect.any(String) } });
+    expect(wrong({ rate: 0.001 }).ok).toBe(false);
+    expect(wrong({ rate: 0 }).ok).toBe(true);
+  });
+
+  test("the total is the lines added up in whole cents; a total sent with the request is checked against it, never stored", () => {
+    const lines = [line({ quantity: 1, rate: "89.50" }), line({ quantity: 1.5, rate: "33.33" }), line({ quantity: 3, rate: 12.1 })];
+    // 8950 + round(1.5 x 3333 = 4999.5) 5000 + 3630.
+    expect(quoteLinesTotalCents(lines.map((item) => ({ quantity: item.quantity, unitPriceCents: Math.round(Number(item.rate) * 100) })))).toBe(17580);
+    expect(parseNewQuote(quote({ lines, expectedTotal: 175.8 })).ok).toBe(true);
+    expect(parseNewQuote(quote({ lines, expectedTotal: "175.80" })).ok).toBe(true);
+    for (const wrong of [175.79, 175.81, 0, "x", -175.8, 1e9]) expect(parseNewQuote(quote({ lines, expectedTotal: wrong })).ok, String(wrong)).toBe(false);
+    expect(parseNewQuote(quote({ lines, expectedTotal: 140 }))).toMatchObject({ ok: false, error: "The total on screen does not match the line items. Reload the page and try again." });
+    // Without it the request is read as before, and no other total in it is ever read.
+    const stored = parseNewQuote(quote({ lines, total: 1, subtotal: 1, totalCents: 1 }));
+    expect(stored.ok).toBe(true);
+    expect(stored.ok && JSON.stringify(stored.value)).not.toContain("subtotal");
+    // 0.1 + 0.2 in dollars is not 0.3; in cents it is.
+    expect(quoteLinesTotalCents([{ quantity: 1, unitPriceCents: 10 }, { quantity: 1, unitPriceCents: 20 }])).toBe(30);
+    expect(parseNewQuote(quote({ lines: [line({ rate: 0.1 }), line({ rate: 0.2 })], expectedTotal: 0.1 + 0.2 })).ok).toBe(true);
+  });
+
+  test("a line and a quote have a size, so a huge quantity times a huge price is said in words, not left to the database", () => {
+    expect(MAX_LINE_CENTS).toBeLessThan(2_147_483_647);
+    expect(MAX_QUOTE_CENTS).toBeLessThan(2_147_483_647);
+    expect(parseNewQuote(quote({ lines: [line({ quantity: 99999.99, rate: 99999999 })] }))).toMatchObject({ ok: false, error: expect.stringContaining("more than one line can hold") });
+    expect(parseNewQuote(quote({ lines: [line({ quantity: 1, rate: 10_000_000 })] })).ok).toBe(true);
+    expect(parseNewQuote(quote({ lines: [line({ quantity: 1, rate: 10_000_000.01 })] })).ok).toBe(false);
+    const heavy = Array.from({ length: 3 }, () => line({ quantity: 1, rate: 9_000_000 }));
+    expect(parseNewQuote(quote({ lines: heavy }))).toMatchObject({ ok: false, error: expect.stringContaining("more than a quote can hold") });
   });
 
   test("references and dates are checked", () => {

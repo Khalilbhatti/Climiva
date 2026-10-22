@@ -677,7 +677,7 @@ test.describe("a new business starts with empty money, not 'unavailable'", () =>
     await page.goto("/quotes-invoices");
     // With no quote or invoice to count there are no totals to show: one empty state says what the page holds.
     await expect(page.getByRole("region", { name: "Quote and invoice totals" })).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "No quotes or invoices yet" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "No quotes yet" })).toBeVisible();
     await expect(page.getByText(/isn't available for Clean Slate Heating yet/)).toHaveCount(0);
     expect(await page.locator("body").innerText()).not.toMatch(/Sarah Mitchell|Arthur Pendleton|PAY-10|INV-10|QT-8/);
 

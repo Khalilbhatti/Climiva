@@ -2370,7 +2370,7 @@ Climvia keeps campaigns, who they are for and when they are set to go out. **It 
 
 | Item | Backend / database | Reachable in the UI | Real HVAC business blocked? | Recommendation |
 | --- | --- | --- | --- | --- |
-| Create a **Quote** by hand | `createQuoteAction`, `createQuoteTx`, `parseNewQuote`; `quotes_insert` policy and grant for `climvia_app` (migration 0007) | **No.** Nothing calls it. | **Yes.** An Invoice can only be created from an approved Quote, a Payment is recorded against an Invoice, so a new business cannot start the money chain; Quotes & Invoices, Payments and "Record payment" are dead ends for it. A "Request a quote" booking leads to an assessment and then nothing. | **Launch blocker** for any claim of in-app quoting, invoicing or payment tracking. Small: the action, the rules and the policy exist; it needs a form, a button, and tests. |
+| Create a **Quote** by hand | `createQuoteAction`, `createQuoteTx`, `parseNewQuote`; `quotes_insert` policy and grant for `climvia_app` (migration 0007) | **No.** Nothing calls it. | **Yes.** An Invoice can only be created from an approved Quote, a Payment is recorded against an Invoice, so a new business cannot start the money chain; Quotes & Invoices, Payments and "Record payment" are dead ends for it. A "Request a quote" booking leads to an assessment and then nothing. | **Launch blocker** for any claim of in-app quoting, invoicing or payment tracking. Small: the action, the rules and the policy exist; it needs a form, a button, and tests. **Built in Phase 19G (section 43).** |
 | Add a **Property** | None. Customers' properties are read-only to the application role (migration 0003; 0030 adds only the customer insert). | No | **No.** A booking carries its own address, and the booking window asks for a property only when the customer already has one. | **Post-launch MVP.** Wanted for repeat service and equipment history, not needed to take and run a job. |
 | Add a customer **note** | None (read-only table). | No | **No.** Job and booking notes exist; customer notes are history. | **Post-launch MVP**, low priority. |
 
@@ -2392,9 +2392,77 @@ Two tables are wider than a laptop screen and keep the action they exist for at 
 
 ### 42.13 Limits (left as they are, on purpose)
 
-- A Quote cannot be created by hand; a Property cannot be added; a customer has no "Add note" (42.9).
+- ~~A Quote cannot be created by hand~~ (built in Phase 19G, section 43); a Property cannot be added; a customer has no "Add note" (42.9).
 - Marketing does not deliver messages (42.8).
 - Getting started's "hidden" is per browser (42.7).
 - On a tablet the Unassigned list sits above the Day timeline, so with several unassigned visits the timeline starts below the first screen; the Week view keeps it in a compact banner. Moving it would put the page's reading order and focus order at odds.
 - Marketplace filters call the booking methods "Instant booking", "Request appointment" and "Request quote / assessment" (the Service's own names for them) where a provider's page shows the action ("Book a time", "Request appointment", "Request a quote"). They mean the same; unifying them touches every Service screen and was not done here.
 - The workspace is still tablet and desktop first; the sidebar does not collapse.
+
+## 43. Manual quote creation (Phase 19G)
+
+Phase 19F (section 42.9) found the one thing that stopped a real business from using Quotes & Invoices: nothing in the product could create a Quote. This phase adds it, on the Quote and Quote Line Item records that already existed. It changes no table, policy, grant, trigger, function or migration (`drizzle-kit generate` reports no schema changes, `drizzle-kit check` is clean). Adding a Property and a Customer note remain post-launch and are not built.
+
+### 43.1 What a person does
+
+**Quotes & Invoices** has one primary action, **Create quote**. With no quotes the empty state says "No quotes yet. Create a quote for a customer when you need to price work before invoicing." and carries the button; once there are quotes the same button is in the page header; it is never on the page twice. A business with no customers is not given a selector that cannot work: the window says "Add a customer first" and links to **Add a customer**. `?new=1` opens the window, like every other create flow.
+
+The window follows how a person thinks of a quote, in four steps (the same wizard, discard question and button order as Create booking, section 42.5):
+
+1. **Customer**: who the quote is for (required).
+2. **Work**: the job it prices (optional, and only that customer's), a Service (optional), a note for the customer (optional) and a "good through" day (optional, today or later).
+3. **Price**: line items, each with a description, a quantity and a price each. Each line shows its own total as it is typed and the total is shown under them. Lines can be added and removed.
+4. **Review**: everything once more, with **Create quote** as the last action.
+
+Creating the quote closes the window, says so ("Quote #QT-… was created as a draft for … Nothing was sent. Give it to them, then mark it sent."), and opens the existing **Quote** page for it. It is a draft. It is in the list and in the totals straight away. Nothing is invoiced.
+
+### 43.2 Server architecture
+
+There is no new action. The screen calls the `createQuoteAction` that existed (`src/server/actions/financials.ts`), which follows the same five steps as every financial write: resolve the caller and their active business from the session and a verified membership; require `financials:manage` (owner and admin); only then read the arguments and parse them again (`parseNewQuote` in `src/lib/financial-rules.ts`: the screen's checks are a convenience, these are the enforcement); open a tenant transaction, so Row Level Security asks the same questions a second time, and resolve every id the request names inside the verified business (`createQuoteTx` in `src/db/fin-queries.ts`); write, read the business's financials back and answer with them. The browser never names a business. A refusal rolls the whole change back, including the number it took.
+
+### 43.3 The customer, the job and the Service
+
+A Customer, Job, Booking, Service or Property named in the request is looked up among the references the transaction loaded for **this** business (`loadFinRefs`, which runs under Row Level Security), never in the table at large. A customer that exists only in another business is therefore exactly as absent as one that never existed: "That customer is not in your customers any more." A job that is another customer's is refused ("That job or booking belongs to another customer."), one that does not exist, or exists only in another business, says "That job no longer exists.", and a malformed one "The quote details were not understood." Naming another organization in the request changes nothing: the request has no such field and anything extra is ignored.
+
+A customer is required. The rules (`parseNewQuote`) still read a quote for a named contact, because the table allows one (`quotes_party`), but `createQuoteTx` refuses a request that names no customer ("Choose the customer this quote is for."), so a forged request cannot make a quote for a name alone.
+
+### 43.4 Money
+
+Everything is whole cents. A quantity is a number above zero with at most two decimals (up to 99,999.99). A price is parsed from text into cents (`parseCents`: no negative, no third decimal; "$1,234.56" is understood). A line's total is `lineCents(quantity, price)`, integer arithmetic with half a cent rounded up (1.5 × $33.33 = $49.995 = **$50.00**). The quote's total is the **sum of the stored whole-cent line totals** (`sumCents`), never a product of dollars, so $0.10 + $0.20 is $0.30. The form (`src/lib/quote-form.ts`) uses these same functions, so the total on screen is the total the server will compute.
+
+The server **computes** every line total, the subtotal and the total; a submitted line total, subtotal, total or status is ignored. The request does carry the total the screen showed (`expectedTotal`), and only to be checked: if it is not the sum of the lines the quote is refused ("The total on screen does not match the line items. Reload the page and try again.") rather than stored. Limits keep every figure inside the database's integer columns: at most 50 lines, 10,000,000.00 a line, 20,000,000.00 a quote.
+
+There is no new pricing or tax behavior: the existing semantics apply unchanged, and the quote's lines are what the invoice later copies.
+
+### 43.5 Numbering and concurrency
+
+The number comes from the business's own counter by the same `allocateNumber(tx, organizationId, "quote")` (the `app_next_number` function and `organization_sequences`) that Booking, Job, Quote, Invoice and Payment numbers already use; there is no second allocator. The counter moves under a row lock in the same transaction as the insert, so concurrent creation cannot give two quotes one number, and a refused or failed creation gives its number back. The Apex copy continues from QT-894; a business that has just started begins at QT-1001, like every other document.
+
+### 43.6 Permissions
+
+An owner and an admin can create a quote. A member sees no Create quote (and no status buttons), and a hand-made request from a member is refused, as is one with no session, one from a platform administrator who is not a member of the business (the platform console is not a tenant's financial editor), one from a person in another business, and one that names a different organization. All of these store nothing. The server asks every time; hiding a button is only courtesy.
+
+### 43.7 Status, and being honest about it
+
+There are no new statuses. A quote is created as a **draft** and moves along the existing path: draft → sent → approved, declined or expired (the last three are final). The product had `updateQuoteStatusAction` and the transitions but no screen for them, so a hand-made quote could not reach "approved" and so could never be invoiced. The Quote page's **Quote status** card now offers the next step to an owner or admin: **Mark as sent**; then **Customer approved**, **Customer declined** or **Mark expired**. The three that cannot be undone ask first and say what they do. Because Climvia does not deliver quotes (section 42.8 says the same of Marketing), the words say so: "Climvia does not send quotes for you. Mark it sent once you have given it to your customer." Approving does not create an invoice.
+
+### 43.8 Quote → Invoice
+
+The existing **Create invoice** on an approved quote works on a hand-made quote exactly as on a sample one: one invoice per quote (a second attempt is refused, here and by PostgreSQL), the same lines and total, unpaid, no payment recorded. A draft, sent, declined or expired quote cannot be invoiced. An invoice is never created on a person's behalf.
+
+### 43.9 Validation and what a person is told
+
+Nothing is stored unless every check passes, and each refusal is in plain words beside the field or in the window: no customer ("Choose the customer this quote is for."), no line items, a missing description, a quantity that is zero, negative, text or has a third decimal, a price that is negative, not a number or has a fraction of a cent, a line or a quote too large, more than 50 lines, a day that has already passed, a foreign customer or job, a total that does not match. The words never contain SQL, a constraint or policy name, an identifier or "undefined"; the specs match every refusal against those.
+
+### 43.10 Tests and checks
+
+New: `quote-creation.spec.ts` (the flow in a browser; the stored rows as cents; numbering; twelve at once; the Customer, Job and organization forgeries; who may and may not; each refusal; the totals the server ignores; the baseline records beside the new quote; Quote → Invoice; a declined quote; a business with no customers) and `quote-form.spec.ts` (what is typed, read as money: pure functions); `financial-rules.spec.ts` gained the parsing rules, the caps and `expectedTotal`. `financials-flows` and `onboarding` were adapted to the new empty-state wording. The Docker suite gains `11-manual-quote.spec.ts`, which makes a quote through the real flow on the production-shaped stack, checks the draft, the lines and the total in the production database, and takes it to an unpaid invoice.
+
+The full run is **3814 passed, 0 failed, 0 skipped** (139 spec files; 27 more tests than the 19F completion pass's 3787: `quote-creation` 18, `quote-form` 6, three added to `financial-rules`). The Docker suite passed **83 of 83** on a fresh stack (80, and `11-manual-quote` 3). The focused group (quotes and invoices, payments, money, the server boundaries, the phase 7 regression, the final scan, the UX specs, onboarding, customers, jobs, tenant isolation, the platform console and provider boundaries) passed 745 of 745, and the quote-related specs (`quote-creation`, `quote-form`, `financial-rules`, `financials-database`, `quotes-invoices`) ×3 passed 384 of 384. One broader ×3 run (nine files on four workers, each test repeated three times at once) had 19 failures, all in `tenant-isolation` and `financials-flows` and none in the quote specs. Every failure was the server's database pool giving up: its log shows 37 "timeout exceeded when trying to connect" errors in that run, and when `tenant-isolation` was repeated alone on one worker the log showed exactly 15 of them during the one failing test, a test that sends 75 requests at once and had exactly 15 wrong answers (error pages, not another business's data). That is a capacity limit of a busy test machine, not a quote or a tenant leak: `financials-flows` then passed ×3, `tenant-isolation` passed once on four workers and in the full run, and a probe that sent the same 75 requests eight times saw 0 wrong answers and none naming another business. The test (`tenant-isolation`, "two people reading Settings at the same moment") asks more of a pool of 10 connections with a 10-second wait than a busy machine can give; it failed in one of the three copies when the file was repeated on one worker. It is not claimed to be fixed. Typecheck, lint (zero warnings) and the production build are clean; `drizzle-kit generate` reports no schema changes and `drizzle-kit check` passes.
+
+### 43.11 Limits (left as they are, on purpose)
+
+- A quote is not sent from Climvia: **Mark as sent** is a record (43.7).
+- A quote cannot be edited once created, and a draft cannot be deleted; a mistaken one is declined or left to expire. Editing needs its own rules (what happens to a sent quote's price) and was not asked for.
+- No tax line, discount or deposit is offered: the quote has no such concept in the product, and none was invented.
+- A Property cannot be chosen or added, and a customer has no note (post-launch, section 42.9).

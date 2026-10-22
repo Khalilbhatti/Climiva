@@ -1,6 +1,6 @@
 # Climvia manual QA checklist
 
-**About 30 minutes. No code, no database tools.** Walk through these as the person named in each part. A check passes only if you can do it **without asking anyone what something means**. If you hesitate, that is a finding: write down the page and what confused you.
+**About 35 minutes. No code, no database tools.** Walk through these as the person named in each part. A check passes only if you can do it **without asking anyone what something means**. If you hesitate, that is a finding: write down the page and what confused you.
 
 Use a normal laptop window (about 1280 wide) unless a step says phone. Keep a note of anything marked **✗**.
 
@@ -31,8 +31,9 @@ Sign out first. Start at the home page.
 | 1.9 | Set it up and choose **Save & publish listing**. | You return to Marketplace Listing. The main button is now **View public profile**, and it opens a page that shows your business. |
 | 1.10 | Back on **Overview**. | **3 of 5 completed** (service, customer, listing). Hide the box with the **×**: it stays hidden after a reload. |
 | 1.11 | Open **Reviews**, **Marketing**, **Quotes & Invoices**, **Jobs**, **Bookings**. | Each says in a sentence what it is and what to do first. None shows a wall of zeros. |
+| 1.12 | On **Quotes & Invoices**, read the page, then choose **Create quote**. | **No quotes yet. Create a quote for a customer when you need to price work before invoicing.** and one **Create quote** button (once there are quotes, the button moves to the top of the page; it is never there twice). The window opens on **Customer** and lists the customer you added in 1.7. Close it (nothing typed, so it closes at once). |
 
-## 2. An owner on a normal day (8 min)
+## 2. An owner on a normal day (13 min)
 
 Sign in as `alex.morgan@apex.test`.
 
@@ -52,6 +53,11 @@ Sign in as `alex.morgan@apex.test`.
 | 2.12 | Open **Analytics** and read the six tab names. | **Overview, Bookings, Jobs, Revenue, Marketplace, Customer retention**. Each section is a question ("How many bookings are we getting?", "What is still outstanding?") and every number answers it. Nothing is predicted, scored or shown as a percentage. |
 | 2.13 | Open **Settings**. | Five groups on the left: **Business, Booking & operations, Team & access, Website & domains, Account & workspace**. An item that is managed somewhere else says where ("Each Service sets its own booking method") and opens that page. |
 | 2.14 | Open **Marketing**. | A note says Climvia keeps campaigns and **does not deliver** email or text messages, so a campaign marked Sent has not reached anyone. |
+| 2.15 | Open **Quotes & Invoices** and choose **Create quote**. | A window with four steps: **Customer, Work, Price, Review**. **Cancel** is on the left, **Next** on the right. Choose **Sarah Mitchell**, then **Next: Work**. |
+| 2.16 | On **Work**, optionally choose one of her jobs and a Service, and write a note for the customer. On **Price**, enter two lines: "Furnace inspection", quantity 1, price 129; "Blower capacitor", quantity 1.5, price 33.33. | Each line shows its own total as you type (**$129.00** and **$50.00**: half a cent rounds up), and the total at the bottom is **$179.00**. Typing a letter, a negative price or a third decimal says what is wrong beside the field. |
+| 2.17 | Choose **Next: Review**, read it, then **Create quote**. | You land on the new quote's page, **Quote #QT-…**, marked **Draft**, with the same lines and the same total. A message says it was created. It is in the **Quotes** list. No invoice was made. |
+| 2.18 | On that quote, in **Quote status**, choose **Mark as sent**, then **Customer approved** and confirm. | The status becomes **Sent**, then **Approved**. The words say Climvia does not send the quote to anyone: marking it sent records that you did. |
+| 2.19 | Choose **Create invoice** on the approved quote and confirm. | The new invoice page opens, linked **From Quote #QT-…**, unpaid, with the same lines and total. It can be paid with **Record payment** like any other. |
 
 ## 3. A review, start to finish (3 min)
 
@@ -120,7 +126,7 @@ For each page below (Overview, Bookings, Schedule, Jobs, Customers, a customer, 
 6. **When it worked, did the page tell you so?** In what words?
 7. **Where would you go next?** (A booking was confirmed: what now? A review was received: what now?)
 
-Particular things to listen for: whether **Request appointment** is understood as *not yet confirmed*; whether **Sent** in Marketing is understood as *recorded, not delivered*; whether Analytics' "Where are they coming from?" is understood to count only bookings that say where they came from; and whether anyone looks for a way to **create a quote** (there is none yet: see `saas-architecture.md` section 42.9).
+Particular things to listen for: whether **Request appointment** is understood as *not yet confirmed*; whether **Sent** in Marketing is understood as *recorded, not delivered*; whether Analytics' "Where are they coming from?" is understood to count only bookings that say where they came from; and whether the person who creates a quote understands that **Mark as sent** only records it (see `saas-architecture.md` section 43.7). Adding a Property or a Customer note is not in the product yet (post-launch, section 42.9).
 
 ---
 

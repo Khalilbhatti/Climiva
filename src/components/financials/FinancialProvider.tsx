@@ -1,10 +1,10 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import type { FinancialData, Invoice, Payment, PaymentMethod, PaymentTerms } from "@/data/financials";
+import type { FinancialData, Invoice, Payment, PaymentMethod, PaymentTerms, Quote, QuoteStatus } from "@/data/financials";
 import type { ActionResult } from "@/lib/action-result";
 import { send } from "@/lib/send-action";
-import { createInvoiceFromQuoteAction, recordPaymentAction, voidPaymentAction } from "@/server/actions/financials";
+import { createInvoiceFromQuoteAction, createQuoteAction, recordPaymentAction, updateQuoteStatusAction, voidPaymentAction } from "@/server/actions/financials";
 
 /** What every change resolves with: the financials as stored, or why it was refused. */
 type Done = Promise<ActionResult<{ financials: FinancialData }>>;
@@ -20,6 +20,21 @@ export type NewPaymentInput = {
   note?: string;
 };
 
+export type NewQuoteInput = {
+  /** The customer's address (slug) in this business. */
+  customerId: string;
+  /** "JB-201": a job of that customer, when the quote is for work already on a job. */
+  jobId?: string;
+  serviceId?: string;
+  /** "2024-11-30": the last day the price holds. */
+  validThrough?: string;
+  /** What the customer is told with the quote. */
+  message?: string;
+  /** Dollars with at most two decimals: what the person saw added up. The server refuses a request whose lines do not add up to it. */
+  expectedTotal: number;
+  lines: { description: string; quantity: number; /** Dollars, at most two decimals. */ rate: number }[];
+};
+
 type FinancialContextValue = {
   /** The business's quotes, invoices and payments, as stored. Balances and statuses are derived from them by the selectors. */
   data: FinancialData;
@@ -27,6 +42,10 @@ type FinancialContextValue = {
   recordPayment: (input: NewPaymentInput) => Promise<ActionResult<{ financials: FinancialData; payment: Payment }>>;
   /** Voids a recorded payment: it stays in history and stops counting. */
   voidPayment: (paymentId: string, reason: string, note?: string) => Done;
+  /** Creates a draft quote with its line items. The server numbers it and adds the lines up. */
+  createQuote: (input: NewQuoteInput) => Promise<ActionResult<{ financials: FinancialData; quote: Quote }>>;
+  /** Moves a quote forward: sent, then approved, declined or expired. Approving does not create an invoice. */
+  updateQuoteStatus: (quoteId: string, status: QuoteStatus) => Done;
   /** Creates an unpaid invoice from an approved quote that has none. */
   createInvoiceFromQuote: (quoteId: string, input: { terms: PaymentTerms; message?: string }) => Promise<ActionResult<{ financials: FinancialData; invoice: Invoice }>>;
 };
@@ -54,6 +73,8 @@ export function FinancialProvider({ initial, children }: { initial: FinancialDat
       data,
       recordPayment: async (input) => adopt(await send(() => recordPaymentAction(input))),
       voidPayment: async (id, reason, note) => adopt(await send(() => voidPaymentAction(id, reason, note))),
+      createQuote: async (input) => adopt(await send(() => createQuoteAction(input))),
+      updateQuoteStatus: async (quoteId, status) => adopt(await send(() => updateQuoteStatusAction(quoteId, status))),
       createInvoiceFromQuote: async (quoteId, input) => adopt(await send(() => createInvoiceFromQuoteAction(quoteId, input))),
     }),
     [data, adopt],

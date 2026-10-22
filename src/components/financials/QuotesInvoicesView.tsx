@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { Route } from "next";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CircleCheck, Clock, FileCheck2, FileText, Info } from "lucide-react";
+import { CircleCheck, Clock, FileCheck2, FileText, Info, Plus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { KpiCard } from "@/components/ui/KpiCard";
@@ -14,6 +14,7 @@ import { SearchInput } from "@/components/ui/SearchInput";
 import { Select } from "@/components/ui/Select";
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/Table";
 import { Tabs } from "@/components/ui/Tabs";
+import { useOpenedByLink } from "@/components/ui/useOpenedByLink";
 import { invoiceHref, quoteHref } from "@/config/routes";
 import {
   INVOICE_STATUS_LABEL,
@@ -33,10 +34,12 @@ import { getPartyName } from "@/data/operations";
 import { formatMonthDay } from "@/lib/dates";
 import { cn } from "@/lib/cn";
 import { formatDate } from "@/lib/format";
+import { CreateQuoteModal } from "./CreateQuoteModal";
 import { useFinancials } from "./FinancialProvider";
 import { InvoiceStatusBadge, QuoteStatusBadge } from "./StatusBadges";
 import { PartyName, usd } from "./shared";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 
 type TabId = "quotes" | "invoices";
 
@@ -80,6 +83,24 @@ function StatusFilter<T extends string>({
 export function QuotesInvoicesView() {
   const dir = useDirectory();
   const { data } = useFinancials();
+  // An owner or admin creates quotes (the server asks again). The one action is in the header, or in the empty page while there is nothing else to show.
+  const canManage = useCan("financials:manage");
+  const link = useOpenedByLink("/quotes-invoices", canManage);
+  const [creating, setCreating] = useState(false);
+  const createQuote = canManage && (
+    <Button size="lg" onClick={() => setCreating(true)}>
+      <Plus aria-hidden className="size-[18px]" />
+      Create quote
+    </Button>
+  );
+  const creator = canManage && (creating || link.asked) && (
+    <CreateQuoteModal
+      onClose={() => {
+        setCreating(false);
+        link.done();
+      }}
+    />
+  );
   const router = useRouter();
   const params = useSearchParams();
   const tabId: TabId = params.get("tab") === "invoices" ? "invoices" : "quotes";
@@ -129,16 +150,23 @@ export function QuotesInvoicesView() {
         <PageHeader title="Quotes & Invoices" description="What you have quoted and billed your customers." />
         <EmptyState
           icon={FileText}
-          title="No quotes or invoices yet"
-          description="Quotes, and the invoices made from approved quotes, are listed here. Payments you receive are recorded against those invoices."
+          title="No quotes yet"
+          description={
+            canManage
+              ? "Create a quote for a customer when you need to price work before invoicing."
+              : "Quotes your business creates appear here, and the invoices made from approved quotes."
+          }
+          action={createQuote || undefined}
         />
+        {creator}
       </>
     );
   }
 
   return (
     <>
-      <PageHeader title="Quotes & Invoices" description="What you have quoted and billed your customers." />
+      <PageHeader title="Quotes & Invoices" description="What you have quoted and billed your customers." actions={createQuote || undefined} />
+      {creator}
 
       <section aria-label="Quote and invoice totals" className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard

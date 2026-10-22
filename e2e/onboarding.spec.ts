@@ -184,7 +184,7 @@ test.describe("creating the workspace", () => {
       await expect(paymentTotals.getByText(label, { exact: true }).locator("xpath=../..")).toContainText(value);
     }
     await page.goto("/quotes-invoices");
-    await expect(page.getByRole("heading", { name: "No quotes or invoices yet" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "No quotes yet" })).toBeVisible();
     await expect(page.getByRole("region", { name: "Quote and invoice totals" })).toHaveCount(0);
     await expect(page.getByText(/isn't available for Blank Slate Cooling yet/)).toHaveCount(0);
     await expect(page.getByText("Sarah Mitchell")).toHaveCount(0);

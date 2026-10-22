@@ -44,7 +44,7 @@ export function ReviewRequestsPanel() {
     setWorking(undefined);
     if (!result.ok) return setProblem(result.error);
     if (result.data.link) setShown({ link: result.data.link, customerName });
-    else toast("The link could not be shown. Try again.");
+    else toast("We couldn't make a new review link. Nothing was changed. Try again.");
   }
 
   function closeShown() {

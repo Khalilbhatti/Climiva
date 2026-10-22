@@ -13,12 +13,12 @@ const rangeDialog = (page: Page) => page.getByRole("dialog", { name: "Select dat
 const section = (page: Page, name: string) => page.getByRole("region", { name, exact: true });
 
 test.describe("Analytics: structure", () => {
-  test("renders the approved header, the four tabs, the range control and Export report", async ({ page }) => {
+  test("renders the approved header, the six tabs, the range control and Export report", async ({ page }) => {
     await page.goto("/analytics");
     await expect(page.getByRole("heading", { level: 1, name: "Analytics" })).toBeVisible();
     await expect(page.getByText("How your business is doing: bookings, finished jobs and money, for the dates you choose.")).toBeVisible();
     await expect(primaryNav(page).getByRole("link", { name: "Analytics" })).toHaveAttribute("aria-current", "page");
-    await expect(tabs(page).getByRole("tab")).toHaveText(["Overview", "Bookings & Jobs", "Financial Records", "Maintenance Plans & Services"]);
+    await expect(tabs(page).getByRole("tab")).toHaveText(["Overview", "Bookings", "Jobs", "Revenue", "Marketplace", "Customer retention"]);
     await expect(tab(page, "Overview")).toHaveAttribute("aria-selected", "true");
     await expect(rangeButton(page)).toContainText("Oct 1 – Oct 31, 2024");
     await expect(rangeButton(page)).toContainText("This month");
@@ -29,15 +29,18 @@ test.describe("Analytics: structure", () => {
     await page.goto("/analytics");
     await tab(page, "Overview").focus();
     await page.keyboard.press("ArrowRight");
-    await expect(tab(page, "Bookings & Jobs")).toBeFocused();
-    await expect(tab(page, "Bookings & Jobs")).toHaveAttribute("aria-selected", "true");
-    await expect(page).toHaveURL(/\/analytics\?tab=bookings-jobs$/);
+    await expect(tab(page, "Bookings")).toBeFocused();
+    await expect(tab(page, "Bookings")).toHaveAttribute("aria-selected", "true");
+    await expect(page).toHaveURL(/\/analytics\?tab=bookings$/);
     await expect(page.getByRole("tabpanel")).toBeVisible();
 
+    // Addresses from the first version of the page still open the part they meant.
+    await page.goto("/analytics?tab=bookings-jobs");
+    await expect(tab(page, "Bookings")).toHaveAttribute("aria-selected", "true");
     await page.goto("/analytics?tab=financial");
-    await expect(tab(page, "Financial Records")).toHaveAttribute("aria-selected", "true");
+    await expect(tab(page, "Revenue")).toHaveAttribute("aria-selected", "true");
     await page.goto("/analytics?tab=plans");
-    await expect(tab(page, "Maintenance Plans & Services")).toHaveAttribute("aria-selected", "true");
+    await expect(tab(page, "Customer retention")).toHaveAttribute("aria-selected", "true");
     await page.goto("/analytics?tab=nonsense");
     await expect(tab(page, "Overview")).toHaveAttribute("aria-selected", "true");
   });
@@ -102,14 +105,12 @@ test.describe("Analytics: Overview tab", () => {
 });
 
 test.describe("Analytics: the other tabs", () => {
-  test("Bookings & Jobs: status counts, recent records and recent completed Jobs from the shared records", async ({ page }) => {
-    await page.goto("/analytics?tab=bookings-jobs");
-    const bookings = section(page, "Bookings");
-    await expect(bookings).toContainText("24 total logged");
+  test("Bookings and Jobs: status counts, recent records and recent completed Jobs from the shared records", async ({ page }) => {
+    await page.goto("/analytics?tab=bookings");
+    const howMany = section(page, "How many bookings are we getting?");
+    await expect(howMany).toContainText("24 in this period");
+    const bookings = section(page, "What state are they in?");
     for (const [label, value] of [["Confirmed", "14"], ["Completed", "6"], ["Pending confirmation", "2"], ["Cancelled", "2"]]) await expect(bookings).toContainText(new RegExp(`${label}\\s*${value}`));
-    const jobs = section(page, "Jobs");
-    await expect(jobs).toContainText("24 total logged");
-    for (const [label, value] of [["Completed", "18"], ["Scheduled", "4"], ["In progress", "2"]]) await expect(jobs).toContainText(new RegExp(`${label}\\s*${value}`));
 
     const records = page.getByRole("table", { name: "Recent booking records" }).locator("tbody tr");
     await expect(records).toHaveCount(5);
@@ -117,29 +118,39 @@ test.describe("Analytics: the other tabs", () => {
     await expect(records.filter({ hasText: "BK-1042" })).toContainText("Completed");
     await expect(page.getByRole("link", { name: "#BK-1042" })).toHaveAttribute("href", "/bookings?tab=past&booking=BK-1042");
 
+    await expect(howMany.getByRole("link", { name: /View all in Bookings/ })).toHaveAttribute("href", "/bookings");
+    await expect(page.getByRole("table", { name: "Service activity" }).locator("tbody tr")).toHaveCount(6);
+    await expect(section(page, "Which Services do people book?").getByRole("link", { name: /Review catalog in Services/ })).toHaveAttribute("href", "/services");
+
+    await page.goto("/analytics?tab=jobs");
+    const jobs = section(page, "What is still scheduled or in progress?");
+    await expect(jobs).toContainText("24 Jobs in this period in all");
+    for (const [label, value] of [["Completed", "18"], ["Scheduled", "4"], ["In progress", "2"]]) await expect(jobs).toContainText(new RegExp(`${label}\\s*${value}`));
+    await expect(section(page, "How much work is being completed?")).toContainText("18 Jobs completed");
     const recentJobs = section(page, "Recent completed Jobs");
     await expect(recentJobs.getByRole("listitem")).toHaveCount(3);
     await expect(recentJobs.getByRole("listitem").first()).toContainText("#JB-204");
     await expect(recentJobs.getByRole("listitem").first()).toContainText("Sarah Mitchell — 1402 Kinney Ave");
     await expect(recentJobs.getByRole("listitem").first()).toContainText("Completed");
     await expect(recentJobs.getByRole("link", { name: "#JB-204" })).toHaveAttribute("href", "/jobs/JB-204");
-    await expect(bookings.getByRole("link", { name: /View all in Bookings/ })).toHaveAttribute("href", "/bookings");
-    await expect(jobs.getByRole("link", { name: /View all in Jobs/ })).toHaveAttribute("href", "/jobs");
+    await expect(section(page, "How much work is being completed?").getByRole("link", { name: /View all in Jobs/ })).toHaveAttribute("href", "/jobs");
   });
 
-  test("Financial Records: quotes, invoices and payments at the approved baseline", async ({ page }) => {
-    await page.goto("/analytics?tab=financial");
-    const quotes = section(page, "Quotes");
+  test("Revenue: what was invoiced, paid, is outstanding and was quoted, at the approved baseline", async ({ page }) => {
+    await page.goto("/analytics?tab=revenue");
+    const quotes = section(page, "What have we quoted?");
     await expect(quotes).toContainText(/Total quoted value\s*\$4,820/);
     await expect(quotes).toContainText(/Approved quote value\s*\$2,975/);
     for (const [label, value] of [["Approved", "5"], ["Sent", "3"], ["Draft", "2"], ["Declined", "1"], ["Expired", "1"]]) await expect(quotes).toContainText(new RegExp(`${label}\\s*${value}`));
 
-    const invoices = section(page, "Invoices");
+    const invoices = section(page, "What have we invoiced?");
     await expect(invoices).toContainText(/Total invoiced\s*\$6,240/);
-    await expect(invoices).toContainText(/Outstanding balance\s*\$680/);
     for (const [label, value] of [["Paid", "12"], ["Unpaid", "4"], ["Partially paid", "2"]]) await expect(invoices).toContainText(new RegExp(`${label}\\s*${value}`));
+    const outstanding = section(page, "What is still outstanding?");
+    await expect(outstanding).toContainText(/Outstanding balance\s*\$680/);
+    await expect(outstanding.getByRole("link", { name: /View outstanding invoices in Payments/ })).toHaveAttribute("href", "/payments?tab=outstanding");
 
-    const payments = section(page, "Payments");
+    const payments = section(page, "What has been paid?");
     await expect(payments).toContainText(/Payments recorded\s*7/);
     await expect(payments).toContainText(/Amount received\s*\$2,130/);
     await expect(payments).toContainText(/Voided payments\s*1/);
@@ -148,13 +159,14 @@ test.describe("Analytics: the other tabs", () => {
     await expect(payments.getByRole("link", { name: "#PAY-1008" })).toHaveAttribute("href", "/payments/PAY-1008");
   });
 
-  test("Maintenance Plans & Services: plan totals and the Service table", async ({ page }) => {
-    await page.goto("/analytics?tab=plans");
-    const plans = section(page, "Maintenance Plans");
+  test("Customer retention: Maintenance Plan totals and what customers say", async ({ page }) => {
+    await page.goto("/analytics?tab=retention");
+    const plans = section(page, "How many customers are on a Maintenance Plan?");
     for (const [label, value] of [["Active plans", "14"], ["Visits due", "5"], ["Upcoming renewals", "3"], ["Paused or ended", "2"]]) await expect(plans).toContainText(new RegExp(`${label}\\s*${value}`));
     await expect(plans.getByRole("link", { name: /Manage plans in Maintenance Plans/ })).toHaveAttribute("href", "/maintenance-plans");
-    await expect(page.getByRole("table", { name: "Service activity" }).locator("tbody tr")).toHaveCount(6);
-    await expect(section(page, "Service activity").getByRole("link", { name: /Review catalog in Services/ })).toHaveAttribute("href", "/services");
+    const reviews = section(page, "What do customers say about our work?");
+    for (const [label, value] of [["Total reviews", "12"], ["Average rating", "4.7"], ["Awaiting reply", "3"], ["Review requests", "5"]]) await expect(reviews).toContainText(new RegExp(`${label}\\s*${value}`));
+    await expect(reviews.getByRole("link", { name: /Read them in Reviews/ })).toHaveAttribute("href", "/reviews");
   });
 });
 
@@ -376,30 +388,30 @@ test.describe("Analytics: follows the session through the shared selectors", () 
     await primaryNav(page).getByRole("link", { name: "Analytics" }).click();
     await expect(kpis(page).getByRole("link").nth(4)).toContainText("$2,430");
     await expect(page.getByRole("region", { name: "Financial record totals" })).toContainText("8 payments");
-    await tab(page, "Financial Records").click();
-    await expect(section(page, "Payments")).toContainText(/Payments recorded\s*8/);
-    await expect(section(page, "Payments")).toContainText(/Amount received\s*\$2,430/);
-    await expect(section(page, "Invoices")).toContainText(/Outstanding balance\s*\$380/);
-    await expect(section(page, "Invoices")).toContainText(/Paid\s*13/);
-    await expect(section(page, "Invoices")).toContainText(/Partially paid\s*1/);
-    await expect(section(page, "Invoices")).toContainText(/Total invoiced\s*\$6,240/);
+    await tab(page, "Revenue").click();
+    await expect(section(page, "What has been paid?")).toContainText(/Payments recorded\s*8/);
+    await expect(section(page, "What has been paid?")).toContainText(/Amount received\s*\$2,430/);
+    await expect(section(page, "What is still outstanding?")).toContainText(/Outstanding balance\s*\$380/);
+    await expect(section(page, "What have we invoiced?")).toContainText(/Paid\s*13/);
+    await expect(section(page, "What have we invoiced?")).toContainText(/Partially paid\s*1/);
+    await expect(section(page, "What have we invoiced?")).toContainText(/Total invoiced\s*\$6,240/);
 
     await primaryNav(page).getByRole("link", { name: "Overview" }).click();
     await expect(page.getByRole("region", { name: "Key metrics" })).toContainText("$2,430");
   });
 
   test("a reload restores the baseline", async ({ page }) => {
-    await page.goto("/analytics?tab=financial");
-    await expect(section(page, "Payments")).toContainText(/Amount received\s*\$2,130/);
+    await page.goto("/analytics?tab=revenue");
+    await expect(section(page, "What has been paid?")).toContainText(/Amount received\s*\$2,130/);
   });
 });
 
 test.describe("Analytics: scope", () => {
   test("is a reporting view only: no editing controls, AI, forecasts or per-technician figures on any tab", async ({ page }) => {
-    for (const query of ["", "?tab=bookings-jobs", "?tab=financial", "?tab=plans"]) {
+    for (const query of ["", "?tab=bookings", "?tab=jobs", "?tab=revenue", "?tab=marketplace", "?tab=retention"]) {
       await page.goto(`/analytics${query}`);
       const text = (await page.locator("main").innerText()).toLowerCase();
-      for (const banned of ["insight", "recommend", "forecast", "predict", "ai ", "technician performance", "conversion", "retention", "profitab", "efficiency", "demand", "saved view", "last synced", "data readiness", "audit", "traffic", "attribution", "seo"]) {
+      for (const banned of ["insight", "recommend", "forecast", "predict", "ai ", "technician performance", "conversion", "profitab", "efficiency", "demand", "saved view", "last synced", "data readiness", "audit", "traffic", "attribution", "seo"]) {
         expect(text, `${query || "overview"}: ${banned}`).not.toContain(banned);
       }
       await expect(page.locator("main").getByRole("button", { name: /^(Save|Add|Create|Delete|Edit)/ })).toHaveCount(0);
@@ -408,7 +420,7 @@ test.describe("Analytics: scope", () => {
 
   test("shows only the approved tabs and no decorative percentages", async ({ page }) => {
     await page.goto("/analytics");
-    await expect(tabs(page).getByRole("tab")).toHaveCount(4);
+    await expect(tabs(page).getByRole("tab")).toHaveCount(6);
     expect(await page.locator("main").innerText()).not.toMatch(/\d+(\.\d+)?%/);
   });
 

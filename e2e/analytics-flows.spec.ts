@@ -43,8 +43,8 @@ test.describe("what a person does reaches Analytics, the Overview and the sideba
     await expect(kpis(page)).toContainText(new RegExp(`Bookings\\s*${bookings}`));
     await page.goto("/analytics");
     await expect(kpis(page)).toContainText(new RegExp(`Bookings\\s*${bookings}`));
-    await page.getByRole("tab", { name: "Bookings & Jobs" }).click();
-    await expect(section(page, "Bookings")).toContainText(`${bookings} total logged`);
+    await page.getByRole("tab", { name: "Bookings" }).click();
+    await expect(section(page, "How many bookings are we getting?")).toContainText(`${bookings} in this period`);
     // The sidebar's Bookings count is the requests waiting for an answer (not a total), so it agrees with the Requests tab and the Overview's attention list.
     const waiting = Number((await db.query("select count(*) as n from bookings where organization_id = $1 and status = 'pending'", [workerTenant.organizationId])).rows[0].n);
     const expectWaiting = () => (waiting > 0 ? expect(sidebarCount(page, "Bookings")).toContainText(`${waiting} waiting for an answer`) : expect(sidebarCount(page, "Bookings")).not.toContainText(/\d/));
@@ -66,10 +66,11 @@ test.describe("what a person does reaches Analytics, the Overview and the sideba
 
     await page.goto("/analytics");
     await expect(kpis(page)).toContainText(/Jobs completed\s*19/);
-    await page.goto("/analytics?tab=bookings-jobs");
-    await expect(section(page, "Jobs")).toContainText("24 total logged");
-    await expect(section(page, "Jobs").getByText("Completed", { exact: true }).locator("..")).toContainText("19");
-    await expect(section(page, "Jobs").getByText("Scheduled", { exact: true }).locator("..")).toContainText("3");
+    await page.goto("/analytics?tab=jobs");
+    const jobs = section(page, "What is still scheduled or in progress?");
+    await expect(jobs).toContainText("24 Jobs in this period in all");
+    await expect(jobs.getByText("Completed", { exact: true }).locator("..")).toContainText("19");
+    await expect(jobs.getByText("Scheduled", { exact: true }).locator("..")).toContainText("3");
     await expect(page.getByText("JB-201").first()).toBeVisible();
     await page.goto("/");
     await expect(kpis(page)).toContainText("19");
@@ -86,13 +87,13 @@ test.describe("what a person does reaches Analytics, the Overview and the sideba
     await dialog.getByRole("button", { name: "Record payment" }).click();
     await page.getByRole("dialog", { name: "Payment recorded" }).getByRole("button", { name: "Close", exact: true }).click();
 
-    await page.goto("/analytics?tab=financial");
-    await expect(section(page, "Payments")).toContainText(/Payments recorded\s*8/);
-    await expect(section(page, "Payments")).toContainText(/Amount received\s*\$2,430/);
-    await expect(section(page, "Invoices")).toContainText(/Outstanding balance\s*\$380/);
-    await expect(section(page, "Invoices")).toContainText(/Paid\s*13/);
-    await expect(section(page, "Invoices")).toContainText(/Partially paid\s*1/);
-    await expect(section(page, "Invoices")).toContainText(/Total invoiced\s*\$6,240/);
+    await page.goto("/analytics?tab=revenue");
+    await expect(section(page, "What has been paid?")).toContainText(/Payments recorded\s*8/);
+    await expect(section(page, "What has been paid?")).toContainText(/Amount received\s*\$2,430/);
+    await expect(section(page, "What is still outstanding?")).toContainText(/Outstanding balance\s*\$380/);
+    await expect(section(page, "What have we invoiced?")).toContainText(/Paid\s*13/);
+    await expect(section(page, "What have we invoiced?")).toContainText(/Partially paid\s*1/);
+    await expect(section(page, "What have we invoiced?")).toContainText(/Total invoiced\s*\$6,240/);
     await page.goto("/");
     await expect(kpis(page)).toContainText("$2,430");
 
@@ -104,13 +105,13 @@ test.describe("what a person does reaches Analytics, the Overview and the sideba
     await voiding.getByRole("button", { name: "Void payment" }).click();
     await expect(page.getByRole("dialog", { name: "Payment voided" })).toBeVisible();
 
-    await page.goto("/analytics?tab=financial");
-    await expect(section(page, "Payments")).toContainText(/Payments recorded\s*7/);
-    await expect(section(page, "Payments")).toContainText(/Amount received\s*\$2,130/);
-    await expect(section(page, "Payments")).toContainText(/Voided payments\s*2/);
-    await expect(section(page, "Invoices")).toContainText(/Outstanding balance\s*\$680/);
-    await expect(section(page, "Invoices")).toContainText(/Paid\s*12/);
-    await expect(section(page, "Invoices")).toContainText(/Partially paid\s*2/);
+    await page.goto("/analytics?tab=revenue");
+    await expect(section(page, "What has been paid?")).toContainText(/Payments recorded\s*7/);
+    await expect(section(page, "What has been paid?")).toContainText(/Amount received\s*\$2,130/);
+    await expect(section(page, "What has been paid?")).toContainText(/Voided payments\s*2/);
+    await expect(section(page, "What is still outstanding?")).toContainText(/Outstanding balance\s*\$680/);
+    await expect(section(page, "What have we invoiced?")).toContainText(/Paid\s*12/);
+    await expect(section(page, "What have we invoiced?")).toContainText(/Partially paid\s*2/);
   });
 
   test("replying to a review and creating a campaign are reported where they belong: the Reviews and Marketing screens move, Analytics' own tabs do not", async ({ page }) => {
@@ -137,30 +138,30 @@ test.describe("what a person does reaches Analytics, the Overview and the sideba
 
 test.describe("the URL keeps the tab and the range", () => {
   test("a tab and a range survive a reload and a link, and changing the range changes every figure on every tab", async ({ page }) => {
-    await page.goto("/analytics?tab=financial&range=this-quarter");
-    await expect(tab(page, "Financial Records")).toHaveAttribute("aria-selected", "true");
+    await page.goto("/analytics?tab=revenue&range=this-quarter");
+    await expect(tab(page, "Revenue")).toHaveAttribute("aria-selected", "true");
     await expect(rangeButton(page)).toContainText("Oct 1 – Dec 31, 2024");
-    await expect(section(page, "Invoices")).toContainText(/Total invoiced\s*\$6,240/);
+    await expect(section(page, "What have we invoiced?")).toContainText(/Total invoiced\s*\$6,240/);
     await page.reload();
-    await expect(tab(page, "Financial Records")).toHaveAttribute("aria-selected", "true");
+    await expect(tab(page, "Revenue")).toHaveAttribute("aria-selected", "true");
     await expect(rangeButton(page)).toContainText("Oct 1 – Dec 31, 2024");
 
     // A range with no invoices: the same tab, the same URL parameters, no stale Oct figures.
-    await page.goto("/analytics?tab=financial&range=custom&from=2024-10-10&to=2024-10-20");
+    await page.goto("/analytics?tab=revenue&range=custom&from=2024-10-10&to=2024-10-20");
     await expect(page.getByText(/Imported history for/)).toBeVisible();
-    await expect(section(page, "Invoices")).toContainText(/Total invoiced\s*\$0/);
-    await expect(section(page, "Quotes")).toContainText(/Total quoted value\s*\$195/);
-    await tab(page, "Bookings & Jobs").click();
-    await expect(page).toHaveURL(/tab=bookings-jobs/);
+    await expect(section(page, "What have we invoiced?")).toContainText(/Total invoiced\s*\$0/);
+    await expect(section(page, "What have we quoted?")).toContainText(/Total quoted value\s*\$195/);
+    await tab(page, "Bookings").click();
+    await expect(page).toHaveURL(/tab=bookings$|tab=bookings&/);
     await expect(page).toHaveURL(/range=custom&from=2024-10-10&to=2024-10-20/);
-    await expect(section(page, "Bookings")).toContainText("0 total logged");
+    await expect(section(page, "How many bookings are we getting?")).toContainText("0 in this period");
 
     // The picker changes the range and keeps the tab.
     await rangeButton(page).click();
     await page.getByRole("dialog", { name: "Select date range" }).getByRole("radio", { name: /^This month/ }).check();
     await page.getByRole("dialog", { name: "Select date range" }).getByRole("button", { name: "Apply range" }).click();
-    await expect(page).toHaveURL(/tab=bookings-jobs/);
-    await expect(section(page, "Bookings")).toContainText("24 total logged");
+    await expect(page).toHaveURL(/tab=bookings/);
+    await expect(section(page, "How many bookings are we getting?")).toContainText("24 in this period");
   });
 
   test("the range is read from the business's own calendar: a new business's this month is the real month, not October 2024", async ({ openAs }) => {
@@ -187,7 +188,7 @@ test.describe("tenant switching recalculates everything", () => {
     await page.goto("/analytics");
     await expect(kpis(page)).toContainText(/Bookings\s*24/);
     await expect(kpis(page)).toContainText("$6,240");
-    await page.getByRole("tab", { name: "Maintenance Plans & Services" }).click();
+    await page.getByRole("tab", { name: "Bookings" }).click();
     await expect(page.getByRole("table", { name: "Service activity" })).toContainText("AC Repair & Diagnostics");
     await expect(sidebarCount(page, "Bookings")).toContainText("waiting for an answer");
 
@@ -197,9 +198,10 @@ test.describe("tenant switching recalculates everything", () => {
     await expect(kpis(page)).toContainText("$369");
     for (const [name, check] of [
       ["Overview", async () => { await expect(main(page)).not.toContainText("AC Repair & Diagnostics"); await expect(main(page)).toContainText("Cooling Diagnostic Visit"); }],
-      ["Bookings & Jobs", async () => { await expect(section(page, "Bookings")).toContainText("6 total logged"); await expect(section(page, "Jobs")).toContainText("3 total logged"); }],
-      ["Financial Records", async () => { await expect(section(page, "Invoices")).toContainText(/Total invoiced\s*\$369/); await expect(section(page, "Quotes")).toContainText(/Total quoted value\s*\$223/); }],
-      ["Maintenance Plans & Services", async () => { await expect(section(page, "Maintenance Plans")).toContainText(/Active plans\s*1/); await expect(page.getByRole("table", { name: "Service activity" })).toContainText("Furnace Tune-Up"); }],
+      ["Bookings", async () => { await expect(section(page, "How many bookings are we getting?")).toContainText("6 in this period"); await expect(page.getByRole("table", { name: "Service activity" })).toContainText("Furnace Tune-Up"); }],
+      ["Jobs", async () => { await expect(section(page, "What is still scheduled or in progress?")).toContainText("3 Jobs in this period in all"); }],
+      ["Revenue", async () => { await expect(section(page, "What have we invoiced?")).toContainText(/Total invoiced\s*\$369/); await expect(section(page, "What have we quoted?")).toContainText(/Total quoted value\s*\$223/); }],
+      ["Customer retention", async () => { await expect(section(page, "How many customers are on a Maintenance Plan?")).toContainText(/Active plans\s*1/); }],
     ] as const) {
       await page.getByRole("tab", { name }).click();
       await check();
@@ -210,8 +212,8 @@ test.describe("tenant switching recalculates everything", () => {
     await toApex();
     await expect(page).toHaveURL(/\/overview$/);
     await expect(kpis(page)).toContainText(/Bookings\s*24/);
-    await page.goto("/analytics?tab=financial");
-    await expect(section(page, "Invoices")).toContainText(/Total invoiced\s*\$6,240/);
+    await page.goto("/analytics?tab=revenue");
+    await expect(section(page, "What have we invoiced?")).toContainText(/Total invoiced\s*\$6,240/);
   });
 
   test("a member of Apex reads Analytics too, and a business's figures are never read from another business's page", async ({ openAs }) => {

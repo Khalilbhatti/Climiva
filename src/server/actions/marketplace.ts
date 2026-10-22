@@ -31,10 +31,10 @@ function translate(error: unknown): ReturnType<typeof failure> {
   if (error instanceof Refusal) return failure(error.message, error.fields);
   const constraint = constraintOf(error);
   if (constraint === "marketplace_listing_services_public") return failure("Only active, public Services can be shown on a listing.", { services: "Only active, public Services can be shown on a listing." });
-  if (constraint === "marketplace_listings_public_slug_unique" || constraint === "marketplace_listings_org_unique") return failure("Someone changed this at the same moment. Reload the page and try again.");
-  if (isIntegrityViolation(error)) return failure("The change breaks a rule, so it was not saved. Reload the page and try again.");
+  if (constraint === "marketplace_listings_public_slug_unique" || constraint === "marketplace_listings_org_unique") return failure("Someone else just changed this, so your change was not saved. Reload the page to see the latest, then try again.");
+  if (isIntegrityViolation(error)) return failure("This change can't be saved as entered, and nothing was changed. Reload the page, check what you entered and try again.");
   console.error("[marketplace] could not save:", error instanceof Error ? error.message : error);
-  return failure("The change could not be saved. Try again.");
+  return failure("We couldn't save your Marketplace Listing. Your changes weren't saved. Try again.");
 }
 
 type Work = { tx: Tx; organizationId: string; organizationSlug: string };

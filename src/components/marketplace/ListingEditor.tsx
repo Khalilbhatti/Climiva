@@ -90,7 +90,7 @@ export function ListingEditor() {
     setBusy(false);
     // What is stored is what the screen shows from now on (the order of an unselected Service is not kept, for one).
     if (result.ok) setWorking(result.data.marketplace.config);
-    toast(result.ok ? "Listing changes saved." : result.error);
+    toast(result.ok ? "Marketplace Listing changes saved." : result.error);
   }
 
   async function saveAndPublish() {
@@ -100,19 +100,19 @@ export function ListingEditor() {
     const result = await setUpListing(working);
     setBusy(false);
     if (!result.ok) return toast(result.error);
-    toast("Marketplace listing published.");
+    toast("Marketplace Listing published. Homeowners can now find you.");
     router.push("/marketplace-listing");
   }
 
   async function publish() {
     const result = await publishListing();
-    toast(result.ok ? "Marketplace listing published." : result.error);
+    toast(result.ok ? "Marketplace Listing published. Homeowners can now find you." : result.error);
   }
 
   async function confirmHide() {
     const result = await hideListing();
     setHiding(false);
-    toast(result.ok ? "Marketplace listing hidden. Your listing content is saved." : result.error);
+    toast(result.ok ? "Marketplace Listing hidden. Your content is saved, and you can publish it again any time." : result.error);
   }
 
   return (

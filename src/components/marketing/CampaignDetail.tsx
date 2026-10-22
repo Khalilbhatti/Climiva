@@ -74,7 +74,7 @@ function SentDetail({ campaign, records }: { campaign: Campaign; records: readon
     <>
       <section aria-label="Campaign results" className={`grid grid-cols-2 gap-4 ${delivery ? "lg:grid-cols-4" : "lg:grid-cols-2"}`}>
         <Tile label="Recipients" value={total} hint="Total targeted contacts" />
-        <Tile label="Sent" value={total} hint="Messages sent" />
+        {delivery ? <Tile label="Sent" value={total} hint="Messages sent" /> : <Tile label="Delivery" value="Not tracked" hint="Climvia does not deliver messages yet" />}
         {delivery && <Tile label="Delivered" value={delivery.delivered} hint="Messages delivered" />}
         {delivery && <Tile label="Not delivered" value={delivery.notDelivered} hint="Messages not delivered" />}
       </section>

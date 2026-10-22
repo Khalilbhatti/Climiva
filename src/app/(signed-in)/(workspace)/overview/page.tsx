@@ -22,7 +22,7 @@ export const metadata: Metadata = { title: "Overview" };
  * set up and shown no empty "today", and one with activity sees its day.
  */
 export default async function OverviewPage() {
-  const { snapshot, role, organizationId } = await requireWorkspaceContext();
+  const { snapshot, role, organizationId, userId } = await requireWorkspaceContext();
   const core = await getCoreSnapshot();
   if (!core) throw new Error("The workspace was verified but its data could not be read.");
 
@@ -30,14 +30,14 @@ export default async function OverviewPage() {
   const dir: Directory = { ...core.book, services: core.services, team: core.team };
   const manages = can(role, "settings:manage");
   const setup = setupState(core);
-  const showSetup = manages && (await cookies()).get(gettingStartedCookie(organizationId))?.value !== "1";
+  const showSetup = manages && (await cookies()).get(gettingStartedCookie(userId, organizationId))?.value !== "1";
   const active = hasActivity(core);
 
   return (
     <>
       <OverviewHeader />
 
-      {showSetup && <GettingStarted organizationId={organizationId} setup={setup} />}
+      {showSetup && <GettingStarted userId={userId} organizationId={organizationId} setup={setup} />}
 
       {active ? (
         <>

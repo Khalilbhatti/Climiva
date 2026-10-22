@@ -55,7 +55,7 @@ export function MarketplaceOverview() {
 
   async function publish() {
     const result = await publishListing();
-    toast(result.ok ? "Marketplace listing published." : result.error);
+    toast(result.ok ? "Marketplace Listing published. Homeowners can now find you." : result.error);
   }
 
   // One main action for the state the listing is in: set it up (the empty state carries that one), publish it, or look at it as homeowners do.
@@ -205,7 +205,7 @@ export function MarketplaceOverview() {
                 icon={Store}
                 action={
                   <Link href="/settings" className="inline-flex items-center gap-1 text-xs font-semibold whitespace-nowrap text-primary hover:underline">
-                    Edit in Settings
+                    {canManage ? "Edit in Settings" : "View in Settings"}
                     <ArrowRight aria-hidden className="size-3.5" />
                   </Link>
                 }
@@ -252,7 +252,7 @@ export function MarketplaceOverview() {
                 title="Services shown"
                 action={
                   <Link href="/services" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
-                    Manage Services
+                    {canManage ? "Manage Services" : "View Services"}
                     <ArrowRight aria-hidden className="size-3.5" />
                   </Link>
                 }

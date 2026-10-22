@@ -9,12 +9,12 @@ import { gettingStartedCookie, type SetupState } from "@/lib/overview-rules";
 /**
  * The first things a new business does, with how far along it is. What is done is decided on the server from the business's own records (see
  * lib/overview-rules), so a step is never ticked because someone clicked it and never stays unticked after the thing exists. The only thing kept
- * here is whether the owner hid the list; that is a cookie for this business in this browser, read on the server so the list never flashes.
+ * here is whether this person hid the list; that is a cookie for this person and this business in this browser (see gettingStartedCookie), read on the server so the list never flashes.
  */
-export function GettingStarted({ organizationId, setup }: { organizationId: string; setup: SetupState }) {
+export function GettingStarted({ userId, organizationId, setup }: { userId: string; organizationId: string; setup: SetupState }) {
   const router = useRouter();
   const hide = () => {
-    document.cookie = `${gettingStartedCookie(organizationId)}=1; path=/; max-age=31536000; samesite=lax`;
+    document.cookie = `${gettingStartedCookie(userId, organizationId)}=1; path=/; max-age=31536000; samesite=lax`;
     router.refresh();
   };
   const percent = Math.round((setup.completed / setup.total) * 100);

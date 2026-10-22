@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { FormAlert } from "@/components/auth/AuthShell";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { Modal } from "@/components/ui/Modal";
+import { Modal, ModalActions } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { useToast } from "@/components/ui/Toast";
+import { useGuardedClose } from "@/components/ui/useGuardedClose";
 import { customerHref } from "@/config/routes";
 import type { ContactChannel } from "@/data/customers";
 import { CUSTOMER_NAME_MAX, parseNewCustomer, suggestedChannel } from "@/lib/customer-rules";
@@ -36,6 +37,8 @@ export function AddCustomerModal({ onClose }: { onClose: () => void }) {
   const [attempt, setAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const preferred = channel ?? suggestedChannel(phone, email);
+  // Anything typed or chosen is work worth asking about before it is closed away.
+  const { close, guard } = useGuardedClose(!saving && (name.trim() !== "" || email.trim() !== "" || phone.trim() !== "" || channel !== null), onClose, "adding this customer");
 
   // After a refused attempt, put the focus on the first thing to fix.
   useEffect(() => {
@@ -69,39 +72,39 @@ export function AddCustomerModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal
-      open
-      onClose={onClose}
-      size="lg"
-      title="Add customer"
-      description="Add someone you serve. You can add their service locations and equipment afterwards."
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" form={formId} disabled={saving}>
-            {saving ? "Adding…" : "Add customer"}
-          </Button>
-        </>
-      }
-    >
-      <form id={formId} ref={formRef} onSubmit={submit} noValidate className="space-y-4">
-        <Input label="Full name" required autoComplete="off" maxLength={CUSTOMER_NAME_MAX} value={name} error={errors.name} onChange={(event) => setName(event.target.value)} />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Input label="Email address" type="email" autoComplete="off" maxLength={200} value={email} error={errors.email} onChange={(event) => setEmail(event.target.value)} />
-          <Input label="Phone number" type="tel" autoComplete="off" maxLength={60} value={phone} error={errors.phone} onChange={(event) => setPhone(event.target.value)} />
-        </div>
-        <p className="-mt-2 text-xs text-ink-muted">An email address or a phone number is needed to reach them. Both help.</p>
-        <Select label="Preferred contact" value={preferred} error={errors.preferredContact} onChange={(event) => setChannel(event.target.value as ContactChannel)}>
-          {CHANNELS.map((option) => (
-            <option key={option} value={option}>
-              {CHANNEL_LABEL[option]}
-            </option>
-          ))}
-        </Select>
-        {problem && <FormAlert>{problem}</FormAlert>}
-      </form>
-    </Modal>
+    <>
+      <Modal
+        open
+        onClose={close}
+        size="lg"
+        title="Add customer"
+        description="Add someone you serve. You can add their service locations and equipment afterwards."
+        footer={
+          <ModalActions onCancel={close}>
+            <Button type="submit" form={formId} disabled={saving}>
+              {saving ? "Adding…" : "Add customer"}
+            </Button>
+          </ModalActions>
+        }
+      >
+        <form id={formId} ref={formRef} onSubmit={submit} noValidate className="space-y-4">
+          <Input label="Full name" required autoComplete="off" maxLength={CUSTOMER_NAME_MAX} value={name} error={errors.name} onChange={(event) => setName(event.target.value)} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input label="Email address" type="email" autoComplete="off" maxLength={200} value={email} error={errors.email} onChange={(event) => setEmail(event.target.value)} />
+            <Input label="Phone number" type="tel" autoComplete="off" maxLength={60} value={phone} error={errors.phone} onChange={(event) => setPhone(event.target.value)} />
+          </div>
+          <p className="-mt-2 text-xs text-ink-muted">An email address or a phone number is needed to reach them. Both help.</p>
+          <Select label="Preferred contact" value={preferred} error={errors.preferredContact} onChange={(event) => setChannel(event.target.value as ContactChannel)}>
+            {CHANNELS.map((option) => (
+              <option key={option} value={option}>
+                {CHANNEL_LABEL[option]}
+              </option>
+            ))}
+          </Select>
+          {problem && <FormAlert>{problem}</FormAlert>}
+        </form>
+      </Modal>
+      {guard}
+    </>
   );
 }

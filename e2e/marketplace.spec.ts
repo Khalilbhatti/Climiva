@@ -299,7 +299,7 @@ test.describe("Hide and publish", () => {
 
     await hideButton.click();
     await page.getByRole("dialog", { name: "Hide Marketplace listing?" }).getByRole("button", { name: "Hide listing" }).click();
-    await expect(toast(page)).toContainText("Marketplace listing hidden.");
+    await expect(toast(page)).toContainText("Marketplace Listing hidden.");
     await expect(page.getByRole("button", { name: "Publish listing" })).toBeVisible();
     await expect(page.getByText("Hidden").first()).toBeVisible();
     await expect(page.getByLabel(/^Business description/)).toHaveValue("Kept while hidden.");
@@ -334,7 +334,7 @@ test.describe("Hide and publish", () => {
 
     await primaryNav(page).getByRole("link", { name: /^Marketplace/ }).click();
     await page.getByRole("button", { name: "Publish listing" }).click();
-    await expect(toast(page)).toContainText("Marketplace listing published.");
+    await expect(toast(page)).toContainText("Marketplace Listing published.");
     await expect(summary(page)).toContainText("Visible in Climvia Marketplace");
     await expect(page.getByRole("link", { name: "View public profile" })).toBeVisible();
     await expect(preview(page)).toContainText("Restored after hiding.");
@@ -349,7 +349,7 @@ test.describe("Hide and publish", () => {
     await expect(page.getByRole("switch", { name: "Listing visible" })).toHaveAttribute("aria-checked", "false");
     await page.getByRole("switch", { name: "Listing visible" }).click();
     await expect(page.getByRole("switch", { name: "Listing visible" })).toHaveAttribute("aria-checked", "true");
-    await expect(toast(page)).toContainText("Marketplace listing published.");
+    await expect(toast(page)).toContainText("Marketplace Listing published.");
   });
 });
 
@@ -408,7 +408,7 @@ test.describe("Directory preview", () => {
     await page.goto("/marketplace-listing/edit");
     await page.getByRole("button", { name: "Hide listing" }).click();
     await page.getByRole("dialog", { name: "Hide Marketplace listing?" }).getByRole("button", { name: "Hide listing" }).click();
-    await expect(toast(page)).toContainText("Marketplace listing hidden.");
+    await expect(toast(page)).toContainText("Marketplace Listing hidden.");
     await expect(page.getByRole("button", { name: "Preview listing" })).toBeDisabled();
 
     // The visitor's page no longer exists...
@@ -456,7 +456,7 @@ test.describe("First-time setup and empty state", () => {
 
     await page.getByRole("button", { name: "Save & publish listing" }).click();
     await expect(page).toHaveURL("/marketplace-listing");
-    await expect(toast(page)).toContainText("Marketplace listing published.");
+    await expect(toast(page)).toContainText("Marketplace Listing published.");
     // Stored: the listing survives a reload.
     await page.reload();
     await expect(summary(page)).toContainText("Visible in Climvia Marketplace");

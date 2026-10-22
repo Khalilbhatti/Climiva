@@ -17,6 +17,7 @@ import { getShownServices, orderedPages } from "@/data/website";
 import { previewHref } from "./site-links";
 import { useWebsiteState } from "./WebsiteProvider";
 import { useServices } from "@/components/services/ServicesProvider";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 
 /**
  * Booking tab: what a customer can do on the website, read from the Services catalog. This is a view, not a
@@ -24,6 +25,7 @@ import { useServices } from "@/components/services/ServicesProvider";
  */
 export function BookingSetup() {
   const website = useWebsiteState();
+  const canManageServices = useCan("services:manage");
   const { services: catalog } = useServices();
   const version = website.published && website.live ? website.live : website.draft;
   const shown = getShownServices(version.settings.serviceDisplay, catalog);
@@ -69,7 +71,7 @@ export function BookingSetup() {
             Booking method by Service
           </h2>
           <Link href="/services" className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
-            Manage Services
+            {canManageServices ? "Manage Services" : "View Services"}
             <ArrowRight aria-hidden className="size-3.5" />
           </Link>
         </div>

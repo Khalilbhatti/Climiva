@@ -215,7 +215,7 @@ export function BuilderProvider({ initialPage, children }: { initialPage?: strin
     }
     const stored = result.data.website;
     if (!stored) {
-      toast("The website could not be loaded after saving. Reload the page.");
+      toast("Your changes were saved, but we couldn't refresh this page. Reload it to see them.");
       return false;
     }
     setRevision(stored.draft.revision);
@@ -235,7 +235,7 @@ export function BuilderProvider({ initialPage, children }: { initialPage?: strin
       toast(result.error);
       return false;
     }
-    toast("Website published.");
+    toast("Website published. It is now public.");
     return true;
   }, [readOnly, publishing, dirty, stale, publishDraft, revision, toast]);
 

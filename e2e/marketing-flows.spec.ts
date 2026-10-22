@@ -200,7 +200,7 @@ test.describe("sending and cancelling", () => {
     await page.getByRole("radio", { name: /^Send now/ }).check();
     await page.getByRole("button", { name: "Send campaign" }).click();
     await expect(page).toHaveURL("/marketing/cmp-sent-for-real");
-    await expect(toast(page)).toContainText("Campaign sent to 146 recipients.");
+    await expect(toast(page)).toContainText("Campaign recorded as sent to 146 recipients. Nothing was delivered.");
 
     const stored = (await campaign(db, workerTenant.organizationId, "cmp-sent-for-real"))!;
     expect(stored).toMatchObject({ status: "sent", recipient_count: 146, delivered_count: null, not_delivered_count: null, scheduled_for: null });

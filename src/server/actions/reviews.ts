@@ -39,10 +39,10 @@ function translate(error: unknown): ReturnType<typeof failure> {
   if (constraint === "review_replies_review_unique") return failure("That review already has a response. Reload the page to see it.");
   if (constraint === "review_requests_job_active_unique") return failure("A review request for that job is already recorded.");
   if (constraint === "review_requests_job_completed") return failure("Only completed jobs are available for review requests.");
-  if (uniqueViolationOf(error)) return failure("Someone changed this at the same moment. Reload the page and try again.");
-  if (isIntegrityViolation(error)) return failure("The change breaks a rule, so it was not saved. Reload the page and try again.");
+  if (uniqueViolationOf(error)) return failure("Someone else just changed this, so your change was not saved. Reload the page to see the latest, then try again.");
+  if (isIntegrityViolation(error)) return failure("This change can't be saved as entered, and nothing was changed. Reload the page, check what you entered and try again.");
   console.error("[reviews] could not save:", error instanceof Error ? error.message : error);
-  return failure("The change could not be saved. Try again.");
+  return failure("We couldn't save this review change. Nothing was changed. Try again.");
 }
 
 /** Authorize, open the tenant transaction, run the change, and answer with the reviews as stored (and the link the change made, if any). */

@@ -274,7 +274,7 @@ test.describe("Request review", () => {
     await expect(dialog.getByRole("radio", { name: /^SMS/ })).toBeChecked();
     await expect(dialog.getByRole("radio", { name: /^Email/ })).not.toBeChecked();
     await dialog.getByRole("button", { name: "Send review request" }).click();
-    await expect(toast(page)).toContainText("Review request recorded for Sarah Mitchell by SMS. Nothing is sent.");
+    await expect(toast(page)).toContainText("Review request recorded for Sarah Mitchell. Nothing is sent, so give them the link.");
     await expect(totals(page)).toContainText("6");
     // The request's link is shown once, in a step of its own; closing it leaves no dialog open.
     const ready = page.getByRole("dialog", { name: "Review link ready" });
@@ -307,7 +307,7 @@ test.describe("Request review", () => {
     await expect(jobs).toHaveValue("JB-204");
     await expect(dialog).not.toContainText("isn't available yet");
     await dialog.getByRole("button", { name: "Send review request" }).click();
-    await expect(toast(page)).toContainText("Review request recorded for Sarah Mitchell by email.");
+    await expect(toast(page)).toContainText("Review request recorded for Sarah Mitchell.");
     await expect(totals(page)).toContainText("6");
   });
 

@@ -14,6 +14,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Select } from "@/components/ui/Select";
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/Table";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { memberHref } from "@/config/routes";
 import {
   CLASSIFICATION_LABEL,
@@ -67,6 +68,8 @@ export function TeamList() {
   const fieldAssignable = members.filter((member) => member.status === "active" && member.fieldAssignable);
   const office = active.filter((member) => getClassification(member) !== "field");
   const alone = members.length === 1;
+  // Who may add a person or change a role is the owner or an admin; a member reads the team and is offered nothing to change.
+  const canManage = useCan("team:manage");
 
   function setAdding(open: boolean) {
     const next = new URLSearchParams(params.toString());
@@ -85,12 +88,14 @@ export function TeamList() {
           <>
             <ButtonLink href="/team/roles" variant="secondary" size="lg">
               <ShieldCheck aria-hidden className="size-[18px]" />
-              Manage roles
+              {canManage ? "Manage roles" : "View roles"}
             </ButtonLink>
-            <Button size="lg" onClick={() => setAdding(true)}>
-              <Plus aria-hidden className="size-[18px]" />
-              Add team member
-            </Button>
+            {canManage && (
+              <Button size="lg" onClick={() => setAdding(true)}>
+                <Plus aria-hidden className="size-[18px]" />
+                Add team member
+              </Button>
+            )}
           </>
         }
       />
@@ -112,7 +117,7 @@ export function TeamList() {
         />
       </section>
 
-      {alone && (
+      {alone && canManage && (
         <Card className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-base font-semibold text-ink">You&rsquo;re currently the only person in this workspace.</h2>
@@ -289,7 +294,7 @@ export function TeamList() {
         </p>
       </aside>
 
-      {adding && <AddMemberModal onClose={() => setAdding(false)} />}
+      {adding && canManage && <AddMemberModal onClose={() => setAdding(false)} />}
     </>
   );
 }

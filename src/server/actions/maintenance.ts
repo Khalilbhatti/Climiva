@@ -43,10 +43,10 @@ function translate(error: unknown): ReturnType<typeof failure> {
   if (constraint === "plans_org_slug_unique" || constraint === "plan_visits_org_ref_unique") return failure("A plan with that name was created at the same moment. Reload the page and try again.");
   if (constraint === "plan_visits_org_booking_unique" || constraint === "plan_visits_final" || constraint === "plan_visits_status_transition") return failure("That visit already has a booking.");
   if (constraint === "plan_visits_booking_party") return failure("That booking is not for this plan's customer.");
-  if (uniqueViolationOf(error)) return failure("Someone changed this at the same moment. Reload the page and try again.");
-  if (isIntegrityViolation(error)) return failure("The change breaks a rule, so it was not saved. Reload the page and try again.");
+  if (uniqueViolationOf(error)) return failure("Someone else just changed this, so your change was not saved. Reload the page to see the latest, then try again.");
+  if (isIntegrityViolation(error)) return failure("This change can't be saved as entered, and nothing was changed. Reload the page, check what you entered and try again.");
   console.error("[maintenance] could not save:", error instanceof Error ? error.message : error);
-  return failure("The change could not be saved. Try again.");
+  return failure("We couldn't save this Maintenance Plan change. Nothing was changed. Try again.");
 }
 
 type Work = BookingWork & { timeZone: string };

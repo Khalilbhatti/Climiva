@@ -24,9 +24,9 @@ const DUPLICATE_NAME = "A service with this name already exists.";
 
 function translate(error: unknown): ReturnType<typeof failure> {
   if (uniqueViolationOf(error)?.startsWith("services_org_")) return failure(DUPLICATE_NAME, { name: DUPLICATE_NAME });
-  if (isIntegrityViolation(error)) return failure("The service details break a rule. Check them and try again.");
+  if (isIntegrityViolation(error)) return failure("Some of this Service's details can't be saved. Check the name, price and duration, then try again.");
   console.error("[services] could not save:", error instanceof Error ? error.message : error);
-  return failure("The service could not be saved. Try again.");
+  return failure("We couldn't save this Service. Your changes weren't saved. Try again.");
 }
 
 export async function addServiceAction(input: unknown): Promise<ActionResult<Service>> {

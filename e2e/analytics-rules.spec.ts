@@ -107,10 +107,12 @@ test.describe("date ranges", () => {
     expect(resolveRange("custom", "2020-01-01", "2024-12-06", SAMPLE_TODAY)).toMatchObject({ id: "this-month" });
   });
 
-  test("only the four known tabs are understood", () => {
-    expect(resolveTab("financial")).toBe("financial");
-    expect(resolveTab("bookings-jobs")).toBe("bookings-jobs");
-    for (const bad of ["", null, undefined, "marketing", "../etc", "OVERVIEW"]) expect(resolveTab(bad as string | null)).toBe("overview");
+  test("only the six known tabs are understood, and the first version's addresses open the tab that replaced them", () => {
+    for (const tab of ["overview", "bookings", "jobs", "revenue", "marketplace", "retention"]) expect(resolveTab(tab)).toBe(tab);
+    expect(resolveTab("bookings-jobs")).toBe("bookings");
+    expect(resolveTab("financial")).toBe("revenue");
+    expect(resolveTab("plans")).toBe("retention");
+    for (const bad of ["", null, undefined, "marketing", "../etc", "OVERVIEW", "__proto__", "constructor", "toString"]) expect(resolveTab(bad as string | null)).toBe("overview");
   });
 });
 

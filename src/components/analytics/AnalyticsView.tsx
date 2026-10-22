@@ -11,8 +11,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { ANALYTICS_TABS, DEFAULT_RANGE_ID, hasActivity, resolveTab, type AnalyticsReport, type DateRange } from "@/lib/analytics-rules";
-import { formatRange, recentRecords, rangeLabel } from "@/lib/analytics-state";
-import { BookingsJobsPanel, FinancialPanel, KpiRow, OverviewPanel, PlansPanel } from "./AnalyticsPanels";
+import { bookingsBySource, formatRange, recentRecords, rangeLabel } from "@/lib/analytics-state";
+import { BookingsPanel, JobsPanel, KpiRow, MarketplacePanel, OverviewPanel, RetentionPanel, RevenuePanel } from "./AnalyticsPanels";
 import { DateRangeModal } from "./DateRangeModal";
 import { ExportModal } from "./ExportModal";
 
@@ -32,6 +32,7 @@ export function AnalyticsView({ report }: { report: AnalyticsReport }) {
   const range = report.range;
   const active = hasActivity(report);
   const recent = useMemo(() => recentRecords(operations, financial, range, report.today), [operations, financial, range, report.today]);
+  const sources = useMemo(() => bookingsBySource(operations, range), [operations, range]);
 
   const [picking, setPicking] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -94,7 +95,7 @@ export function AnalyticsView({ report }: { report: AnalyticsReport }) {
               inside the selected dates.
             </p>
           )}
-          {/* The longest tab label is wider than a phone, so the tab list scrolls sideways there instead of the page. */}
+          {/* Six tabs are wider than a phone, so the tab list scrolls sideways there instead of the page. */}
           <div className="overflow-x-auto [&_button]:shrink-0 [&_button]:whitespace-nowrap">
             <Tabs
               label="Analytics sections"
@@ -106,9 +107,11 @@ export function AnalyticsView({ report }: { report: AnalyticsReport }) {
           </div>
           <div role="tabpanel" id={`analytics-panel-${tabId}`} aria-labelledby={`analytics-tab-${tabId}`}>
             {tabId === "overview" && <OverviewPanel report={report} />}
-            {tabId === "bookings-jobs" && <BookingsJobsPanel report={report} recent={recent} />}
-            {tabId === "financial" && <FinancialPanel report={report} recent={recent} financial={financial} />}
-            {tabId === "plans" && <PlansPanel report={report} />}
+            {tabId === "bookings" && <BookingsPanel report={report} recent={recent} sources={sources} />}
+            {tabId === "jobs" && <JobsPanel report={report} recent={recent} />}
+            {tabId === "revenue" && <RevenuePanel report={report} recent={recent} financial={financial} />}
+            {tabId === "marketplace" && <MarketplacePanel report={report} sources={sources} />}
+            {tabId === "retention" && <RetentionPanel report={report} />}
           </div>
         </>
       ) : (

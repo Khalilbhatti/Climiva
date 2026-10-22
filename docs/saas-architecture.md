@@ -2310,3 +2310,91 @@ One vocabulary is used on every screen: Customer, Booking, Job, Service, Team me
 ### 41.8 Tests and checks
 
 `ux-journeys.spec.ts` walks the main journeys by what is on the screen: a new owner from the landing page to a published Marketplace Listing (Getting started counts only what is really there, and hiding it survives a reload); a returning owner working the day from the Overview; a review asked for from the customer, answered on the public page and read by the business; a visitor on a phone asking for an appointment; a platform administrator moving through the console; a team member offered nothing to create; the navigation and the New menu. Existing specs that read the old words were adapted to the new ones, and the pages that now show a single empty state are held to it. The new and navigation-sensitive specs were run three times over with no failure. `docs/manual-qa-checklist.md` is the 25-minute walk-through for a person who is not a developer.
+
+## 42. UX completion (Phase 19F, completion pass)
+
+Phase 19F (section 41) simplified the workspace. This pass finishes what it left open, without changing a rule, a permission, a policy, a migration or a total. Nothing here is a new feature: each change is a way of saying what is already true, in the place a person looks for it. `drizzle-kit generate` reports no schema changes.
+
+### 42.1 Schedule
+
+The Day view keeps its layout (Unassigned panel, timeline, details panel) and gains what lets it be read at a glance:
+
+- **The date reads first.** The heading is the long date ("Today, Friday, October 25, 2024"), with the time zone beside it, and one line says what the period holds: how many visits, how many are in progress, how many still need a technician, and, on today only, what time it is now.
+- **The week is one press away.** A strip of the seven days sits above the timeline, each with how many things are on it ("Nothing" for none); the pressed one is the day shown and today is marked. In the Week view a day's header opens that day.
+- **Each technician's day is said in words** under their name: "2 visits", "Free all day", "Blocked time only", "Closed".
+- **A line for now** (today only) and shading outside business hours. A day the business is closed says so ("Your business hours say you are closed on Sundays"); an open day with nothing says "Nothing is scheduled for this day".
+- **A block says what it is.** Name, Service, then the status as a dot **and** a word; the time follows once the block is wide enough, with its kind: **Arrival window** (a request for an appointment: the customer was given a stretch of time), **Assessment visit** (a quote request), nothing for an exact time. Arrival windows are hatched; blocked time is dashed. A legend under the boards says what the colours, hatching and dashes mean.
+- The timeline is a labelled, keyboard-focusable region that scrolls sideways when the screen is narrow; the page never does.
+
+Nothing about scheduling changed: the same events, the same assign action, the same permissions (a member sees the Unassigned list as information only).
+
+### 42.2 Analytics
+
+The tabs are the owner's questions: **Overview, Bookings, Jobs, Revenue, Marketplace, Customer retention**. An address from the first version (`?tab=bookings-jobs`, `financial`, `plans`) still opens the right tab. Each section is headed by the question it answers:
+
+- **Bookings**: How many bookings are we getting? What state are they in? Where are they coming from? (counted from the booking records of the range, by source; imported history has no source, and the page says so) Which Services do people book?
+- **Jobs**: How much work is being completed? What is still scheduled or in progress?
+- **Revenue**: What have we invoiced? What has been paid? What is still outstanding? What have we quoted? (the same figures as before, regrouped)
+- **Marketplace**: How many bookings came from the Marketplace? How does the Marketplace compare with the other ways people book? Latest Marketplace bookings.
+- **Customer retention**: How many customers are on a Maintenance Plan? What do customers say about our work? (plan and review counts, as of today)
+
+Only real counts are shown. No rate, trend, score, forecast, "insight" or percentage appears anywhere, and the canonical totals (the five Overview figures, the revenue figures, the service table) are unchanged.
+
+### 42.3 Settings
+
+Settings is one navigation, grouped as an owner looks for things: **Business** (information, hours, branding), **Booking & operations**, **Team & access**, **Website & domains**, **Account & workspace** (preferences, profile). What is Settings' own is a page; everything else is a link that says where it is really managed ("How customers book", "Services and prices", "Team and permissions", "Domains", "Website"), so a setting has one home and Settings never holds a second copy. No permission changed: a member can still look and not change.
+
+### 42.4 Success and error wording
+
+Each success says what happened and, where it matters, what happens next: "Marketplace Listing published. Homeowners can now find you."; "Marketplace Listing hidden. Your content is saved, and you can publish it again any time."; "Website published. It is now public."; "Website unpublished. It is a draft again, and only you can see it."; "Profile saved."; "Review request recorded for X. Nothing is sent, so give them the link." Autosave stays silent.
+
+Every message a person can be shown by a server action now reads "We couldn't save this Service. Your changes weren't saved. Try again." or "Someone else just changed this, so your change was not saved. Reload the page to see the latest, then try again.". None names the database, a constraint, a policy, a function or a business's identifier; sign-in keeps its single, non-enumerating wording. A request that never reaches the server says "We couldn't reach the server, so nothing was saved. Check your connection and try again."
+
+### 42.5 Dialogs
+
+`ModalActions` (in `components/ui/Modal.tsx`) puts **Cancel** (or **Close**) on the left, a **Back** beside the main action when there is one, and the main action last. `useGuardedClose` makes Esc, the backdrop, the × and Cancel ask "Discard unsaved changes?" only when something was typed (Add customer, Add service, Create booking, Request review, Record payment); a dialog that has just saved closes without asking. Confirmation dialogs (reasons, voiding, the discard question itself) keep their own buttons: the safe choice sits beside the destructive one on purpose.
+
+### 42.6 A provider's page on a phone
+
+On a phone a bar along the bottom keeps the way to book on screen (`MobileBookBar`, a plain link, `md:hidden`): with a Service chosen (from the search, or the only one offered online) it names it with its price and carries the **words of that Service's own booking mode** (**Book a time**, **Request appointment**, **Request a quote**); with several and none chosen it says "Choose a service to book" and leads to the list; a business that offers nothing to book has no bar. A request is never labelled Book or Confirm. The page leaves room under its content so the bar never covers it.
+
+### 42.7 Getting started
+
+"Hidden" is kept in a cookie named for **the person and the business** (`getting_started_dismissed_<userId>_<organizationId>`), read on the server so the list never flashes. One business's dismissal does not hide another's, and one person's does not hide it from another person in the same browser. It remains the browser's memory, not the account's: on another device the list is back until it is hidden there too. Keeping it per account would need a stored field, and a convenience this small is not worth a schema change (decided; see also 41.2).
+
+### 42.8 Marketing
+
+Climvia keeps campaigns, who they are for and when they are set to go out. **It does not deliver email or text messages**: there is no mail or SMS provider behind Marketing. The page now says so in a note above the totals, the builder says that sending records the campaign ("Campaign recorded as sent to N recipients. Nothing was delivered."), a recipient count that was never worked out shows a dash, and a sent campaign's detail says "Not tracked" where a delivery result would be. This is the most important finding of this pass: until a provider is connected, "Sent" is a record, not a delivery, and the product must not suggest otherwise.
+
+### 42.9 Decisions: Quote, Property, Customer note (not built)
+
+| Item | Backend / database | Reachable in the UI | Real HVAC business blocked? | Recommendation |
+| --- | --- | --- | --- | --- |
+| Create a **Quote** by hand | `createQuoteAction`, `createQuoteTx`, `parseNewQuote`; `quotes_insert` policy and grant for `climvia_app` (migration 0007) | **No.** Nothing calls it. | **Yes.** An Invoice can only be created from an approved Quote, a Payment is recorded against an Invoice, so a new business cannot start the money chain; Quotes & Invoices, Payments and "Record payment" are dead ends for it. A "Request a quote" booking leads to an assessment and then nothing. | **Launch blocker** for any claim of in-app quoting, invoicing or payment tracking. Small: the action, the rules and the policy exist; it needs a form, a button, and tests. |
+| Add a **Property** | None. Customers' properties are read-only to the application role (migration 0003; 0030 adds only the customer insert). | No | **No.** A booking carries its own address, and the booking window asks for a property only when the customer already has one. | **Post-launch MVP.** Wanted for repeat service and equipment history, not needed to take and run a job. |
+| Add a customer **note** | None (read-only table). | No | **No.** Job and booking notes exist; customer notes are history. | **Post-launch MVP**, low priority. |
+
+These were audited, not built, as the brief required. Each would need its own migration (properties and notes) or UI-only change (quotes) and its own tests.
+
+### 42.10 Roles
+
+An owner and an admin are offered the same things on every page; a member is offered nothing that changes anything: no Assign on the Schedule, no Create, Edit or Add on Services, Team, Marketing, Reviews, Website, Marketplace Listing, Payments or Quotes & Invoices; Settings is readable and its Save is disabled. A link that leads a member to a page they can only read says so ("View in Settings", "View roles", "View Services", "View booking setup"). The recheck found, and this pass fixed, what 19F had missed on **Team** (the list offered "Add team member" and "Manage roles"; the `?add=1` address opened the dialog; the roles list offered Create, Edit and Duplicate; a member's page offered "Assign to job" and "Add unavailable time") and on **Website** and **Marketplace Listing** ("Edit source", "Edit in Settings", "Manage" and each page's Edit link). None of this changes what the server allows: it only stops the screen offering what the server would refuse. `ux-completion.spec.ts` scans every enabled, visible button and link on twenty-seven pages as a member, and compares an owner with an admin on eight.
+
+### 42.11 Tests and checks
+
+`ux-completion.spec.ts` covers: the Schedule (date, strip, glance line, now line, technician summaries, arrival-window labels, legend, closed and empty days, keyboard, no sideways page scroll at 1280 and 768, week to day); Analytics (tabs, legacy addresses, question headings, real totals on each tab, no predictions or percentages, the source counts as a pure function); Settings (groups, signposts, no second copy); success feedback and the unreachable-server message; a source scan that no refusal message names the database, a constraint, a policy or a tenant; dialog order and the discard question; the phone booking bar (each booking mode, none chosen, one Service, nothing bookable, not on desktop, never over content); Getting started per person and per business (two businesses, one person); Marketing's note and columns; and the role matrix. The visual review is recorded in `docs/manual-qa-checklist.md` as comprehension questions.
+
+The full run is **3787 passed, 0 failed, 0 skipped** (137 spec files; 27 more than the 19F commit); the new and UX-sensitive specs ×3 passed 1140 of 1140; the Docker suite passed 80 of 80 on a fresh stack; typecheck, lint (zero warnings) and the production build are clean and `drizzle-kit generate` reports no schema changes. A full run is slow when the machine is busy: run it with `--workers=4` then, and let Playwright start its own server (a server already listening on 3460 is reused and its database is never recreated).
+
+### 42.12 Tables whose action sits off-screen
+
+Two tables are wider than a laptop screen and keep the action they exist for at the far right: Bookings (**Review**) and the platform's Marketplace listings (**Moderation**: Allow again, Keep suspended, Edit message). From the xl width that column is pinned while the rest scrolls, so the action is never off-screen. The Services filter for the booking method is wide enough to show its own words.
+
+### 42.13 Limits (left as they are, on purpose)
+
+- A Quote cannot be created by hand; a Property cannot be added; a customer has no "Add note" (42.9).
+- Marketing does not deliver messages (42.8).
+- Getting started's "hidden" is per browser (42.7).
+- On a tablet the Unassigned list sits above the Day timeline, so with several unassigned visits the timeline starts below the first screen; the Week view keeps it in a compact banner. Moving it would put the page's reading order and focus order at odds.
+- Marketplace filters call the booking methods "Instant booking", "Request appointment" and "Request quote / assessment" (the Service's own names for them) where a provider's page shows the action ("Book a time", "Request appointment", "Request a quote"). They mean the same; unifying them touches every Service screen and was not done here.
+- The workspace is still tablet and desktop first; the sidebar does not collapse.

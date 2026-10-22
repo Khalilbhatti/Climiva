@@ -55,9 +55,9 @@ function translate(error: unknown): ReturnType<typeof failure> {
   }
   if (constraint === "site_published_final") return failure("A published version can't be changed. Edit the draft and publish it again.");
   if (constraint === "site_versions_one_draft") return failure("This website already has a draft. Reload the page and try again.");
-  if (isIntegrityViolation(error)) return failure("The change breaks a rule, so it was not saved. Reload the page and try again.");
+  if (isIntegrityViolation(error)) return failure("This change can't be saved as entered, and nothing was changed. Reload the page, check what you entered and try again.");
   console.error("[website] could not save:", error instanceof Error ? error.message : error);
-  return failure("The change could not be saved. Try again.");
+  return failure("We couldn't save your website. Your changes weren't saved. Try again.");
 }
 
 /** Authorize, open the tenant transaction on the primary site, run the change, and answer with the website as stored. */

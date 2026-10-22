@@ -79,10 +79,10 @@ function translate(error: unknown): ReturnType<typeof failure> {
   if (error instanceof Refusal) return failure(error.message, error.fields);
   const constraint = uniqueViolationOf(error);
   if (constraint === "jobs_org_booking_unique") return failure("That booking already has a job.");
-  if (constraint) return failure("Someone changed this at the same moment. Reload the page and try again.");
-  if (isIntegrityViolation(error)) return failure("The change breaks a rule, so it was not saved. Reload the page and try again.");
+  if (constraint) return failure("Someone else just changed this, so your change was not saved. Reload the page to see the latest, then try again.");
+  if (isIntegrityViolation(error)) return failure("This change can't be saved as entered, and nothing was changed. Reload the page, check what you entered and try again.");
   console.error("[operations] could not save:", error instanceof Error ? error.message : error);
-  return failure("The change could not be saved. Try again.");
+  return failure("We couldn't save this change to the booking or job. Nothing was changed. Try again.");
 }
 
 /** Authorize, open the tenant transaction, run the change, and answer with the operations as stored. */

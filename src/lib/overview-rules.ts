@@ -8,8 +8,13 @@ import type { CoreSnapshot, Directory } from "@/data/directory";
 import { getInvoiceStatus } from "@/data/financials";
 import { getAssigneeName, getPartyName, getServiceNameFor, type Booking, type Job } from "@/data/operations";
 
-/** The cookie that remembers, in this browser, that the owner hid the Getting started checklist for this business. */
-export const gettingStartedCookie = (organizationId: string) => `getting_started_dismissed_${organizationId}`;
+/**
+ * The cookie that remembers, in this browser, that THIS person hid the Getting started checklist of THIS business. It is named for both: hiding it for one
+ * business never hides another's (a person in two businesses has two checklists), and a second person who signs in on the same browser has their own.
+ * It is a browser's memory, not an account's: on another device the checklist is back until it is hidden there too. Keeping it per account would need a
+ * stored field, and a convenience this small is not worth a schema change.
+ */
+export const gettingStartedCookie = (userId: string, organizationId: string) => `getting_started_dismissed_${userId}_${organizationId}`;
 
 export type SetupStepId = "service" | "team" | "website" | "marketplace" | "customer";
 export type SetupStep = { id: SetupStepId; title: string; text: string; href: Route; done: boolean };

@@ -65,14 +65,16 @@ const TICKS = 4;
  * plain elements (no chart library): each column is one list item that names both numbers, and the numbers are printed above the
  * bars.
  */
-export function WeeklyChart({ weekly }: { weekly: AnalyticsReport["weekly"] }) {
-  const peak = Math.max(0, ...weekly.flatMap((week) => [week.bookings, week.completedJobs]));
+export function WeeklyChart({ weekly, series = "both" }: { weekly: AnalyticsReport["weekly"]; /** Both are drawn on the Overview; a tab about one thing draws just that one. */ series?: "both" | "bookings" | "jobs" }) {
+  const showBookings = series !== "jobs";
+  const showJobs = series !== "bookings";
+  const peak = Math.max(0, ...weekly.flatMap((week) => [...(showBookings ? [week.bookings] : []), ...(showJobs ? [week.completedJobs] : [])]));
   // One step of headroom above the tallest bar, so its number is never clipped.
   const top = Math.max(TICKS, Math.ceil((peak + 1) / TICKS) * TICKS);
   const percent = (value: number) => `${(Math.max(0, value) / top) * 100}%`;
   const columns: CSSProperties = { gridTemplateColumns: `repeat(${Math.max(1, weekly.length)}, minmax(0, 1fr))` };
   return (
-    <div className="flex gap-3">
+    <div className="flex gap-3 pt-3">
       <div aria-hidden className="relative h-64 w-5 shrink-0 text-right text-mini text-ink-muted">
         {Array.from({ length: TICKS + 1 }, (_, index) => (
           <span key={index} className="absolute right-0 -translate-y-1/2" style={{ bottom: `${(index / TICKS) * 100}%` }}>
@@ -81,18 +83,18 @@ export function WeeklyChart({ weekly }: { weekly: AnalyticsReport["weekly"] }) {
         ))}
       </div>
       <div className="min-w-0 flex-1">
-        <ol aria-label="Weekly Bookings and completed Jobs" className="relative grid h-64 gap-3 border-b border-line" style={columns}>
+        <ol aria-label={series === "both" ? "Weekly Bookings and completed Jobs" : series === "bookings" ? "Weekly Bookings" : "Weekly completed Jobs"} className="relative grid h-64 gap-3 border-b border-line" style={columns}>
           {Array.from({ length: TICKS }, (_, index) => (
             <li key={index} aria-hidden className="pointer-events-none absolute inset-x-0 border-t border-line/60" style={{ bottom: `${((index + 1) / TICKS) * 100}%` }} />
           ))}
           {weekly.map((week) => (
             <li
               key={week.start}
-              aria-label={`${week.label}: ${week.bookings} Bookings, ${week.completedJobs} completed Jobs`}
+              aria-label={series === "both" ? `${week.label}: ${week.bookings} Bookings, ${week.completedJobs} completed Jobs` : series === "bookings" ? `${week.label}: ${week.bookings} Bookings` : `${week.label}: ${week.completedJobs} completed Jobs`}
               className="relative flex items-end justify-center gap-1.5"
             >
-              <Bar value={week.bookings} height={percent(week.bookings)} className="bg-primary" />
-              <Bar value={week.completedJobs} height={percent(week.completedJobs)} className="bg-warning" />
+              {showBookings && <Bar value={week.bookings} height={percent(week.bookings)} className="bg-primary" />}
+              {showJobs && <Bar value={week.completedJobs} height={percent(week.completedJobs)} className={series === "jobs" ? "bg-primary" : "bg-warning"} />}
             </li>
           ))}
         </ol>

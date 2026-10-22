@@ -24,18 +24,28 @@ import { addDays, isValidDate, startOfWeek } from "./dates";
 
 /* ───────────────────────── the Analytics page ───────────────────────── */
 
+/**
+ * The tabs are the questions an owner asks: how many bookings are we getting, how much work is being done, what has been invoiced and paid, what the Marketplace
+ * brings, and whether customers stay. Each tab answers its question from the same report; none of them has a figure the others do not.
+ */
 export const ANALYTICS_TABS = [
   { id: "overview", label: "Overview" },
-  { id: "bookings-jobs", label: "Bookings & Jobs" },
-  { id: "financial", label: "Financial Records" },
-  { id: "plans", label: "Maintenance Plans & Services" },
+  { id: "bookings", label: "Bookings" },
+  { id: "jobs", label: "Jobs" },
+  { id: "revenue", label: "Revenue" },
+  { id: "marketplace", label: "Marketplace" },
+  { id: "retention", label: "Customer retention" },
 ] as const;
 
 export type AnalyticsTabId = (typeof ANALYTICS_TABS)[number]["id"];
 export const DEFAULT_TAB: AnalyticsTabId = "overview";
 
+/** The tabs of the first version of the page, so a link made then still opens the part of the page it meant. */
+const EARLIER_TABS: Readonly<Record<string, AnalyticsTabId>> = { "bookings-jobs": "bookings", financial: "revenue", plans: "retention" };
+
 /** The tab a URL asks for; anything else is the default. */
-export const resolveTab = (value: string | null | undefined): AnalyticsTabId => ANALYTICS_TABS.find((tab) => tab.id === value)?.id ?? DEFAULT_TAB;
+export const resolveTab = (value: string | null | undefined): AnalyticsTabId =>
+  ANALYTICS_TABS.find((tab) => tab.id === value)?.id ?? (value && Object.hasOwn(EARLIER_TABS, value) ? EARLIER_TABS[value] : DEFAULT_TAB);
 
 /* ───────────────────────── date ranges ───────────────────────── */
 

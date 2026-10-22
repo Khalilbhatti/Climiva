@@ -186,7 +186,7 @@ test.describe("starting and completing a job", () => {
     try {
       const dialog = await completeJob201(page);
       await dialog.getByRole("button", { name: "Complete job" }).click();
-      await expect(dialog.getByRole("alert")).toContainText("could not be saved");
+      await expect(dialog.getByRole("alert")).toContainText("We couldn't save this change to the booking or job. Nothing was changed.");
       await expect(dialog.getByRole("alert")).not.toContainText(/injected|trigger|exception/i);
       const stored = await db.query(
         `select j.status as job, j.completion_notes, j.completed_at, b.status as booking

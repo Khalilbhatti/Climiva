@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { Button } from "./Button";
 
 type ModalProps = {
   open: boolean;
@@ -85,5 +86,31 @@ export function Modal({ open, onClose, title, description, children, footer, siz
       </div>
       {footer && <div className="flex shrink-0 items-center justify-end gap-3 border-t border-line px-6 py-4">{footer}</div>}
     </dialog>
+  );
+}
+
+/**
+ * The footer every dialog uses, so its buttons are always where a hand expects them: Cancel (or Close) at the far left, Back beside the main action, and the
+ * main action last on the right. Pass the main action (and any others) as children; `back` is the Back button of a step that has one.
+ */
+export function ModalActions({
+  onCancel,
+  cancelLabel = "Cancel",
+  back,
+  children,
+}: {
+  onCancel: () => void;
+  cancelLabel?: string;
+  back?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <>
+      <Button variant="tertiary" onClick={onCancel} className="mr-auto">
+        {cancelLabel}
+      </Button>
+      {back}
+      {children}
+    </>
   );
 }

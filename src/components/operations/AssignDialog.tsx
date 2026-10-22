@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { FormAlert } from "@/components/auth/AuthShell";
 import { Button } from "@/components/ui/Button";
-import { Modal } from "@/components/ui/Modal";
+import { Modal, ModalActions } from "@/components/ui/Modal";
 import { OptionCard, OptionGroup } from "@/components/ui/OptionCard";
 import { useTeam } from "@/components/team/TeamProvider";
 import { getAssignableMembers } from "@/data/team";
@@ -46,14 +46,11 @@ export function AssignDialog({ description, currentAssigneeId, excludeMemberId, 
       title="Assign technician"
       description={description}
       footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
+        <ModalActions onCancel={onClose}>
           <Button onClick={save} disabled={saving}>
             {saving ? "Saving…" : "Save assignment"}
           </Button>
-        </>
+        </ModalActions>
       }
     >
       <OptionGroup legend="Team member">

@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { AssignDialog } from "@/components/operations/AssignDialog";
 import { useOperations } from "@/components/operations/OperationsProvider";
-import { useTimeZoneLabel } from "@/components/settings/SettingsProvider";
+import { useSettings, useTimeZoneLabel } from "@/components/settings/SettingsProvider";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -22,10 +22,11 @@ import {
   type WorkEvent,
 } from "@/data/operations";
 import { useTeam } from "@/components/team/TeamProvider";
+import { WEEKDAY_NAMES } from "@/data/settings";
 import { getAssignableMembers } from "@/data/team";
-import { addDays, formatLongDate, formatTimeRange, formatWeekdayDate, formatWeekRange, isValidDate, startOfWeek } from "@/lib/dates";
+import { addDays, formatLongDate, formatTime, formatTimeRange, formatWeekdayDate, formatWeekRange, isValidDate, startOfWeek, weekDates, weekdayIndex } from "@/lib/dates";
 import { EventDetails } from "./EventDetails";
-import { DayTimeline, UnassignedBanner, UnassignedPanel, WeekBoard } from "./ScheduleBoards";
+import { DayStrip, DayTimeline, ScheduleLegend, UnassignedBanner, UnassignedPanel, WeekBoard } from "./ScheduleBoards";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
 import { useCan, useClock } from "@/components/workspace/WorkspaceProvider";
 
@@ -37,7 +38,8 @@ export function ScheduleView() {
   const { data: team } = useTeam();
   const { toast } = useToast();
   const timeZone = useTimeZoneLabel();
-  const { today } = useClock();
+  const { today, now } = useClock();
+  const { hours } = useSettings().settings;
   const canManage = useCan("operations:manage");
   const router = useRouter();
   const params = useSearchParams();
@@ -104,6 +106,13 @@ export function ScheduleView() {
   const goTo = (target: string) => setParams({ date: target === today ? null : target, event: null });
 
   const heading = view === "day" ? `${date === today ? "Today, " : ""}${formatLongDate(date)}` : formatWeekRange(weekStart);
+  // What the period shown holds, in a line: how much work, what is under way, and what still needs a technician.
+  const periodDays = view === "day" ? [date] : weekDates(date);
+  const periodWork = shown.filter((event): event is WorkEvent => event.kind === "work" && periodDays.includes(event.date));
+  const inProgress = periodWork.filter((event) => event.status === "in-progress").length;
+  const waiting = unassigned.filter((event) => periodDays.includes(event.date)).length;
+  const dayHours = hours[weekdayIndex(date)];
+  const dayItems = shown.filter((event) => event.date === date).length;
   const details = selectedEvent ? <EventDetails event={selectedEvent} onClose={closeDetails} /> : null;
 
   return (
@@ -193,6 +202,22 @@ export function ScheduleView() {
             <span aria-hidden className="size-1.5 rounded-full bg-primary" />
             {timeZone}
           </p>
+          <p aria-live="polite" className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-muted">
+            <span>
+              <span className="font-semibold text-ink">{periodWork.length}</span> {periodWork.length === 1 ? "visit" : "visits"} {view === "day" ? "this day" : "this week"}
+            </span>
+            {inProgress > 0 && (
+              <span>
+                <span className="font-semibold text-primary">{inProgress}</span> in progress
+              </span>
+            )}
+            {waiting > 0 && (
+              <span>
+                <span className="font-semibold text-danger">{waiting}</span> still {waiting === 1 ? "needs" : "need"} a technician
+              </span>
+            )}
+            {view === "day" && date === today && <span>It is {formatTime(now.split("T")[1].slice(0, 5))} now.</span>}
+          </p>
         </div>
       </Card>
 
@@ -215,7 +240,8 @@ export function ScheduleView() {
         {view === "week" ? (
           <>
             <UnassignedBanner events={unassigned} onAssign={canManage ? setAssigning : undefined} />
-            <WeekBoard date={date} events={visibleEvents} selectedId={selectedEvent?.id ?? null} onSelect={select} />
+            <WeekBoard date={date} events={visibleEvents} selectedId={selectedEvent?.id ?? null} onSelect={select} onOpenDay={(day) => setParams({ view: "day", date: day === today ? null : day, event: null })} />
+            <ScheduleLegend showHours={false} />
             {details}
           </>
         ) : (
@@ -227,8 +253,24 @@ export function ScheduleView() {
             }
           >
             <UnassignedPanel events={unassigned} onAssign={canManage ? setAssigning : undefined} />
-            <div className="space-y-3">
-              <DayTimeline events={visibleEvents} members={members} selectedId={selectedEvent?.id ?? null} onSelect={select} />
+            <div className="min-w-0 space-y-3">
+              <DayStrip date={date} events={shown} onPick={goTo} />
+              {dayHours === null && (
+                <p className="rounded-btn bg-surface-low px-4 py-2.5 text-sm text-ink-muted">
+                  Your business hours say you are closed on {WEEKDAY_NAMES[weekdayIndex(date)]}s.{dayItems > 0 ? " Work already scheduled for this day is still shown." : ""}
+                </p>
+              )}
+              {dayHours !== null && dayItems === 0 && <p className="rounded-btn bg-surface-low px-4 py-2.5 text-sm text-ink-muted">Nothing is scheduled for this day.</p>}
+              <DayTimeline
+                date={date}
+                hours={dayHours}
+                now={date === today ? now.split("T")[1].slice(0, 5) : undefined}
+                events={visibleEvents}
+                members={members}
+                selectedId={selectedEvent?.id ?? null}
+                onSelect={select}
+              />
+              <ScheduleLegend showHours />
               <p className="text-xs text-ink-muted">Select any block to see its details.</p>
             </div>
             {details}

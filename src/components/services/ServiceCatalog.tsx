@@ -113,7 +113,7 @@ export function ServiceCatalog() {
                   ))}
                 </Select>
               </div>
-              <div className="w-48">
+              <div className="w-60">
                 <Select label="Booking method" hideLabel value={filters.method} onChange={(e) => set("method", e.target.value as Filters["method"])}>
                   <option value="all">All booking methods</option>
                   {(Object.keys(BOOKING_METHOD_LABEL) as BookingMethod[]).map((method) => (

@@ -47,10 +47,10 @@ function translate(error: unknown): ReturnType<typeof failure> {
   if (constraint === "invoices_org_quote_unique") return failure("That quote already has an invoice.");
   if (constraint === "payments_final") return failure("That payment has already been voided.");
   if (constraint === "quotes_final" || constraint === "quotes_status_transition") return failure("That quote can't make that change now. Reload the page and try again.");
-  if (uniqueViolationOf(error)) return failure("Someone changed this at the same moment. Reload the page and try again.");
-  if (isIntegrityViolation(error)) return failure("The change breaks a rule, so it was not saved. Reload the page and try again.");
+  if (uniqueViolationOf(error)) return failure("Someone else just changed this, so your change was not saved. Reload the page to see the latest, then try again.");
+  if (isIntegrityViolation(error)) return failure("This change can't be saved as entered, and nothing was changed. Reload the page, check what you entered and try again.");
   console.error("[financials] could not save:", error instanceof Error ? error.message : error);
-  return failure("The change could not be saved. Try again.");
+  return failure("We couldn't save this change to your quotes, invoices or payments. Nothing was changed. Try again.");
 }
 
 /** Authorize, open the tenant transaction, run the change, and answer with the financials as stored. */

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Camera, Fan, Thermometer } from "lucide-react";
 import { FormAlert } from "@/components/auth/AuthShell";
 import { Button } from "@/components/ui/Button";
-import { Modal } from "@/components/ui/Modal";
+import { Modal, ModalActions } from "@/components/ui/Modal";
 import { Textarea } from "@/components/ui/Textarea";
 import { getAssigneeName, getPartyName, getServiceNameFor, type Job } from "@/data/operations";
 import { useDirectory } from "@/components/workspace/DirectoryProvider";
@@ -50,14 +50,11 @@ export function CompleteJobModal({ job, onClose, onComplete }: CompleteJobModalP
       title={`Complete job #${job.id}`}
       description={`${getPartyName(job, dir)} · ${getServiceNameFor(job, dir)} · Technician: ${getAssigneeName(job, dir) ?? "Unassigned"}`}
       footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
+        <ModalActions onCancel={onClose}>
           <Button onClick={complete} disabled={saving}>
             {saving ? "Completing…" : "Complete job"}
           </Button>
-        </>
+        </ModalActions>
       }
     >
       <h3 className="text-sm font-semibold text-ink">Work summary confirmation</h3>

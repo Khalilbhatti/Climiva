@@ -107,7 +107,7 @@ test.describe("the Team comes from the database", () => {
     await page.goto("/settings/profile");
     await page.getByLabel(/^Full name/).fill("Alexandra Morgan");
     await page.getByRole("button", { name: "Save profile", exact: true }).click();
-    await expect(toast(page)).toContainText("Profile updated.");
+    await expect(toast(page)).toContainText("Profile saved.");
     await page.goto("/team/alex-morgan");
     await expect(page.getByRole("heading", { level: 1, name: "Alex Morgan" })).toBeVisible();
     expect((await db.query("select name from team_members where organization_id = $1 and slug = 'alex-morgan'", [workerTenant.organizationId])).rows[0].name).toBe("Alex Morgan");

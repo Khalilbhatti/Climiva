@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowRight, CalendarCheck, FileText, Home, Info, Phone, Repeat, Store, type LucideIcon } from "lucide-react";
 import { useBusiness, useHoursRows } from "@/components/settings/SettingsProvider";
 import { useServices } from "@/components/services/ServicesProvider";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { ButtonLink } from "@/components/ui/Button";
 import { cardClasses } from "@/components/ui/Card";
 import { formatCityStateZip } from "@/lib/format";
@@ -17,6 +18,7 @@ const ICONS: Record<PageType, LucideIcon> = { home: Home, services: Store, conte
 /** Pages & content: the site's pages, each edited in its own editor. There is no page builder and no way to add a page here. */
 export function PagesContent() {
   const website = useWebsiteState();
+  const canManage = useCan("website:manage");
   const business = useBusiness();
   const hours = useHoursRows();
   const { services: catalog } = useServices();
@@ -63,9 +65,11 @@ export function PagesContent() {
                     <ButtonLink href={previewHref(page.slug)} variant="tertiary" size="sm" aria-label={`Preview ${page.title} page`}>
                       Preview
                     </ButtonLink>
-                    <ButtonLink href={editorHref(page.key)} variant="secondary" size="sm" aria-label={`Edit ${page.title} page`}>
-                      Edit
-                    </ButtonLink>
+                    {canManage && (
+                      <ButtonLink href={editorHref(page.key)} variant="secondary" size="sm" aria-label={`Edit ${page.title} page`}>
+                        Edit
+                      </ButtonLink>
+                    )}
                   </div>
                 </li>
               );

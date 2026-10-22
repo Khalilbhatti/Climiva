@@ -10,6 +10,7 @@ import { cardClasses } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Tabs } from "@/components/ui/Tabs";
+import { useCan } from "@/components/workspace/WorkspaceProvider";
 import { roleHref } from "@/config/routes";
 import { MODULE_IDS, getMembersForRole, type Role } from "@/data/team";
 import { useTeam } from "./TeamProvider";
@@ -24,6 +25,7 @@ function accessSummary(role: Role): string {
 
 export function RolesList() {
   const { data } = useTeam();
+  const canManage = useCan("team:manage");
   const [type, setType] = useState<TypeFilter>("all");
   const [query, setQuery] = useState("");
 
@@ -45,10 +47,12 @@ export function RolesList() {
         title="Roles & permissions"
         description="Control what different people can view and manage in Climvia."
         actions={
-          <ButtonLink href="/team/roles/new" size="lg">
-            <Plus aria-hidden className="size-[18px]" />
-            Create role
-          </ButtonLink>
+          canManage ? (
+            <ButtonLink href="/team/roles/new" size="lg">
+              <Plus aria-hidden className="size-[18px]" />
+              Create role
+            </ButtonLink>
+          ) : undefined
         }
       />
 
@@ -119,7 +123,7 @@ export function RolesList() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3 text-sm font-semibold">
-                      {role.protected ? (
+                      {role.protected || !canManage ? (
                         <Link
                           href={roleHref(role.id)}
                           aria-label={`View permissions for ${role.name}`}
@@ -138,7 +142,7 @@ export function RolesList() {
                           Edit
                         </Link>
                       )}
-                      {!role.protected && (
+                      {!role.protected && canManage && (
                         <Link
                           href={`/team/roles/new?from=${role.id}`}
                           aria-label={`Duplicate ${role.name} role`}

@@ -38,7 +38,7 @@ export function usePublishing() {
       setBusy(true);
       const result = await publish();
       setBusy(false);
-      toast(result.ok ? "Website published." : result.error);
+      toast(result.ok ? "Website published. It is now public." : result.error);
     },
     askUnpublish: () => setConfirmingUnpublish(true),
     unpublishModal: (
@@ -57,7 +57,7 @@ export function usePublishing() {
               onClick={async () => {
                 const result = await unpublish();
                 setConfirmingUnpublish(false);
-                toast(result.ok ? "Website unpublished. It is now private." : result.error);
+                toast(result.ok ? "Website unpublished. It is a draft again, and only you can see it." : result.error);
               }}
             >
               Unpublish

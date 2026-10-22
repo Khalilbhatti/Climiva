@@ -422,7 +422,7 @@ test.describe("Publishing", () => {
 
     await card(page, "Publishing").getByRole("button", { name: "Unpublish" }).click();
     await page.getByRole("dialog", { name: "Unpublish website?" }).getByRole("button", { name: "Unpublish" }).click();
-    await expect(toast(page)).toContainText("Website unpublished. It is now private.");
+    await expect(toast(page)).toContainText("Website unpublished. It is a draft again, and only you can see it.");
     await expect(main(page)).toContainText("Draft");
     await expect(main(page)).toContainText("Only you can see it until you publish");
     await expect(card(page, "Publishing")).toContainText("Your website is a draft that only you can see.");

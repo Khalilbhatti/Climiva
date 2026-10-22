@@ -281,7 +281,7 @@ test.describe("Create campaign: Email", () => {
     await expect(page.getByLabel(/^Date/)).toHaveCount(0);
     await page.getByRole("button", { name: "Send campaign" }).click();
     await expect(page).toHaveURL("/marketing/cmp-send-now-test");
-    await expect(toast(page)).toContainText("Campaign sent to 38 recipients.");
+    await expect(toast(page)).toContainText("Campaign recorded as sent to 38 recipients. Nothing was delivered.");
     await expect(main(page)).toContainText("Sent");
     await expect(main(page)).toContainText("Oct 25, 2024 · 10:45 AM");
     await expect(main(page)).toContainText("Delivery records aren’t kept for this campaign.");

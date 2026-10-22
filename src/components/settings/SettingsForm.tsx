@@ -77,7 +77,7 @@ export function SettingsForm({ title, description, what, dirty, saveLabel, onSav
   }
 
   return (
-    <div className={cn("grid items-start gap-6", Boolean(aside) && "lg:grid-cols-[minmax(0,1fr)_20rem]")}>
+    <div className={cn("grid items-start gap-6", Boolean(aside) && "2xl:grid-cols-[minmax(0,1fr)_20rem]")}>
       <form ref={form} onSubmit={submit} noValidate aria-labelledby={headingId} className={cardClasses("lg")}>
         <div className="border-b border-line pb-4">
           <h2 id={headingId} className="text-xl font-bold tracking-tight text-ink">

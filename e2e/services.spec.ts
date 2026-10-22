@@ -247,8 +247,9 @@ test.describe("Add Service", () => {
     await wizard.getByRole("button", { name: /^Next: How customers book/ }).click();
     await expect(wizard.getByText("A service with this name already exists.")).toBeVisible();
 
-    // Cancel discards; reopening starts blank.
+    // Cancel asks before it discards what was typed; reopening starts blank.
     await wizard.getByRole("button", { name: "Cancel" }).click();
+    await page.getByRole("dialog", { name: "Discard unsaved changes?" }).getByRole("button", { name: "Discard changes" }).click();
     await expect(wizard).toBeHidden();
     await page.getByRole("button", { name: "Add service" }).click();
     await expect(page.getByRole("dialog", { name: "Add new service" }).getByLabel("Service name")).toHaveValue("");

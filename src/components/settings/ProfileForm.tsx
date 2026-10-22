@@ -62,7 +62,7 @@ export function ProfileForm() {
     }
     setDraft({ ...draft, name: draft.name.trim() });
     setShowErrors(false);
-    toast("Profile updated.");
+    toast("Profile saved.");
     return true;
   }
 

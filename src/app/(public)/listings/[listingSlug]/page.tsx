@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ListingFrame } from "@/components/marketplace/ListingFrame";
 import { ListingView, type ListingViewData } from "@/components/marketplace/ListingView";
+import { MobileBookBar } from "@/components/marketplace/MobileBookBar";
 import { PublicHeader } from "@/components/public/PublicHeader";
 import { siteAddressing } from "@/lib/domain-config";
 import { platformSiteUrl } from "@/lib/site-domain";
 import { platformOrigin } from "@/lib/domain-config";
-import { discoveryHref, readDiscoveryContext } from "@/lib/marketplace-discovery";
+import { BOOKING_METHOD_ACTION, formatServicePrice } from "@/data/services";
+import { bookingHref, discoveryHref, readDiscoveryContext } from "@/lib/marketplace-discovery";
 import { summarizeHours } from "@/lib/settings-state";
 import { jsonLd, providerStructuredData } from "@/lib/structured-data";
 import { getPublicListing } from "@/server/public-site";
@@ -64,6 +66,10 @@ export default async function PublicListingPage({ params, searchParams }: PagePr
     book: { listing: listing.slug, context },
   };
   const searched = Boolean(context.service || context.location);
+  // On a phone the way to book stays on screen. It books the Service the visitor was looking at (or the only one offered online); with several and none chosen it
+  // says so and leads to the list; with none bookable here there is no bar at all.
+  const bookable = listing.actions.book ? listing.services.filter((service) => service.visibility === "public-booking") : [];
+  const chosen = bookable.find((service) => service.id === context.service) ?? (bookable.length === 1 ? bookable[0] : undefined);
   const origin = platformOrigin();
   const address = listing.contact.address ? listing.business.address : null;
   // Structured data says only what the profile shows: the details the business switched on, and a rating only from reviews that are public right now.
@@ -79,7 +85,7 @@ export default async function PublicListingPage({ params, searchParams }: PagePr
     <div className="min-h-dvh bg-surface-low">
       {structured && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(structured) }} />}
       <PublicHeader tone="on-light" className="border-b border-line bg-surface" />
-      <div className="px-4 py-6">
+      <div className={bookable.length > 0 ? "px-4 py-6 pb-24 md:pb-6" : "px-4 py-6"}>
         <ListingFrame businessName={listing.business.name} back={{ href: discoveryHref({ service: context.service, location: context.location }), label: searched ? "Back to results" : "All providers" }}>
           <main className="p-4 @2xl:p-6">
             <ListingView data={data} variant="page" />
@@ -98,6 +104,12 @@ export default async function PublicListingPage({ params, searchParams }: PagePr
           </Link>
         </aside>
       </div>
+      {bookable.length > 0 &&
+        (chosen ? (
+          <MobileBookBar href={bookingHref(listing.slug, chosen.id, context)} action={BOOKING_METHOD_ACTION[chosen.bookingMethod]} serviceName={chosen.name} detail={formatServicePrice(chosen.pricing)} />
+        ) : (
+          <MobileBookBar />
+        ))}
     </div>
   );
 }

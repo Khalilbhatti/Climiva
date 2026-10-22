@@ -26,10 +26,10 @@ const UNKNOWN_MEMBER = "That team member no longer exists. Reload the page and t
 function translate(error: unknown): ReturnType<typeof failure> {
   const constraint = uniqueViolationOf(error);
   if (constraint?.startsWith("team_roles_org_name")) return failure("A role with this name already exists.", { name: "A role with this name already exists." });
-  if (constraint) return failure("Someone changed the team at the same moment. Reload the page and try again.");
-  if (isIntegrityViolation(error)) return failure("The change breaks a rule. Check it and try again.");
+  if (constraint) return failure("Someone else just changed the team, so your change was not saved. Reload the page to see the latest, then try again.");
+  if (isIntegrityViolation(error)) return failure("This team change can't be saved as entered. Check it and try again.");
   console.error("[team] could not save:", error instanceof Error ? error.message : error);
-  return failure("The change could not be saved. Try again.");
+  return failure("We couldn't save this team change. Nothing was changed. Try again.");
 }
 
 type Plan<T> = { after: TeamData; extra: T } | ReturnType<typeof failure>;

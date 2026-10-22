@@ -254,7 +254,7 @@ function BuilderForm({ existing, audienceSizes }: { existing?: Campaign; audienc
       setPending(false);
       if (!result.ok) return setServerError(result.error);
       const sent = result.data.marketing.campaigns.find((campaign) => campaign.id === result.data.reference);
-      toast(`Campaign sent to ${sent?.recipients ?? recipients ?? 0} recipients.`);
+      toast(`Campaign recorded as sent to ${sent?.recipients ?? recipients ?? 0} recipients. Nothing was delivered.`);
       router.push(`/marketing/${result.data.reference}`);
     } else {
       const when = `${timing.date}T${timing.time}`;
@@ -478,6 +478,9 @@ function BuilderForm({ existing, audienceSizes }: { existing?: Campaign; audienc
                 <CalendarClock aria-hidden className="size-5 text-primary" />
                 Send timing
               </h2>
+              <p className="rounded-btn bg-surface-low px-3 py-2 text-xs text-ink-muted">
+                Sending records this campaign and who it is for. Climvia does not deliver email or text messages yet, so nothing reaches your customers from here.
+              </p>
               <OptionGroup legend="When should this campaign go out?">
                 <OptionCard
                   type="radio"

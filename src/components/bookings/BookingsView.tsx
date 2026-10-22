@@ -47,6 +47,9 @@ const EMPTY_COPY: Record<BookingTabId, string> = {
   cancelled: "No cancelled bookings.",
 };
 
+/** The table is wider than a laptop screen, and Review is how a booking is opened: from the xl width it stays in view while the rest scrolls. */
+const STICKY_ACTION = "xl:sticky xl:right-0 xl:z-10 xl:border-l xl:border-line xl:shadow-[-10px_0_10px_-10px_rgb(0_0_0/0.15)]";
+
 function matchesQuery(booking: Booking, query: string, dir: Directory): boolean {
   const customer = booking.customerId ? getCustomerById(booking.customerId, dir) : undefined;
   const property = getPropertyById(booking.propertyId ?? "", dir);
@@ -241,7 +244,7 @@ export function BookingsView() {
                     {!compact && <TableHeaderCell>Source</TableHeaderCell>}
                     <TableHeaderCell>Status</TableHeaderCell>
                     {!compact && <TableHeaderCell>Received</TableHeaderCell>}
-                    <TableHeaderCell>
+                    <TableHeaderCell className={`${STICKY_ACTION} xl:bg-surface-low`}>
                       <span className="sr-only">Action</span>
                     </TableHeaderCell>
                   </tr>
@@ -292,7 +295,7 @@ export function BookingsView() {
                               {booking.receivedAt ? formatLocalDateTime(booking.receivedAt) : "—"}
                             </TableCell>
                           )}
-                          <TableCell className="text-right">
+                          <TableCell className={`${STICKY_ACTION} text-right ${isSelected ? "xl:bg-primary-subtle" : "xl:bg-surface"}`}>
                             <button
                               type="button"
                               id={`review-${booking.id}`}

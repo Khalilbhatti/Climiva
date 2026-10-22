@@ -6,7 +6,7 @@ import { Info, Link2 } from "lucide-react";
 import { FormAlert } from "@/components/auth/AuthShell";
 import { Button } from "@/components/ui/Button";
 import { KeyValueList } from "@/components/ui/KeyValueList";
-import { Modal } from "@/components/ui/Modal";
+import { Modal, ModalActions } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from "@/components/ui/Table";
 import { Textarea } from "@/components/ui/Textarea";
@@ -58,14 +58,11 @@ export function CreateInvoiceModal({ quote, onClose }: { quote: Quote; onClose: 
       title="Create invoice"
       description={`Create a billing record from approved Quote #${quote.id}. Review the invoice details before saving.`}
       footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
+        <ModalActions onCancel={onClose}>
           <Button onClick={create} disabled={saving}>
             {saving ? "Creating…" : "Create invoice"}
           </Button>
-        </>
+        </ModalActions>
       }
     >
       <div className="grid gap-6 md:grid-cols-[1fr_16rem]">

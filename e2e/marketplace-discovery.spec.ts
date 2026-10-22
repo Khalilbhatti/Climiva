@@ -957,10 +957,10 @@ test.describe("a business keeps its own service areas", () => {
     // The business hides it and publishes it again: its own choice changes, the public does not.
     await page.getByRole("button", { name: "Hide listing" }).first().click();
     await page.getByRole("dialog", { name: "Hide Marketplace listing?" }).getByRole("button", { name: "Hide listing" }).click();
-    await expect(page.getByText("Marketplace listing hidden")).toBeVisible();
+    await expect(page.getByText("Marketplace Listing hidden")).toBeVisible();
     await expect(page.getByText("Publishing it will not make it public until Climvia lifts the suspension.")).toBeVisible();
     await page.getByRole("button", { name: "Publish listing" }).first().click();
-    await expect(page.getByText("Marketplace listing published.")).toBeVisible();
+    await expect(page.getByText("Marketplace Listing published.")).toBeVisible();
     expect(await publicStatus()).toBe(404);
 
     // Lifted: it is public again, because the business has it published.

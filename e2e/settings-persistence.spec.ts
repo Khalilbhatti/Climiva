@@ -214,7 +214,7 @@ test.describe("My profile", () => {
   test("the name is stored, shown in the top bar after a reload and in the account menu", async ({ page, db, workerTenant }) => {
     await page.goto("/settings/profile");
     await page.getByLabel(/^Full name/).fill("Alexandra Morgan");
-    await save(page, "Save profile", "Profile updated.");
+    await save(page, "Save profile", "Profile saved.");
     expect((await db.query("select full_name from profiles where user_id = $1", [workerTenant.userId])).rows[0].full_name).toBe("Alexandra Morgan");
     await page.reload();
     await expect(page.getByRole("button", { name: /Alexandra Morgan, Operations Lead/ })).toBeVisible();
@@ -234,7 +234,7 @@ test.describe("My profile", () => {
     await page.goto("/settings/profile");
     await page.getByLabel(/^Full name/).fill("Valid Name");
     const captured = await captureAction(page, () => page.getByRole("button", { name: "Save profile", exact: true }).click());
-    await expect(toast(page)).toContainText("Profile updated.");
+    await expect(toast(page)).toContainText("Profile saved.");
     const result = await (await replay(page.request, captured, captured.body.replace("Valid Name", "x".repeat(200)))).text();
     expect(result).toContain('"ok":false');
     expect((await db.query("select full_name from profiles where user_id = $1", [workerTenant.userId])).rows[0].full_name).toBe("Valid Name");

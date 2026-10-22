@@ -31,10 +31,10 @@ function codeOf(error: unknown): string | undefined {
 function translate(error: unknown): ReturnType<typeof failure> {
   // The same email and phone written at the same instant by something that did not take the lock: the customer is already on the list.
   if (uniqueViolationOf(error) === "customers_org_identity_unique") return failure(DUPLICATE_CUSTOMER_EMAIL, { email: DUPLICATE_CUSTOMER_EMAIL });
-  if (isIntegrityViolation(error)) return failure("The customer details break a rule. Check them and try again.");
+  if (isIntegrityViolation(error)) return failure("Some of these details can't be saved. Check the name, email and phone, then try again.");
   // Only the database's error code is logged: the library's message carries the statement's parameters, which are the customer's name, email and phone.
   console.error("[customers] could not add a customer:", codeOf(error) ?? "unexpected error");
-  return failure("The customer could not be added. Try again.");
+  return failure("We couldn't add this customer. Nothing was saved. Try again.");
 }
 
 /** Add a customer to the active business. Resolves with the new customer's public reference (the end of its address), or with why it was refused. */

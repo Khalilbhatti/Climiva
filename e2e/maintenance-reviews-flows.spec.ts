@@ -486,7 +486,7 @@ test.describe("a review request is recorded, and nothing is sent", () => {
   test("it stores the customer, the completed job, the channel and the message, and the Review requests total follows", async ({ page, db, workerTenant }) => {
     const org = workerTenant.organizationId;
     await requestSarahReview(page, "SMS");
-    await expect(toast(page)).toContainText("Review request recorded for Sarah Mitchell by SMS. Nothing is sent.");
+    await expect(toast(page)).toContainText("Review request recorded for Sarah Mitchell. Nothing is sent, so give them the link.");
     const request = await one(
       db,
       `select q.channel, q.status, q.message, c.slug as customer, j.number as job, m.slug as member

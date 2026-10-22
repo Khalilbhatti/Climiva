@@ -227,7 +227,7 @@ export function WebsiteOverview() {
                     <p className="truncate text-xs text-ink-muted">{row.detail}</p>
                   </div>
                   <Link href={row.href} className={rowLink}>
-                    {row.action}
+                    {canManage ? row.action : "View"}
                     <ArrowRight aria-hidden className="size-3.5" />
                   </Link>
                 </li>
@@ -300,7 +300,7 @@ export function WebsiteOverview() {
               ))}
             </ul>
             <Link href="/website/domain" className={`${rowLink} mt-3`}>
-              {domain.domains.length > 0 ? "Manage domains" : "Connect custom domain"}
+              {!canManage ? "View domains" : domain.domains.length > 0 ? "Manage domains" : "Connect custom domain"}
               <ArrowRight aria-hidden className="size-3.5" />
             </Link>
           </Card>
@@ -332,7 +332,7 @@ export function WebsiteOverview() {
               Customers can book or request Services using the booking method set on each Service. Requests arrive in Bookings.
             </p>
             <Link href="/website/booking" className={`${rowLink} mt-3`}>
-              Manage booking setup
+              {canManage ? "Manage booking setup" : "View booking setup"}
               <ArrowRight aria-hidden className="size-3.5" />
             </Link>
           </Card>

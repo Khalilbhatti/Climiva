@@ -30,6 +30,8 @@ const NOTICES: Record<string, { tone: "ok" | "problem"; text: string }> = {
 const BUSINESS_STATUS: Record<string, string> = { published: "Published", hidden: "Hidden", draft: "Draft" };
 
 const TEXTAREA = "w-full rounded-btn border border-line bg-surface px-2.5 py-2 text-sm text-ink";
+/** The table is wider than a laptop screen, and the actions are the point of the page: from the xl width the Moderation column stays in view while the rest scrolls. */
+const STICKY_ACTIONS = "xl:sticky xl:right-0 xl:z-10 xl:border-l xl:border-line xl:shadow-[-10px_0_10px_-10px_rgb(0_0_0/0.15)]";
 
 function Hidden({ row, back, state }: { row: PlatformListingRow; back: string; state?: string }) {
   return (
@@ -195,7 +197,7 @@ export default async function PlatformMarketplacePage({ searchParams }: { search
                 <TableHeaderCell>Services shown</TableHeaderCell>
                 <TableHeaderCell>Service areas</TableHeaderCell>
                 <TableHeaderCell>Site</TableHeaderCell>
-                <TableHeaderCell>Moderation</TableHeaderCell>
+                <TableHeaderCell className={`${STICKY_ACTIONS} xl:bg-surface-low`}>Moderation</TableHeaderCell>
               </tr>
             </TableHead>
             <TableBody>
@@ -250,7 +252,7 @@ export default async function PlatformMarketplacePage({ searchParams }: { search
                       <span className="text-ink-muted">No site</span>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className={`${STICKY_ACTIONS} xl:bg-surface`}>
                     <Moderation row={row} back={back} />
                   </TableCell>
                 </TableRow>

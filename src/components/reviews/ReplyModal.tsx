@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { FormAlert } from "@/components/auth/AuthShell";
 import { Button } from "@/components/ui/Button";
-import { Modal } from "@/components/ui/Modal";
+import { Modal, ModalActions } from "@/components/ui/Modal";
 import { Textarea } from "@/components/ui/Textarea";
 import { useToast } from "@/components/ui/Toast";
 import { RESPONSE_MAX, type Review } from "@/data/reviews";
@@ -53,14 +53,11 @@ export function ReplyModal({ review, mode, onClose, onDone }: ReplyModalProps) {
       title={mode === "edit" ? "Edit response" : "Reply to review"}
       description={mode === "edit" ? `Update your public response to ${name}’s review.` : `Write a public response to ${name}’s review.`}
       footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
+        <ModalActions onCancel={onClose}>
           <Button onClick={submit} disabled={saving}>
             {saving ? "Saving…" : mode === "edit" ? "Save response" : "Post response"}
           </Button>
-        </>
+        </ModalActions>
       }
     >
       <div className="rounded-card bg-surface-low p-4">

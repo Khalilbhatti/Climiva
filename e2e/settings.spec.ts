@@ -32,11 +32,22 @@ async function saveBusinessName(page: Page, name: string) {
 }
 
 test.describe("Settings: structure", () => {
-  test("has the approved header and exactly the five section tabs, each its own route", async ({ page }) => {
+  test("has the approved header, the five sections that are Settings' own (each its own route) and a link to where the rest is managed", async ({ page }) => {
     await page.goto("/settings");
     await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
     await expect(page.getByText("Manage your business information and workspace preferences.")).toBeVisible();
-    await expect(settingsTabs(page).getByRole("link")).toHaveText(["Business information", "Business hours", "Branding", "Workspace preferences", "My profile"]);
+    await expect(settingsTabs(page).getByRole("link")).toHaveText([
+      "Business information",
+      "Business hours",
+      "Branding",
+      /^How customers book/,
+      /^Services and prices/,
+      /^Team and permissions/,
+      /^Domains/,
+      /^Website/,
+      "Workspace preferences",
+      "My profile",
+    ]);
     const routes: [string, string, string][] = [
       ["/settings", "Business information", "Business information"],
       ["/settings/hours", "Business hours", "Business hours"],
@@ -650,7 +661,7 @@ test.describe("My profile", () => {
     await page.getByLabel("Full name").fill("Alex Quinn Morgan");
     await expect(unsaved(page)).toContainText("You have unsaved changes to your profile.");
     await saveAndWait(page, "Save profile");
-    await expect(toast(page)).toContainText("Profile updated.");
+    await expect(toast(page)).toContainText("Profile saved.");
     await expect(unsaved(page)).toHaveCount(0);
     await expect(topBar(page).getByRole("button", { name: /Alex Quinn Morgan/ })).toContainText("Operations Lead");
     await expect(topBar(page)).toContainText("AQ");
@@ -810,10 +821,10 @@ test.describe("Settings: scope and boundaries", () => {
       // The signposts to where Team, Booking and Domains live are links, not settings: they are held to being links below, and left out of the words read here.
       const text = (await page.locator("main").evaluate((main) => {
         const copy = main.cloneNode(true) as HTMLElement;
-        copy.querySelector('[aria-label="Other settings"]')?.remove();
+        copy.querySelector('[aria-label="Settings sections"]')?.remove();
         return copy.innerText;
       })).toLowerCase();
-      await expect(page.getByRole("region", { name: "Other settings" }).locator("input, select, textarea, button")).toHaveCount(0);
+      await expect(settingsTabs(page).locator("input, select, textarea, button")).toHaveCount(0);
       for (const banned of ["service price", "pricing", "booking method", "permissions", "invite", "domain", "marketplace listing", "page content", "dispatch", "fleet", "verification", "verified"]) expect(text, `${path}: ${banned}`).not.toContain(banned);
     }
   });

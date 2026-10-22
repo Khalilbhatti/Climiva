@@ -8,7 +8,7 @@
  * same records.
  */
 import type { FinancialData, Payment } from "@/data/financials";
-import type { Booking, Job, OperationsData } from "@/data/operations";
+import { BOOKING_SOURCES, type Booking, type BookingSource, type Job, type OperationsData } from "@/data/operations";
 import { formatMonthDay } from "./dates";
 import { getDisplayPreferences } from "./display-preferences";
 import { formatDate } from "./format";
@@ -49,4 +49,23 @@ export function recentRecords(operations: OperationsData, financial: FinancialDa
       .sort((a, b) => newestFirst(a.date, b.date) || newestFirst(a.id, b.id))
       .slice(0, 4),
   };
+}
+
+export type SourceCounts = {
+  /** Booking records dated inside the range, whatever their status. */
+  records: number;
+  /** One entry per source that has at least one booking, in the order the sources are listed everywhere. */
+  bySource: { source: BookingSource; count: number }[];
+  /** Records that say where they came from. Imported history carries no source, so it is never in these. */
+  recorded: number;
+};
+
+/**
+ * Where the bookings in a range came from, counted from the booking records the workspace holds. It is a different question from "how many bookings": the
+ * report's total can include imported history that has no source, so these counts are of records, and are labelled so on the page. Nothing here is estimated.
+ */
+export function bookingsBySource(operations: Pick<OperationsData, "bookings">, range: { from: string; to: string }): SourceCounts {
+  const inRange = operations.bookings.filter((booking) => booking.date >= range.from && booking.date <= range.to);
+  const bySource = BOOKING_SOURCES.map((source) => ({ source, count: inRange.filter((booking) => booking.source === source).length })).filter((entry) => entry.count > 0);
+  return { records: inRange.length, bySource, recorded: bySource.reduce((total, entry) => total + entry.count, 0) };
 }

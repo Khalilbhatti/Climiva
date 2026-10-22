@@ -51,7 +51,7 @@ export async function saveHoursAction(input: unknown): Promise<ActionResult<Week
       await tx.insert(organizationBusinessHours).values(hoursRowsFromWeekly(organizationId, parsed.value));
     });
   } catch {
-    return failure("The business hours could not be saved. Try again.");
+    return failure("We couldn't save your business hours. Your changes weren't saved. Try again.");
   }
   return ok(parsed.value);
 }
@@ -79,6 +79,6 @@ export async function saveProfileAction(input: unknown): Promise<ActionResult<{ 
   const updated = await withUser(userId, (tx) =>
     tx.update(profiles).set({ fullName: parsed.value }).where(eq(profiles.userId, userId)).returning({ userId: profiles.userId }),
   );
-  if (updated.length === 0) return failure("Your profile could not be saved. Try again.");
+  if (updated.length === 0) return failure("We couldn't save your profile. Your changes weren't saved. Try again.");
   return ok({ name: parsed.value });
 }

@@ -243,7 +243,7 @@ test.describe("hiding and publishing the Marketplace listing is what the public 
     await page.goto("/marketplace-listing/edit");
     await page.getByRole("switch", { name: "Listing visible" }).click();
     await page.getByRole("dialog", { name: "Hide Marketplace listing?" }).getByRole("button", { name: "Hide listing" }).click();
-    await expect(toast(page)).toContainText("Marketplace listing hidden.");
+    await expect(toast(page)).toContainText("Marketplace Listing hidden.");
 
     await go(page, "/marketplace-listing/preview");
     await expect(page.getByRole("heading", { level: 1, name: "This listing isn't available" })).toBeVisible();
@@ -253,7 +253,7 @@ test.describe("hiding and publishing the Marketplace listing is what the public 
 
     await go(page, "/marketplace-listing");
     await page.getByRole("button", { name: "Publish listing" }).click();
-    await expect(toast(page)).toContainText("Marketplace listing published.");
+    await expect(toast(page)).toContainText("Marketplace Listing published.");
     await go(page, "/marketplace-listing/preview");
     const frame = page.getByTestId("directory-frame");
     await expect(frame).toContainText("AC Repair & Diagnostics");

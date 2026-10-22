@@ -8,6 +8,7 @@ import { FileText, Megaphone, Pencil, Plus, Send, Timer, Users } from "lucide-re
 import { ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Notice } from "@/components/ui/Notice";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SearchInput } from "@/components/ui/SearchInput";
@@ -73,6 +74,8 @@ export function MarketingView() {
           )
         }
       />
+
+      <Notice>Climvia keeps your campaigns, who they are for and when they are set to go out. It does not deliver email or text messages yet, so a campaign marked Sent has not reached anyone.</Notice>
 
       {/* Totals are for counting campaigns: with none yet, four zeros would only repeat "nothing" above the empty state that says it. */}
       {!previewEmpty && (
@@ -162,7 +165,7 @@ export function MarketingView() {
                   ) : (
                     visible.map((campaign) => (
                       <TableRow key={campaign.id}>
-                        <TableCell>
+                        <TableCell className="min-w-44">
                           <Link href={`/marketing/${campaign.id}`} className="font-semibold text-ink hover:text-primary hover:underline">
                             {campaign.name}
                           </Link>
@@ -176,7 +179,15 @@ export function MarketingView() {
                           <CampaignStatusBadge status={campaign.status} />
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-ink-muted">{sendDateText(campaign, campaign.status === "scheduled")}</TableCell>
-                        <TableCell className="font-semibold">{recipientsText(campaign)}</TableCell>
+                        <TableCell className="font-semibold">
+                          {campaign.recipients === undefined ? (
+                            <span title="Counted when the campaign is scheduled or sent">
+                              —<span className="sr-only"> Not counted yet</span>
+                            </span>
+                          ) : (
+                            recipientsText(campaign)
+                          )}
+                        </TableCell>
                         <TableCell className="text-right">
                           {campaign.status === "draft" && canManage ? (
                             <Link

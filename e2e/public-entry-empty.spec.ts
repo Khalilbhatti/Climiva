@@ -230,7 +230,7 @@ test("the owner adds one Service, sets up the Marketplace with a place, publishe
   await areas.getByLabel("State", { exact: true }).selectOption("CO");
   await areas.getByRole("button", { name: "Add area" }).click();
   await ownerPage.getByRole("button", { name: "Save & publish listing" }).click();
-  await expect(ownerPage.locator('div[role="status"]').filter({ hasText: "Marketplace listing published." })).toBeVisible();
+  await expect(ownerPage.locator('div[role="status"]').filter({ hasText: "Marketplace Listing published." })).toBeVisible();
   const listing = (await rows("select id, public_slug, status from marketplace_listings"))[0];
   expect(listing.status).toBe("published");
   listingSlug = listing.public_slug;

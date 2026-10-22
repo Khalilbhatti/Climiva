@@ -6,7 +6,8 @@ import { FormAlert } from "@/components/auth/AuthShell";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { KeyValueList } from "@/components/ui/KeyValueList";
-import { Modal } from "@/components/ui/Modal";
+import { Modal, ModalActions } from "@/components/ui/Modal";
+import { useGuardedClose } from "@/components/ui/useGuardedClose";
 import { OptionCard, OptionGroup } from "@/components/ui/OptionCard";
 import { Textarea } from "@/components/ui/Textarea";
 import { invoiceHref, paymentHref } from "@/config/routes";
@@ -65,6 +66,8 @@ export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentM
   const [showErrors, setShowErrors] = useState(false);
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string>();
+  // Something typed on the details step is work worth asking about before it is closed away.
+  const { close, guard } = useGuardedClose(stage === "details" && !saving && (partial || partialAmount !== "" || checkNumber !== "" || note !== "" || method !== "check" || date !== today), onClose, "this payment");
 
   const headingRef = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
@@ -121,10 +124,7 @@ export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentM
         title="Record payment"
         description="Choose the Invoice this payment should be recorded against."
         footer={
-          <>
-            <Button variant="secondary" onClick={onClose}>
-              Cancel
-            </Button>
+          <ModalActions onCancel={onClose}>
             <Button
               onClick={() => {
                 if (!invoiceId) return setSelectError(true);
@@ -133,7 +133,7 @@ export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentM
             >
               Continue
             </Button>
-          </>
+          </ModalActions>
         }
       >
         <h3 ref={headingRef} tabIndex={-1} className="text-base font-semibold text-ink focus:outline-none">
@@ -188,17 +188,14 @@ export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentM
         title="Payment recorded"
         description={`Payment #${recorded.id} was recorded against Invoice #${recorded.invoiceId}.`}
         footer={
-          <>
-            <Button variant="tertiary" onClick={onClose} className="mr-auto">
-              Close
-            </Button>
+          <ModalActions onCancel={onClose} cancelLabel="Close">
             <ButtonLink variant="secondary" href={invoiceHref(recorded.invoiceId)} onClick={onClose}>
               View invoice
             </ButtonLink>
             <ButtonLink href={paymentHref(recorded.id)} onClick={onClose}>
               View payment
             </ButtonLink>
-          </>
+          </ModalActions>
         }
       >
         <div role="status" className="space-y-4">
@@ -225,127 +222,131 @@ export function RecordPaymentModal({ initialInvoiceId, onClose }: RecordPaymentM
 
   /* ───────── 2. amount, method, date ───────── */
   return (
-    <Modal
-      open
-      onClose={onClose}
-      size="xl"
-      title="Record payment"
-      description={payable ? `${getPartyName(payable, dir)} · Balance due ${usd(balance)}` : "Choose an invoice with an outstanding balance."}
-      footer={
-        <>
-          {!initialInvoiceId && (
-            <Button variant="tertiary" className="mr-auto" onClick={() => setStage("select")}>
-              Back
+    <>
+      <Modal
+        open
+        onClose={close}
+        size="xl"
+        title="Record payment"
+        description={payable ? `${getPartyName(payable, dir)} · Balance due ${usd(balance)}` : "Choose an invoice with an outstanding balance."}
+        footer={
+          <ModalActions
+            onCancel={close}
+            back={
+              !initialInvoiceId && (
+                <Button variant="secondary" onClick={() => setStage("select")}>
+                  Back
+                </Button>
+              )
+            }
+          >
+            <Button onClick={submit} disabled={!payable || saving}>
+              {saving ? "Recording…" : "Record payment"}
             </Button>
-          )}
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={submit} disabled={!payable || saving}>
-            {saving ? "Recording…" : "Record payment"}
-          </Button>
-        </>
-      }
-    >
-      <h3 ref={headingRef} tabIndex={-1} className="sr-only">
-        Payment details for Invoice {invoiceId}
-      </h3>
-      {!payable ? (
-        <p role="alert" className="rounded-card bg-surface-low p-4 text-sm text-ink-muted">
-          Invoice #{invoiceId} has no balance due, so no payment can be recorded against it.
-        </p>
-      ) : (
-        <div className="grid gap-6 md:grid-cols-[1fr_16rem]">
-          <div className="space-y-5">
-            <OptionGroup legend="Payment amount">
-              <OptionCard
-                type="radio"
-                name="payment-amount"
-                title={`Full payment · ${usd(balance)}`}
-                description="Marks this invoice as paid."
-                checked={!partial}
-                onChange={() => setPartial(false)}
-              />
-              <OptionCard
-                type="radio"
-                name="payment-amount"
-                title="Partial payment"
-                description="Record part of the outstanding balance."
-                checked={partial}
-                onChange={() => setPartial(true)}
-              />
-            </OptionGroup>
-            {partial && (
-              <Input
-                label="Partial amount (USD)"
-                type="number"
-                inputMode="decimal"
-                min="0.01"
-                step="0.01"
-                required
-                value={partialAmount}
-                error={showErrors ? amountError : undefined}
-                onChange={(event) => setPartialAmount(event.target.value)}
-              />
-            )}
-            <p className="text-sm text-ink-muted">
-              Balance after this payment: <strong className="text-ink">{usd(afterBalance)}</strong>
-            </p>
-
-            <OptionGroup legend="Payment method" className="grid-cols-2 sm:grid-cols-3">
-              {PAYMENT_METHODS.map((item) => (
+          </ModalActions>
+        }
+      >
+        <h3 ref={headingRef} tabIndex={-1} className="sr-only">
+          Payment details for Invoice {invoiceId}
+        </h3>
+        {!payable ? (
+          <p role="alert" className="rounded-card bg-surface-low p-4 text-sm text-ink-muted">
+            Invoice #{invoiceId} has no balance due, so no payment can be recorded against it.
+          </p>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-[1fr_16rem]">
+            <div className="space-y-5">
+              <OptionGroup legend="Payment amount">
                 <OptionCard
-                  key={item.id}
                   type="radio"
-                  name="payment-method"
-                  title={item.label}
-                  checked={method === item.id}
-                  onChange={() => setMethod(item.id)}
+                  name="payment-amount"
+                  title={`Full payment · ${usd(balance)}`}
+                  description="Marks this invoice as paid."
+                  checked={!partial}
+                  onChange={() => setPartial(false)}
                 />
-              ))}
-            </OptionGroup>
-            {method === "check" && (
-              <Input label="Check number (optional)" value={checkNumber} onChange={(event) => setCheckNumber(event.target.value)} />
-            )}
+                <OptionCard
+                  type="radio"
+                  name="payment-amount"
+                  title="Partial payment"
+                  description="Record part of the outstanding balance."
+                  checked={partial}
+                  onChange={() => setPartial(true)}
+                />
+              </OptionGroup>
+              {partial && (
+                <Input
+                  label="Partial amount (USD)"
+                  type="number"
+                  inputMode="decimal"
+                  min="0.01"
+                  step="0.01"
+                  required
+                  value={partialAmount}
+                  error={showErrors ? amountError : undefined}
+                  onChange={(event) => setPartialAmount(event.target.value)}
+                />
+              )}
+              <p className="text-sm text-ink-muted">
+                Balance after this payment: <strong className="text-ink">{usd(afterBalance)}</strong>
+              </p>
 
-            <Input
-              label="Payment date"
-              type="date"
-              required
-              max={today}
-              value={date}
-              hint="The date the business received the payment."
-              error={showErrors ? dateError : undefined}
-              onChange={(event) => setDate(event.target.value)}
-            />
-            <Textarea
-              label="Internal note (optional)"
-              rows={2}
-              value={note}
-              hint="Visible only to your team."
-              onChange={(event) => setNote(event.target.value)}
-            />
+              <OptionGroup legend="Payment method" className="grid-cols-2 sm:grid-cols-3">
+                {PAYMENT_METHODS.map((item) => (
+                  <OptionCard
+                    key={item.id}
+                    type="radio"
+                    name="payment-method"
+                    title={item.label}
+                    checked={method === item.id}
+                    onChange={() => setMethod(item.id)}
+                  />
+                ))}
+              </OptionGroup>
+              {method === "check" && (
+                <Input label="Check number (optional)" value={checkNumber} onChange={(event) => setCheckNumber(event.target.value)} />
+              )}
+
+              <Input
+                label="Payment date"
+                type="date"
+                required
+                max={today}
+                value={date}
+                hint="The date the business received the payment."
+                error={showErrors ? dateError : undefined}
+                onChange={(event) => setDate(event.target.value)}
+              />
+              <Textarea
+                label="Internal note (optional)"
+                rows={2}
+                value={note}
+                hint="Visible only to your team."
+                onChange={(event) => setNote(event.target.value)}
+              />
+            </div>
+
+            <aside aria-label="Payment summary" className="h-fit space-y-3 rounded-card border border-line bg-surface-low p-4 text-sm">
+              <h4 className="font-semibold text-ink">Payment summary</h4>
+              <p className="text-xs text-ink-muted">After recording: {afterBalance === 0 ? "Paid" : "Partially paid"}</p>
+              <KeyValueList
+                items={[
+                  { label: "Invoice", value: `#${payable.id}` },
+                  { label: "Customer", value: getPartyName(payable, dir) },
+                  { label: "Related work", value: getRelatedWork(payable, dir.services) },
+                  { label: "Invoice total", value: usd(getInvoiceTotal(payable)) },
+                  { label: "Previously paid", value: usd(getInvoicePaid(payable, data)) },
+                  { label: "Payment being recorded", value: usd(amountError ? 0 : amount) },
+                  { label: "Balance after payment", value: usd(afterBalance) },
+                ]}
+              />
+              <p className="text-xs text-ink-muted">This payment will be recorded separately and linked to Invoice #{payable.id}.</p>
+              {problem && <FormAlert>{problem}</FormAlert>}
+            </aside>
           </div>
-
-          <aside aria-label="Payment summary" className="h-fit space-y-3 rounded-card border border-line bg-surface-low p-4 text-sm">
-            <h4 className="font-semibold text-ink">Payment summary</h4>
-            <p className="text-xs text-ink-muted">After recording: {afterBalance === 0 ? "Paid" : "Partially paid"}</p>
-            <KeyValueList
-              items={[
-                { label: "Invoice", value: `#${payable.id}` },
-                { label: "Customer", value: getPartyName(payable, dir) },
-                { label: "Related work", value: getRelatedWork(payable, dir.services) },
-                { label: "Invoice total", value: usd(getInvoiceTotal(payable)) },
-                { label: "Previously paid", value: usd(getInvoicePaid(payable, data)) },
-                { label: "Payment being recorded", value: usd(amountError ? 0 : amount) },
-                { label: "Balance after payment", value: usd(afterBalance) },
-              ]}
-            />
-            <p className="text-xs text-ink-muted">This payment will be recorded separately and linked to Invoice #{payable.id}.</p>
-            {problem && <FormAlert>{problem}</FormAlert>}
-          </aside>
-        </div>
-      )}
-    </Modal>
+        )}
+      </Modal>
+      {guard}
+    </>
   );
 }

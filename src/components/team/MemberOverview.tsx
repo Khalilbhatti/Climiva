@@ -159,8 +159,13 @@ export function MemberOverview() {
           </h2>
           <ul className="space-y-1 text-sm font-medium">
             {[
-              { href: "/jobs" as const, label: "Assign to job" },
-              { href: memberTabHref(member.id, "availability"), label: "Add unavailable time" },
+              // Assigning a Job and blocking time are for whoever manages the team; everyone may look at the schedule.
+              ...(canManage
+                ? [
+                    { href: "/jobs" as const, label: "Assign to job" },
+                    { href: memberTabHref(member.id, "availability"), label: "Add unavailable time" },
+                  ]
+                : []),
               { href: "/schedule" as const, label: "View schedule" },
             ].map((item) => (
               <li key={item.label}>
@@ -208,7 +213,7 @@ export function MemberOverview() {
             href={memberTabHref(member.id, "availability")}
             className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
           >
-            Manage availability & hours
+            {canManage ? "Manage availability & hours" : "View availability & hours"}
             <ArrowRight aria-hidden className="size-3.5" />
           </Link>
         </SectionCard>
@@ -224,7 +229,7 @@ export function MemberOverview() {
             href={memberTabHref(member.id, "permissions")}
             className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
           >
-            View or customize permissions
+            {canManage ? "View or customize permissions" : "View permissions"}
             <ArrowRight aria-hidden className="size-3.5" />
           </Link>
         </SectionCard>
